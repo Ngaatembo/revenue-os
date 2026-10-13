@@ -96,7 +96,7 @@ export function parseInvoiceCsv(
   try {
     rows = parseRows(text.replace(/^\uFEFF/, ''))
   } catch (error) {
-    throw new Error(error instanceof Error ? error.message : 'CSV could not be read.')
+    throw new Error(error instanceof Error ? error.message : 'CSV could not be read.', { cause: error })
   }
   if (rows.length < 2) throw new Error('CSV must contain a header and at least one data row.')
 

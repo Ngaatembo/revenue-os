@@ -19,6 +19,7 @@ CREATE TABLE stalled_opportunities (
     due_date IS NULL OR (
       length(due_date) = 10
       AND due_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
+      AND date(due_date) IS NOT NULL
       AND date(due_date) = due_date
     )
   ),

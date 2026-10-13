@@ -1,13 +1,14 @@
 import { useMemo, useRef, useState } from 'react'
+import StalledOpportunities from './components/StalledOpportunities'
 import { buildOverdueOpportunities } from './domain/overdueInvoices'
 import { parseInvoiceCsv, type CsvIssue } from './domain/invoiceCsv'
 import { addMoney, formatMoney, money } from './domain/money'
 import type { InvoiceEvidence, RevenueOpportunity } from './domain/types'
 import './App.css'
 
-type Section = 'Overview' | 'Opportunities' | 'Actions' | 'Outcomes' | 'Business Brain'
+type Section = 'Overview' | 'Opportunities' | 'Follow-ups' | 'Actions' | 'Outcomes' | 'Business Brain'
 
-const sections: Section[] = ['Overview', 'Opportunities', 'Actions', 'Outcomes', 'Business Brain']
+const sections: Section[] = ['Overview', 'Opportunities', 'Follow-ups', 'Actions', 'Outcomes', 'Business Brain']
 const invoiceCsvHeader = 'customer_id,customer_name,invoice_number,currency,total_amount,paid_amount,issued_at,due_at\n'
 
 function downloadCsvTemplate() {
@@ -111,7 +112,7 @@ function App() {
         <p className="nav-label">WORKSPACE</p>
         <nav className="primary-nav">
           {sections.map((section) => {
-            const icon = section === 'Overview' ? 'grid' : section === 'Opportunities' ? 'spark' : section === 'Actions' ? 'check' : section === 'Outcomes' ? 'chart' : 'brain'
+            const icon = section === 'Overview' ? 'grid' : section === 'Opportunities' ? 'spark' : section === 'Follow-ups' ? 'clock' : section === 'Actions' ? 'check' : section === 'Outcomes' ? 'chart' : 'brain'
             return <button key={section} className={`nav-item ${activeSection === section ? 'active' : ''}`} onClick={() => setActiveSection(section)}>
               <Icon name={icon} /><span>{section}</span>
               {section === 'Opportunities' && opportunities.length > 0 && <span className="nav-count">{opportunities.length}</span>}
@@ -175,7 +176,7 @@ function App() {
 
               {issues.length > 0 && <section className="panel issues-panel"><div className="panel-heading"><div><h2>Rows needing attention</h2><p>These rows were skipped; correct the source file and re-import.</p></div><span className="issue-count">{issues.length}</span></div><ul>{issues.slice(0, 8).map((issue) => <li key={`${issue.row}-${issue.message}`}><strong>Row {issue.row}</strong><span>{issue.message}</span></li>)}</ul>{issues.length > 8 && <p className="more-issues">And {issues.length - 8} more row issues.</p>}</section>}
             </>
-          ) : (
+          ) : activeSection === 'Follow-ups' ? <StalledOpportunities /> : (
             <section className="panel section-placeholder"><span className="empty-icon"><Icon name={activeSection === 'Actions' ? 'check' : activeSection === 'Outcomes' ? 'chart' : 'brain'} /></span><h2>{activeSection} will follow your source data</h2><p>{activeSection === 'Actions' ? 'Actions will only be proposed from a real opportunity and will require human approval before execution.' : activeSection === 'Outcomes' ? 'Verified outcomes will be recorded separately from estimates and linked to payment evidence.' : 'The Business Brain will hold sourced facts, explicit assumptions, and import history.'}</p>{activeSection === 'Business Brain' && <div id="csv-format" className="format-box"><strong>Invoice CSV columns</strong><code>customer_id, customer_name, invoice_number, currency, total_amount, paid_amount, issued_at, due_at</code><small>Amounts use a decimal point and up to two decimal places. Currency must be a three-letter code such as USD.</small></div>}</section>
           )}
 
@@ -183,7 +184,7 @@ function App() {
         </div>
       </main>
 
-      <nav className="mobile-nav" aria-label="Mobile navigation">{sections.map((section) => <button key={section} className={activeSection === section ? 'active' : ''} onClick={() => setActiveSection(section)} aria-label={section}><Icon name={section === 'Overview' ? 'grid' : section === 'Opportunities' ? 'spark' : section === 'Actions' ? 'check' : section === 'Outcomes' ? 'chart' : 'brain'} /><span>{section}</span></button>)}</nav>
+      <nav className="mobile-nav" aria-label="Mobile navigation">{sections.map((section) => <button key={section} className={activeSection === section ? 'active' : ''} onClick={() => setActiveSection(section)} aria-label={section}><Icon name={section === 'Overview' ? 'grid' : section === 'Opportunities' ? 'spark' : section === 'Follow-ups' ? 'clock' : section === 'Actions' ? 'check' : section === 'Outcomes' ? 'chart' : 'brain'} /><span>{section}</span></button>)}</nav>
     </div>
   )
 }

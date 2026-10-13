@@ -43,6 +43,8 @@ The repository currently contains an early overdue-invoice prototype:
 
 The screen currently implements the first three steps in a local browser session. Imported data is held in React memory for the current tab. The action and attribution rules are domain foundations, not yet complete persisted workflows.
 
+A first **Stalled follow-ups** workflow is also available as a local-session prototype. It lets a user add a prospect/quotation label, stage, promised next step, due date, and optional quoted value. It flags overdue documented next steps, marks incomplete records as needing review, and lets the user close an opportunity as won or lost. These records are not persisted and must be re-entered after refresh; this is for validation, not production customer data.
+
 **This is not production-ready. Do not use it with sensitive production or customer financial data.** Authentication, tenant-aware financial APIs, and durable business-data persistence are not implemented. The Worker currently exposes a health route that checks D1 connectivity; it does not expose tenant or financial APIs.
 
 ## Technology and Cloudflare direction

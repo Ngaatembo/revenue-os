@@ -1,66 +1,143 @@
 # Revenue OS
 
-Revenue OS helps a business identify, prioritize, execute, and measure revenue opportunities. The north-star metric is **verified incremental or recovered revenue**. Estimates and verified revenue are separate throughout the domain model.
+Revenue OS is an evidence-led revenue opportunity and execution system for small and growing businesses. It aims to help an owner see what needs attention, understand why it matters, take an appropriate next step, and record what happened.
 
-## Current build
+**North-star outcome:** verified incremental or recovered revenue. Estimates, reported outcomes, and verified outcomes must remain distinct. A payment observed after an action is not proof that the action caused it.
 
-The first vertical slice starts with overdue invoice recovery:
+## Product direction
 
-1. Import invoices with source identifiers and explicit payment balances.
+The long-term idea is a **business watchman**: identify missed opportunities, overdue commitments, process gaps, payment issues, and possible revenue leakage across fragmented business tools.
+
+The product must earn that breadth by solving one narrow, recurring problem well. Two candidate starting points are being evaluated:
+
+1. **Stalled prospects and quotations:** identify a documented next step that has become overdue, explain the evidence, and help the owner follow up.
+2. **Overdue invoice recovery:** identify unpaid overdue balances from invoice data and estimate a possible recovery amount using an explicit assumption.
+
+The first workflow is not yet final. Validate both against real customer behaviour before committing to a larger build. A prospect's silence alone is not enough to label an opportunity stalled; missing next-step information should be shown as “Needs review.”
+
+## Product and technical blueprint
+
+The full working plan lives in [docs/MASTER_PRODUCT_TECHNICAL_BLUEPRINT.md](docs/MASTER_PRODUCT_TECHNICAL_BLUEPRINT.md). It covers product positioning, competition hypotheses, customer validation, architecture, domain model, security, AI boundaries, metrics, and delivery gates. Update it when evidence changes a product or technical decision.
+
+### Core product loop
+
+**Business evidence → opportunity/exception → ranked next action → human approval → observed outcome → learning.**
+
+Principles:
+- Every finding must link to its source evidence, rule, and assumptions.
+- Deterministic code calculates money and applies detection rules.
+- Estimates are never presented as verified revenue.
+- Consequential external actions require human approval.
+- Begin with low-friction CSV/manual workflows; add integrations when customer demand justifies them.
+- Build and validate one workflow at a time.
+
+## Current implementation
+
+The repository currently contains an early overdue-invoice prototype:
+
+1. Import invoices using a CSV with source identifiers and explicit payment balances.
 2. Set an explicit recovery-rate assumption.
-3. Detect overdue invoices deterministically and calculate an estimate from the outstanding amount.
-4. Keep action transitions approval-gated in the domain layer. External execution is manual by design.
-5. Match later payment records to executed actions and label the result as verified evidence observed after the action, without claiming causality.
+3. Detect overdue invoices deterministically and estimate a possible recovery amount.
+4. Define approval-gated action state transitions in the domain layer.
+5. Match later payment records to executed actions as observed evidence, without asserting causality.
 
-The current screen implements steps 1–3 in a local browser session. The action and attribution rules are domain foundations; their persistence and user workflows await the server and database layer.
+The screen currently implements the first three steps in a local browser session. Imported data is held in React memory for the current tab. The action and attribution rules are domain foundations, not yet complete persisted workflows.
 
-The current screen and import parser run in the browser. Imported records remain in React memory for the current tab only; no business-data persistence, authentication, or external actions are wired yet. The Worker only checks D1 connectivity. The screen states the local-only behavior clearly. Do not use it with sensitive production data.
+**This is not production-ready. Do not use it with sensitive production or customer financial data.** Authentication, tenant-aware financial APIs, and durable business-data persistence are not implemented. The Worker currently exposes a health route that checks D1 connectivity; it does not expose tenant or financial APIs.
 
-## Cloudflare direction
+## Technology and Cloudflare direction
 
-The app is being prepared for Cloudflare Workers and Workers Static Assets. The Worker serves the SPA and exposes a small `/api/health` route that checks D1 connectivity. It does not expose tenant or financial APIs yet.
+- **Frontend:** React, TypeScript, Vite.
+- **Edge runtime and static delivery:** Cloudflare Workers and Workers Static Assets.
+- **Database direction:** Cloudflare D1 (SQLite).
+- **Wrangler:** scripts currently pin version 4.149.0 via npx.
 
-Selected direction: Cloudflare Workers + D1. All database access must go through authenticated Worker routes. D1 is SQLite-based and has no PostgreSQL-style row-level security, so every business table carries an `organization_id`, cross-table relationships use composite organization-scoped foreign keys, and each query must derive its organization from the authenticated membership—not a request parameter. The browser must never receive a database binding.
+D1 has no PostgreSQL-style row-level security. Every business table must be organization-scoped, cross-table relationships should use composite organization-scoped foreign keys, and every query must derive organization scope from the authenticated membership—not a browser-supplied organization ID. The browser must never receive a database binding.
 
-D1's global read replication is currently marked beta, and writes are handled by a primary location. Cloudflare currently offers no Africa location hint, so global app delivery does not mean low-latency writes from every region. We will measure this against the intended launch markets before committing financial workloads at scale. The initial migration creates only the data model; authentication and tenant-aware APIs are deliberately not wired until the identity provider and authorization flow are implemented.
+The configured database ID is a placeholder. No production D1 database is assumed to exist or to have been migrated. Do not deploy the application as a real multi-tenant financial product until identity, authorization, persistence, and security checks are implemented and reviewed.
 
-Wrangler scripts are pinned to version `4.149.0` via `npx` because network access prevented installing and locking it in this environment. For local Cloudflare preview, run `npm run cf:migrate:local`, `npm run build`, then `npm run cf:dev`. `npm run cf:deploy` deploys to Cloudflare and must only be run after account configuration and explicit deployment approval.
+Cloudflare globally serves application assets, but that does not guarantee low-latency database writes from every market. Measure performance against intended launch regions before committing to financial workloads at scale.
 
-The initial D1 schema is in `migrations/0001_revenue_os_core.sql`. Apply it to the local D1 state with the command above before starting the Worker. The configured database ID is a local placeholder; no remote database has been created, and deployment must wait until a real D1 database is intentionally provisioned.
-
-## Invoice CSV
+## Invoice CSV format
 
 Required columns:
 
-```text
-customer_id, customer_name, invoice_number, currency, total_amount, paid_amount, issued_at, due_at
-```
+~~~csv
+customer_id,customer_name,invoice_number,currency,total_amount,paid_amount,issued_at,due_at
+~~~
 
-Amounts must be non-negative decimal values with at most two decimal places. `currency` must be a three-letter code. Invoice numbers must be unique within an import. Invalid rows are skipped with a row-specific explanation; the parser does not silently coerce values.
+Validation rules:
+- Amounts must be non-negative decimal values with at most two decimal places.
+- Currency must be a three-letter code.
+- Invoice numbers must be unique within an import.
+- Invalid rows are skipped with a row-specific explanation; values are not silently coerced.
+
+Download a blank template from the current app to see the expected header.
 
 ## Domain modules
 
-- `src/domain/types.ts`: sourced invoices, explicit assumptions, opportunities, actions, payment evidence, and attribution types.
-- `src/domain/money.ts`: integer minor-unit arithmetic and currency checks.
-- `src/domain/invoiceCsv.ts`: bounded CSV parsing and validation.
-- `src/domain/overdueInvoices.ts`: deterministic overdue opportunity detection and estimate calculation.
-- `src/domain/actions.ts`: approval-gated action state transitions.
-- `src/domain/attribution.ts`: payment-record matching within a measurement window.
+- **src/domain/types.ts:** sourced invoices, explicit assumptions, opportunities, actions, payment evidence, and attribution types.
+- **src/domain/money.ts:** integer minor-unit arithmetic and currency checks.
+- **src/domain/invoiceCsv.ts:** bounded CSV parsing and validation.
+- **src/domain/overdueInvoices.ts:** deterministic overdue opportunity detection and estimate calculation.
+- **src/domain/actions.ts:** approval-gated action state transitions.
+- **src/domain/attribution.ts:** payment-record matching within a measurement window.
+- **migrations/0001_revenue_os_core.sql:** initial organization-scoped data model and integrity constraints.
 
 ## Run locally
 
-```sh
+Install dependencies:
+
+~~~sh
 npm install
+~~~
+
+Start the Vite frontend:
+
+~~~sh
 npm run dev
-```
+~~~
 
-## Next engineering steps
+Useful checks:
 
-1. Select an authentication provider and implement server-verified sessions and organization membership resolution.
-2. Add tenant-isolation tests for every D1 query and negative cross-organization access cases.
-3. Persist source imports and evidence through authenticated Worker routes; make import idempotent.
-4. Add server-side opportunity/action APIs and enforce the human approval gate.
-5. Add outcome imports and verified payment attribution.
-6. Add the Revenue Analyst only after the deterministic slice works; recommendations must reference stored evidence and assumptions.
+~~~sh
+npm run lint
+npm run build
+~~~
 
-The current project is an early frontend, edge-runtime, and database-schema foundation, not a production revenue system. No production D1 database has been created or migrated.
+For a local Cloudflare preview, after checking the Wrangler/D1 configuration:
+
+~~~sh
+npm run cf:migrate:local
+npm run build
+npm run cf:dev
+~~~
+
+The local migration command changes local D1 state. Confirm configuration before running it.
+
+## Production-readiness gates
+
+Complete and test these before storing real business data:
+
+1. Select an identity provider and implement server-verified sessions.
+2. Resolve organization membership and role on the server for every request.
+3. Add tenant-isolation tests, including negative cross-organization access cases.
+4. Persist source imports and evidence through authenticated Worker routes; make imports idempotent.
+5. Add server-side opportunity/action APIs and enforce approval and authorization rules.
+6. Add outcome imports and evidence-backed payment attribution.
+7. Validate upload limits, input handling, audit logging, retention, backup/recovery, and operational monitoring.
+8. Review secrets and Cloudflare configuration; never commit credentials or expose database bindings to the browser.
+9. Validate the first product workflow with customers before expanding into additional detectors or adding an AI analyst.
+
+## Current delivery sequence
+
+1. Design and validate the first workflow; compare stalled prospect/quotation follow-through with overdue-invoice recovery.
+2. Run a small concierge experiment and record false positives, actions, outcomes, and willingness to pay.
+3. Choose one MVP wedge from evidence and update the blueprint.
+4. Implement the selected workflow with deterministic rules and tests.
+5. Build authenticated persistence and tenant-safe APIs before real customer data is stored.
+6. Add AI assistance only after reliable evidence and deterministic behaviour exist. AI may explain evidence or draft a message; it must not invent facts, verify revenue, bypass authorization, or silently execute consequential actions.
+
+## Deployment
+
+The repository includes the deployment script npm run cf:deploy, which builds and deploys to Cloudflare. **Do not run this command until the production-readiness gates and account/database configuration are reviewed.** Deployment is a deliberate operator action; no deployment is performed by this README update.

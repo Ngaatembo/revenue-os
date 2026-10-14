@@ -490,3 +490,83 @@ export async function transitionRecoveryAction(
     executed_by: row.executed_by,
   }, current?.invoiceId ?? '')
 }
+
+
+export type VerifiedOutcome = {
+  id: string
+  actionId: string
+  opportunityId: string
+  amountMinor: number
+  currency: string
+  measurementStartsAt: string
+  measurementEndsAt: string
+  recordedAt: string
+  causalClaim: string
+}
+export type PaymentImportRow = { invoiceNumber: string; externalRecordId: string; currency: string; amountMinor: number; receivedAt: string }
+
+export async function persistPaymentImport(
+  session: SupabaseSession,
+  organization: RevenueOrganization,
+  input: { sourceId: string; sourceName: string; contentHash: string; payments: PaymentImportRow[]; rejectedRows: number },
+): Promise<{ duplicate: boolean; importId: string; acceptedRows: number; rejectedRows: number }> {
+  const result = await apiRequest<{ duplicate: boolean; import_id: string; accepted_rows: number; rejected_rows: number }>(
+    session,
+    'rpc/persist_payment_import',
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        p_org_id: organization.id,
+        p_source_id: input.sourceId,
+        p_source_name: input.sourceName,
+        p_content_hash: input.contentHash,
+        p_rows: input.payments,
+        p_rejected_rows: input.rejectedRows,
+      }),
+    },
+  )
+  return { duplicate: result.duplicate, importId: result.import_id, acceptedRows: result.accepted_rows, rejectedRows: result.rejected_rows }
+}
+
+export async function verifyRecoveryOutcome(
+  session: SupabaseSession,
+  organizationId: string,
+  actionId: string,
+  windowDays = 30,
+): Promise<{ verified: boolean; reason?: string; outcomeId?: string; amountMinor?: number; currency?: string; paymentCount?: number }> {
+  const result = await apiRequest<{
+    verified: boolean; reason?: string; outcome_id?: string; amount_minor?: number;
+    currency?: string; payment_count?: number
+  }>(session, 'rpc/verify_recovery_outcome', {
+    method: 'POST',
+    body: JSON.stringify({ p_org_id: organizationId, p_action_id: actionId, p_window_days: windowDays }),
+  })
+  return {
+    verified: result.verified,
+    reason: result.reason,
+    outcomeId: result.outcome_id,
+    amountMinor: result.amount_minor,
+    currency: result.currency,
+    paymentCount: result.payment_count,
+  }
+}
+
+export async function loadVerifiedOutcomes(session: SupabaseSession, organizationId: string): Promise<VerifiedOutcome[]> {
+  const params = new URLSearchParams({
+    select: 'id,action_id,opportunity_id,amount_minor,currency,measurement_starts_at,measurement_ends_at,recorded_at,causal_claim',
+    organization_id: `eq.${organizationId}`,
+    state: 'eq.verified',
+    order: 'recorded_at.desc',
+    limit: '200',
+  })
+  const rows = await apiRequest<Array<{
+    id: string; action_id: string; opportunity_id: string; amount_minor: number | string; currency: string;
+    measurement_starts_at: string; measurement_ends_at: string; recorded_at: string; causal_claim: string
+  }>>(session, `outcomes?${params.toString()}`)
+  return rows.map((row) => ({
+    id: row.id, actionId: row.action_id, opportunityId: row.opportunity_id,
+    amountMinor: Number(row.amount_minor), currency: row.currency,
+    measurementStartsAt: row.measurement_starts_at, measurementEndsAt: row.measurement_ends_at,
+    recordedAt: row.recorded_at, causalClaim: row.causal_claim,
+  }))
+}

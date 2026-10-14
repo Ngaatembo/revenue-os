@@ -179,7 +179,7 @@ function App() {
             </>
           ) : activeSection === 'Follow-ups' ? <StalledOpportunities />
             : activeSection === 'Actions' ? <ActionCenter opportunities={opportunities} reviewed={reviewedActionIds} setReviewed={setReviewedActionIds} />
-            : activeSection === 'Outcomes' ? <OutcomeRegister records={outcomes} setRecords={setOutcomes} />
+            : activeSection === 'Outcomes' ? <OutcomeRegister opportunities={opportunities} records={outcomes} setRecords={setOutcomes} />
             : <BusinessBrain sourceName={sourceName} invoiceCount={invoices.length} issueCount={issues.length} recoveryRate={recoveryRate} setRecoveryRate={setRecoveryRate} assumptionBps={assumptionBps} onDownload={downloadCsvTemplate} />
           )}
 
@@ -226,51 +226,101 @@ function ActionCenter({ opportunities, reviewed, setReviewed }: ActionCenterProp
   )
 }
 
-type OutcomeRecord = { id: string; reference: string; amount: string; currency: string; date: string; evidence: string }
+type OutcomeRecord = {
+  id: string
+  opportunityId: string
+  customerName: string
+  invoiceNumber: string
+  reference: string
+  amount: string
+  currency: string
+  date: string
+  evidence: string
+}
 
-type OutcomeRegisterProps = { records: OutcomeRecord[]; setRecords: (updater: (current: OutcomeRecord[]) => OutcomeRecord[]) => void }
+type OutcomeRegisterProps = {
+  opportunities: RevenueOpportunity[]
+  records: OutcomeRecord[]
+  setRecords: (updater: (current: OutcomeRecord[]) => OutcomeRecord[]) => void
+}
 
-function OutcomeRegister({ records, setRecords }: OutcomeRegisterProps) {
+function OutcomeRegister({ opportunities, records, setRecords }: OutcomeRegisterProps) {
+  const [opportunityId, setOpportunityId] = useState(opportunities[0]?.id ?? '')
   const [reference, setReference] = useState('')
   const [amount, setAmount] = useState('')
-  const [currency, setCurrency] = useState('USD')
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10))
   const [evidence, setEvidence] = useState('')
   const [formError, setFormError] = useState('')
   const [notice, setNotice] = useState('')
+  const selectedOpportunity = opportunities.find((item) => item.id === opportunityId) ?? opportunities[0]
+  const selectedInvoice = selectedOpportunity?.evidence[0]
 
   function submitOutcome(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    const numericAmount = Number(amount)
-    if (!reference.trim() || !evidence.trim() || !date || !Number.isFinite(numericAmount) || numericAmount <= 0) {
-      setFormError('Enter a reference, a positive amount, a date, and a note describing the payment evidence.')
+    const amountMatch = /^(0|[1-9]\\d*)(?:\\.(\\d{1,2}))?$/.exec(amount.trim())
+    const dateMatch = /^(\\d{4})-(\\d{2})-(\\d{2})$/.exec(date)
+    const paymentDate = dateMatch ? new Date(Date.UTC(Number(dateMatch[1]), Number(dateMatch[2]) - 1, Number(dateMatch[3]))) : null
+    const dateIsValid = Boolean(dateMatch && paymentDate
+      && paymentDate.getUTCFullYear() === Number(dateMatch[1])
+      && paymentDate.getUTCMonth() === Number(dateMatch[2]) - 1
+      && paymentDate.getUTCDate() === Number(dateMatch[3]))
+    const amountMinor = amountMatch
+      ? Number(amountMatch[1]) * 100 + Number((amountMatch[2] ?? '').padEnd(2, '0'))
+      : Number.NaN
+
+    if (!selectedOpportunity || !selectedInvoice) {
+      setFormError('Import invoices and generate an overdue opportunity before recording an outcome.')
       return
     }
-    setRecords((current) => [{ id: 'outcome-' + Date.now(), reference: reference.trim(), amount: numericAmount.toFixed(2), currency, date, evidence: evidence.trim() }, ...current])
+    if (!reference.trim() || !evidence.trim() || !dateIsValid || date > new Date().toISOString().slice(0, 10)
+      || !Number.isSafeInteger(amountMinor) || amountMinor <= 0) {
+      setFormError('Enter a payment reference, a valid past or current date, a positive amount with up to two decimal places, and an evidence note.')
+      return
+    }
+    if (amountMinor > selectedOpportunity.outstanding.amount) {
+      setFormError('The reported payment cannot exceed the current outstanding balance for this invoice.')
+      return
+    }
+
+    setRecords((current) => [{
+      id: 'outcome-' + Date.now(),
+      opportunityId: selectedOpportunity.id,
+      customerName: selectedInvoice.customerName,
+      invoiceNumber: selectedInvoice.invoiceNumber,
+      reference: reference.trim(),
+      amount: (amountMinor / 100).toFixed(2),
+      currency: selectedOpportunity.outstanding.currency,
+      date,
+      evidence: evidence.trim(),
+    }, ...current])
     setReference('')
     setAmount('')
     setEvidence('')
     setFormError('')
-    setNotice('Outcome recorded in this tab. It is awaiting independent verification.')
+    setNotice('Outcome linked to the selected invoice and recorded in this tab. It is awaiting independent verification.')
   }
 
   return (
     <section className="panel functional-panel">
-      <div className="panel-heading"><div><h2>Outcome register</h2><p>Record a claimed payment or recovery and the evidence that should be checked.</p></div><span className="brain-status">LOCAL ONLY</span></div>
-      <form className="functional-form" onSubmit={submitOutcome}>
-        <label className="functional-field">Invoice or customer reference<input value={reference} onChange={(event) => setReference(event.target.value)} placeholder="e.g. INV-1042" required maxLength={120} /></label>
-        <label className="functional-field">Amount received<input value={amount} onChange={(event) => setAmount(event.target.value)} inputMode="decimal" placeholder="e.g. 150.00" required /></label>
-        <label className="functional-field">Currency<select value={currency} onChange={(event) => setCurrency(event.target.value)}><option>USD</option><option>ZIG</option><option>ZWL</option><option>ZAR</option><option>GBP</option><option>EUR</option></select></label>
-        <label className="functional-field">Payment date<input type="date" value={date} onChange={(event) => setDate(event.target.value)} required /></label>
-        <label className="functional-field functional-field-wide">Evidence note<input value={evidence} onChange={(event) => setEvidence(event.target.value)} placeholder="e.g. receipt number or bank statement reference" required maxLength={240} /></label>
-        <div className="functional-form-actions"><button className="button button-primary" type="submit">Record outcome</button><span>Recording does not mean verification is complete.</span></div>
-      </form>
+      <div className="panel-heading"><div><h2>Outcome register</h2><p>Link a reported payment to an overdue invoice and record evidence for review.</p></div><span className="brain-status">LOCAL ONLY</span></div>
+      {opportunities.length === 0 ? (
+        <div className="empty-state"><span className="empty-icon"><Icon name="chart" /></span><h3>No invoice opportunities available</h3><p>Import invoices and set a recovery-rate assumption. Outcomes must be linked to an invoice opportunity.</p></div>
+      ) : (
+        <form className="functional-form" onSubmit={submitOutcome}>
+          <label className="functional-field functional-field-wide">Invoice opportunity<select value={selectedOpportunity?.id ?? ''} onChange={(event) => setOpportunityId(event.target.value)} required>{opportunities.map((item) => { const invoice = item.evidence[0]; return <option key={item.id} value={item.id}>{invoice.customerName} · {invoice.invoiceNumber} · Outstanding {formatMoney(item.outstanding)}</option> })}</select></label>
+          <label className="functional-field">Payment / receipt reference<input value={reference} onChange={(event) => setReference(event.target.value)} placeholder="e.g. receipt or transfer reference" required maxLength={120} /></label>
+          <label className="functional-field">Amount received<input value={amount} onChange={(event) => setAmount(event.target.value)} inputMode="decimal" placeholder="e.g. 150.00" required /></label>
+          <label className="functional-field">Payment date<input type="date" value={date} onChange={(event) => setDate(event.target.value)} max={new Date().toISOString().slice(0, 10)} required /></label>
+          <label className="functional-field functional-field-wide">Evidence note<input value={evidence} onChange={(event) => setEvidence(event.target.value)} placeholder="e.g. receipt number or bank statement reference" required maxLength={240} /></label>
+          <div className="functional-form-actions"><button className="button button-primary" type="submit">Record outcome</button><span>Currency is taken from the selected invoice. Recording is not verification.</span></div>
+        </form>
+      )}
       {formError && <p className="functional-error" role="alert">{formError}</p>}
       {notice && <p className="functional-note" role="status">{notice}</p>}
       <div className="panel-heading functional-list-heading"><div><h2>Recorded outcomes</h2><p>Entries remain in memory for this page session only.</p></div><span className="status-pill">{records.length} recorded</span></div>
-      {records.length === 0 ? <div className="empty-state compact"><h3>No outcomes recorded</h3><p>Add a payment reference above when you have evidence to review.</p></div> : (
+      {records.length === 0 ? <div className="empty-state compact"><h3>No outcomes recorded</h3><p>Once an invoice is overdue, record a reported payment with its reference and evidence.</p></div> : (
         <div className="functional-list">{records.map((record) => <article className="functional-row" key={record.id}>
-          <div className="functional-row-copy"><strong>{record.reference}</strong><p>{record.currency} {record.amount} · {record.date}</p><small>{record.evidence}</small><span className="outcome-pending">Awaiting verification</span></div>
+          <div className="functional-row-copy"><strong>{record.customerName} · Invoice {record.invoiceNumber}</strong><p>{record.currency} {record.amount} · {record.date} · Receipt {record.reference}</p><small>{record.evidence}</small><span className="outcome-pending">Awaiting verification</span></div>
           <button className="button button-secondary" type="button" onClick={() => setRecords((current) => current.filter((item) => item.id !== record.id))}>Remove</button>
         </article>)}</div>
       )}

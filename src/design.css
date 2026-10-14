@@ -1,0 +1,122 @@
+/*
+ * Revenue OS visual layer. Provisional design tokens (no DESIGN.md existed when written).
+ * Loaded after App.css so these rules intentionally win on equal specificity.
+ */
+:root {
+  --page: #f3f5f1;
+  --surface: #fbfcfa;
+  --sidebar: #eef1ec;
+  --ink: #17202a;
+  --muted: #55625b;
+  --line: #d3dad2;
+  --action: #1f3a68;
+  --action-hover: #162b4e;
+  --teal: #1f3a68;
+  --verified: #0e6b4f;
+  --band-1: #d9b25f;
+  --band-2: #b7791f;
+  --band-3: #b4561b;
+  --band-4: #8a2a1a;
+  --money-font: Charter, 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
+  font-size: 16px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --page: #12171d; --surface: #181f27; --sidebar: #151b22; --ink: #e8ecef; --muted: #aab4bc; --line: #2d3742;
+    --action: #8fb0ee; --action-hover: #b0c8f4; --teal: #8fb0ee; --verified: #6fd3ad;
+    --band-1: #d9b25f; --band-2: #d0983a; --band-3: #d27a41; --band-4: #d9604a;
+  }
+  .button-primary { color: #10192a; }
+}
+
+body { font-size: 14px; line-height: 1.5; }
+.button { min-height: 44px; font-size: 14px; }
+.button-primary { background: var(--action); color: #fff; }
+.button-primary:hover { background: var(--action-hover); }
+.button-secondary { color: var(--action); border-color: var(--line); background: var(--surface); }
+.button-secondary:hover { background: var(--page); border-color: var(--action); }
+.button:focus-visible, .nav-item:focus-visible, .mobile-nav button:focus-visible { outline: 3px solid var(--action); outline-offset: 2px; }
+.nav-item.active { color: var(--action); background: color-mix(in srgb, var(--action) 12%, transparent); }
+.nav-item.active svg, .brand-light, .brand-mark span { color: var(--action); }
+.brand-mark span { background: var(--action); }
+
+/* Readable type floor (the previous UI used 8-11px in many places). */
+.eyebrow, .nav-label { font-size: 12px; letter-spacing: .02em; text-transform: none; }
+.page-subtitle, .panel-heading p, .metric-card p, .breadcrumbs, .connection-state, .workspace-copy small,
+.user-chip small, .preview-banner, .alert, .brain-note, .more-issues, .issues-panel li, .lead-disclaimer,
+.opportunity-main small, .opportunity-values small, .action-human-note, .status-pill, .rank-badge, .overdue-pill { font-size: 13px; }
+.panel-heading h2 { font-size: 16px; }
+.opportunity-main p, .recovery-message, .action-context, .why-details, .next-step { font-size: 14px; }
+.why-details small { font-size: 13px; }
+.overdue-pill { padding: 3px 9px; }
+.metric-card > .metric-top span:first-child { font-size: 13px; }
+
+/* Headings and money use a serif with tabular figures: it reads as a ledger, not a SaaS template. */
+h1, .panel-heading h2, .aging-head h2 { letter-spacing: -.01em; }
+.metric-value, .opportunity-values strong, .aging-head h2, .aging-legend dd, .verified-outcome-detail strong {
+  font-family: var(--money-font); font-variant-numeric: tabular-nums lining-nums; letter-spacing: 0;
+}
+
+/* Aging strip: where the overdue money is, by lateness. */
+.aging { margin-bottom: 20px; padding: 20px 0 22px; border-top: 2px solid var(--ink); border-bottom: 1px solid var(--line); display: grid; gap: 26px; }
+.aging-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; margin-bottom: 12px; }
+.aging-head h2 { margin: 0; font-size: clamp(26px, 4.4vw, 38px); line-height: 1.1; font-weight: 600; color: var(--ink); }
+.aging-head p { margin: 0; color: var(--muted); font-size: 14px; }
+.aging-bar { display: flex; gap: 3px; height: 22px; }
+.aging-seg { min-width: 6px; border-radius: 2px; }
+.aging-1 { background: var(--band-1); } .aging-2 { background: var(--band-2); }
+.aging-3 { background: var(--band-3); } .aging-4 { background: var(--band-4); }
+.aging-legend { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 12px 0 0; }
+.aging-legend > div { min-width: 0; }
+.aging-legend dt { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 13px; }
+.aging-legend dd { margin: 2px 0 0; font-size: 20px; font-weight: 600; color: var(--ink); }
+.aging-legend .is-empty dd { color: var(--muted); font-weight: 400; }
+.aging-key { width: 10px; height: 10px; border-radius: 2px; display: inline-block; flex: none; }
+
+/* Summary figures as a ruled band instead of four identical cards. */
+.metric-grid { gap: 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); margin-bottom: 22px; }
+.metric-card { background: transparent; border: 0; border-radius: 0; padding: 16px 18px 16px 0; min-height: 0; }
+.metric-card + .metric-card { border-left: 1px solid var(--line); padding-left: 18px; }
+.metric-value { font-size: 26px; font-weight: 600; color: var(--ink); }
+.metric-card p { color: var(--muted); }
+.metric-card:nth-child(3) .metric-value { color: var(--verified); }
+.metric-icon { display: none; }
+
+/* Queue rows read as a ruled work list; panels lose the card chrome where they hold lists. */
+.panel { background: var(--surface); border-color: var(--line); border-radius: 6px; box-shadow: none; }
+.opportunity-row { border-bottom: 1px solid var(--line); align-items: flex-start; padding: 18px 0; }
+.opportunity-indicator { display: none; }
+.rank-badge { background: transparent; border: 1px solid var(--line); color: var(--ink); }
+.overdue-pill.urgency-1 { background: color-mix(in srgb, var(--band-1) 30%, transparent); color: var(--ink); }
+.overdue-pill.urgency-2 { background: color-mix(in srgb, var(--band-2) 26%, transparent); color: var(--ink); }
+.overdue-pill.urgency-3 { background: color-mix(in srgb, var(--band-3) 24%, transparent); color: var(--ink); }
+.overdue-pill.urgency-4 { background: color-mix(in srgb, var(--band-4) 22%, transparent); color: var(--ink); }
+.opportunity-values strong { font-size: 20px; }
+.opportunity-values span { color: var(--muted); font-size: 13px; }
+.next-step strong, .action-context strong { color: var(--ink); }
+
+@media (max-width: 1000px) {
+  .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .metric-card:nth-child(3) { border-left: 0; padding-left: 0; }
+  .metric-card:nth-child(n + 3) { border-top: 1px solid var(--line); }
+}
+@media (max-width: 760px) {
+  .aging-legend { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .opportunity-row { flex-direction: column; gap: 10px; }
+  .opportunity-values { align-self: stretch; display: flex; align-items: baseline; gap: 8px; text-align: left; }
+}
+@media (max-width: 480px) {
+  .metric-grid { grid-template-columns: minmax(0, 1fr); }
+  .metric-card + .metric-card { border-left: 0; padding-left: 0; border-top: 1px solid var(--line); }
+  .page-heading { align-items: stretch; flex-direction: column; }
+  .page-heading .button { width: 100%; }
+}
+
+/* Phone fixes from visual QA: keep the primary action labelled and the top bar uncluttered. */
+@media (max-width: 760px) {
+  .page-heading .button { width: 100%; min-width: 0; height: 44px; padding: 0 16px; font-size: 14px; }
+  .topbar .connection-state { font-size: 0; gap: 0; }
+  .topbar .connection-state i { width: 9px; height: 9px; }
+  .breadcrumbs { gap: 6px; white-space: nowrap; }
+  .topbar .topbar-right .button { font-size: 13px; min-height: 36px; }
+}

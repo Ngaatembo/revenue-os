@@ -195,6 +195,14 @@ set role authenticated;
 select t.err('a user cannot insert themselves into another workspace', $q$insert into public.memberships(organization_id,user_id,role) values (t.o('orga'),'00000000-0000-4000-8000-00000000000b','viewer')$q$);
 reset role;
 
+-- Self-removal policy: a member with delete rights may LEAVE a workspace (admin here); they cannot
+-- rejoin themselves, and the last owner can never leave (tested above).
+select set_config('request.jwt.claim.sub', :'M', false) \gset
+set role authenticated;
+select t.ok('admin can leave the workspace (self-removal)', $q$delete from public.memberships where organization_id=t.o('orga') and user_id=(select id from public.users where auth_subject=auth.uid())$q$);
+select t.err('a user who left cannot add themselves back', $q$insert into public.memberships(organization_id,user_id,role) values (t.o('orga'),(select id from public.users where auth_subject=auth.uid()),'admin')$q$, '42501');
+reset role;
+
 -- ---------- Leads ----------
 select set_config('request.jwt.claim.sub', :'O', false) \gset
 set role authenticated;

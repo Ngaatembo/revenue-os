@@ -21,6 +21,16 @@ function downloadCsvTemplate() {
   URL.revokeObjectURL(url)
 }
 
+
+function downloadPaymentTemplate() {
+  const anchor = document.createElement('a')
+  const url = URL.createObjectURL(new Blob(['invoice_number,payment_reference,currency,amount,received_at\\n'], { type: 'text/csv;charset=utf-8' }))
+  anchor.href = url
+  anchor.download = 'revenue-os-payment-template.csv'
+  anchor.click()
+  URL.revokeObjectURL(url)
+}
+
 function Icon({ name }: { name: string }) {
   const common = { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const, 'aria-hidden': true as const }
   if (name === 'grid') return <svg {...common}><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
@@ -476,4 +486,47 @@ function currencyTotals(records: LeadRecord[]) {
   for (const record of records) totals.set(record.currency, (totals.get(record.currency) ?? 0) + Number(record.value || 0))
   if (!totals.size) return '—'
   return [...totals.entries()].map(([currency, amount]) => `${currency} ${amount.toLocaleString(undefined, { maximumFractionDigits: 2 })}`).join(' · ')
+}
+
+
+function RecoveryOutcomes({ actions, invoices, outcomes, loading, busyId, notice, issues, fileRef, onImport, onVerify }: {
+  actions: RecoveryAction[]
+  invoices: InvoiceEvidence[]
+  outcomes: VerifiedOutcome[]
+  loading: boolean
+  busyId: string
+  notice: string
+  issues: CsvIssue[]
+  fileRef: { current: HTMLInputElement | null }
+  onImport: (file?: File) => void
+  onVerify: (action: RecoveryAction) => void
+}) {
+  const invoiceById = new Map(invoices.map((invoice) => [invoice.id, invoice]))
+  const outcomeByAction = new Map(outcomes.map((outcome) => [outcome.actionId, outcome]))
+  const executedActions = actions.filter((action) => action.status === 'executed')
+  return <div className="outcomes-workspace">
+    <section className="panel outcomes-import-panel">
+      <div className="panel-heading"><div><h2>Import payment evidence</h2><p>Use a payment export from your accounting or payment system. Revenue OS does not invent or infer payments.</p></div><span className="status-pill">Source records</span></div>
+      <div className="payment-import-content">
+        <p className="payment-csv-format"><strong>Required CSV columns</strong><code>invoice_number,payment_reference,currency,amount,received_at</code><small>Each payment reference should be unique within its source. Invoice number and currency must match one saved invoice. Amounts use decimal notation, for example 125.50.</small></p>
+        <input ref={fileRef} className="visually-hidden" type="file" accept=".csv,text/csv" onChange={(event) => onImport(event.target.files?.[0])} />
+        <div className="recovery-action-controls"><button className="button button-primary" type="button" onClick={() => fileRef.current?.click()}>Import payment CSV</button><button className="button button-secondary" type="button" onClick={downloadPaymentTemplate}>Download template</button></div>
+        {notice && <div className="alert alert-success" role="status">{notice}</div>}
+        {issues.length > 0 && <div className="payment-issues"><strong>Rows needing review ({issues.length})</strong><ul>{issues.slice(0, 12).map((issue) => <li key={issue.row}>Row {issue.row}: {issue.message}</li>)}</ul>{issues.length > 12 && <small>Showing first 12 issues.</small>}</div>}
+      </div>
+    </section>
+    <section className="panel outcomes-list-panel">
+      <div className="panel-heading"><div><h2>Verify sent reminders</h2><p>Only payment records received within 30 days after a manually sent reminder are matched. This is observed timing, not proof of causation.</p></div><span className="status-pill">{outcomes.length} verified</span></div>
+      {loading ? <div className="empty-state compact"><h3>Loading verified outcomes…</h3></div> : executedActions.length === 0 ? <div className="empty-state compact"><h3>No sent reminders to verify yet</h3><p>Approve a draft in Actions, send it manually, and record that it was sent before checking for payment evidence.</p></div> : <div className="recovery-action-list">{executedActions.map((action) => {
+        const invoice = invoiceById.get(action.invoiceId)
+        const outcome = outcomeByAction.get(action.id)
+        const busy = busyId === action.id
+        return <article className="recovery-action-card" key={action.id}>
+          <div className="recovery-action-top"><div><strong>{invoice ? invoice.customerName : action.recipientCustomerId}</strong><small>{invoice ? 'Invoice ' + invoice.invoiceNumber : 'Invoice record unavailable'} · Marked sent {action.executedAt ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(action.executedAt)) : ''}</small></div><span className={outcome ? 'action-status action-status-executed' : 'action-status'}>{outcome ? 'Payment matched' : 'Awaiting evidence'}</span></div>
+          {outcome ? <div className="verified-outcome-detail"><strong>{formatMoney(money(outcome.amountMinor, outcome.currency))}</strong><small>{outcome.id} · {new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(outcome.recordedAt))}</small><p>Matched payment records within the measurement window. This amount is evidence-backed, but it is not proof the reminder caused the payment.</p></div> : <p className="recovery-message">No verified outcome has been recorded for this reminder yet. Import the matching payment export, then check again.</p>}
+          <div className="recovery-action-controls"><button className="button button-secondary" type="button" disabled={busy} onClick={() => onVerify(action)}>{busy ? 'Checking…' : outcome ? 'Refresh payment match' : 'Check payment evidence'}</button></div>
+        </article>
+      })}</div>}
+    </section>
+  </div>
 }

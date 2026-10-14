@@ -81,3 +81,12 @@ On Windows PowerShell, use `Copy-Item .env.example .env.local` instead of `cp`. 
 3. Verify payment attribution against source records and distinguish observed outcomes from causal claims.
 4. Add integration tests for authentication, tenant isolation, duplicate imports, partial payments, and failed requests.
 5. Run a supervised pilot with synthetic data first, then a consenting WebAura client once the full financial-data workflow is secure.
+
+## Database tests
+
+`scripts/test-db.sh` replays every file in `supabase/migrations/` into a throwaway Postgres database
+(with minimal stand-ins for the Supabase roles and `auth` schema) and runs `supabase/tests/02_journey.sql`:
+the synthetic invoice-to-verified-outcome journey, tenant isolation, role checks and membership guards.
+All data is synthetic. It needs a Postgres server reachable through the standard `PG*` environment variables
+(`PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`), creates and drops its own database, and refuses to run against a hosted Supabase host.
+Never point it at the real Supabase project.

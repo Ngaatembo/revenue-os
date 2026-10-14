@@ -1,5 +1,5 @@
-import { formatMoney } from './money.ts'
-import type { RevenueOpportunity } from './types.ts'
+import { addMoney, formatMoney, money } from './money.ts'
+import type { Money, RevenueOpportunity } from './types.ts'
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
@@ -76,4 +76,39 @@ export function rankOpportunities(
     || a.opportunity.outstanding.currency.localeCompare(b.opportunity.outstanding.currency)
     || b.opportunity.outstanding.amount - a.opportunity.outstanding.amount
     || a.opportunity.id.localeCompare(b.opportunity.id))
+}
+
+export type AgingBand = { band: UrgencyBand; label: string; amount: Money; count: number }
+export type AgingSummary = { currency: string; total: Money; count: number; bands: AgingBand[] }
+
+const BAND_LABELS: Record<UrgencyBand, string> = { 1: '1–7 days', 2: '8–30 days', 3: '31–60 days', 4: '60+ days' }
+
+/**
+ * Overdue outstanding balances grouped by how late they are, one summary per currency.
+ * Currencies are never added together. Every band is present (possibly zero) so the strip is stable.
+ */
+export function agingSummary(opportunities: RevenueOpportunity[], asOf: string): AgingSummary[] {
+  const byCurrency = new Map<string, Map<UrgencyBand, { amount: Money; count: number }>>()
+  for (const opportunity of opportunities) {
+    const currency = opportunity.outstanding.currency
+    const { band } = urgencyFor(daysOverdue(opportunity.evidence[0].dueAt, asOf))
+    const bands = byCurrency.get(currency) ?? new Map<UrgencyBand, { amount: Money; count: number }>()
+    const current = bands.get(band) ?? { amount: money(0, currency), count: 0 }
+    bands.set(band, { amount: addMoney(current.amount, opportunity.outstanding), count: current.count + 1 })
+    byCurrency.set(currency, bands)
+  }
+  return [...byCurrency.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([currency, bands]) => {
+      const list = ([1, 2, 3, 4] as UrgencyBand[]).map((band) => ({
+        band, label: BAND_LABELS[band],
+        amount: bands.get(band)?.amount ?? money(0, currency), count: bands.get(band)?.count ?? 0,
+      }))
+      return {
+        currency,
+        total: list.reduce((sum, item) => addMoney(sum, item.amount), money(0, currency)),
+        count: list.reduce((sum, item) => sum + item.count, 0),
+        bands: list,
+      }
+    })
 }

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { money } from '../money.ts'
-import { daysOverdue, rankOpportunities, urgencyFor } from '../prioritization.ts'
+import { agingSummary, daysOverdue, rankOpportunities, urgencyFor } from '../prioritization.ts'
 import { draftReminderMessage, sanitizeForDraft } from '../reminderDraft.ts'
 import { buildDashboardSummary } from '../dashboardSummary.ts'
 import { checkInvoiceImportSize, checkLeadCapacity, getPlan, PLANS, BILLING_STATUS } from '../plans.ts'
@@ -123,4 +123,22 @@ test('plans: default plan, unknown plan fallback, limits, and billing is not cla
   assert.equal(over.allowed, false)
   assert.equal(checkLeadCapacity(starter, 49).allowed, true)
   assert.equal(checkLeadCapacity(starter, 50).allowed, false)
+})
+
+test('aging summary groups balances by lateness per currency and never mixes currencies', () => {
+  const list = [
+    opp(invoice('a', '2026-10-10T00:00:00.000Z', 10_000, 0)),            // 4 days
+    opp(invoice('b', '2026-09-20T00:00:00.000Z', 50_000, 10_000)),       // 24 days, 40000 outstanding
+    opp(invoice('c', '2026-09-20T00:00:00.000Z', 5_000, 0)),             // 24 days
+    opp(invoice('d', '2026-06-01T00:00:00.000Z', 70_000, 0)),            // 135 days
+    opp(invoice('z', '2026-09-01T00:00:00.000Z', 9_900, 0, 'ZAR')),      // 43 days
+  ]
+  const summary = agingSummary(list, ASOF)
+  assert.deepEqual(summary.map((s) => s.currency), ['USD', 'ZAR'])
+  const usd = summary[0]
+  assert.deepEqual(usd.bands.map((b) => [b.band, b.amount.amount, b.count]), [[1, 10_000, 1], [2, 45_000, 2], [3, 0, 0], [4, 70_000, 1]])
+  assert.equal(usd.total.amount, 125_000)
+  assert.equal(usd.count, 4)
+  assert.equal(summary[1].bands[2].amount.amount, 9_900)
+  assert.deepEqual(agingSummary([], ASOF), [])
 })

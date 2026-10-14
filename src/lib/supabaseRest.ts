@@ -1,3 +1,6 @@
+import { money } from '../domain/money'
+import type { CurrencyCode, InvoiceEvidence } from '../domain/types'
+
 export type SupabaseUser = { id: string; email?: string }
 export type SupabaseSession = {
   access_token: string
@@ -34,9 +37,6 @@ type DbLead = {
   status: LeadStatus
   created_at: string
 }
-
-import { money } from '../domain/money'
-import type { CurrencyCode, InvoiceEvidence } from '../domain/types'
 
 const SESSION_KEY = 'revenue-os.auth-session'
 const supabaseUrl = ((import.meta.env.VITE_SUPABASE_URL as string | undefined) || 'https://zivgfvcmposnbwqsudas.supabase.co').replace(/\/$/, '')
@@ -324,9 +324,15 @@ export async function loadInvoices(session: SupabaseSession, organizationId: str
     select: 'id,source_id,external_record_id,customer_id,customer_name,invoice_number,currency,total_minor,paid_minor,issued_at,due_at,imported_at',
     organization_id: `eq.${organizationId}`,
     order: 'imported_at.desc',
-    limit: '50000',
   })
-  const rows = await apiRequest<DbInvoice[]>(session, `invoices?${params.toString()}`)
+  const rows: DbInvoice[] = []
+  for (let start = 0; start < 50000; start += 1000) {
+    const page = await apiRequest<DbInvoice[]>(session, `invoices?${params.toString()}`, {
+      headers: { Range: `${start}-${start + 999}`, 'Range-Unit': 'items' },
+    })
+    rows.push(...page)
+    if (page.length < 1000) break
+  }
   return rows.map((row) => ({
     id: row.id,
     customerId: row.customer_id,

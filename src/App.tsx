@@ -24,7 +24,7 @@ function downloadCsvTemplate() {
 
 function downloadPaymentTemplate() {
   const anchor = document.createElement('a')
-  const url = URL.createObjectURL(new Blob(['invoice_number,payment_reference,currency,amount,received_at\\n'], { type: 'text/csv;charset=utf-8' }))
+  const url = URL.createObjectURL(new Blob(['invoice_number,payment_reference,currency,amount,received_at\n'], { type: 'text/csv;charset=utf-8' }))
   anchor.href = url
   anchor.download = 'revenue-os-payment-template.csv'
   anchor.click()

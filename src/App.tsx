@@ -47,6 +47,8 @@ function App() {
   const [recoveryRate, setRecoveryRate] = useState('')
   const [error, setError] = useState('')
   const [importNote, setImportNote] = useState('')
+  const [reviewedActionIds, setReviewedActionIds] = useState<string[]>([])
+  const [outcomes, setOutcomes] = useState<OutcomeRecord[]>([])
 
   const assumptionBps = parseRecoveryRate(recoveryRate)
   const opportunities = useMemo<RevenueOpportunity[]>(() => {
@@ -177,8 +179,8 @@ function App() {
               {issues.length > 0 && <section className="panel issues-panel"><div className="panel-heading"><div><h2>Rows needing attention</h2><p>These rows were skipped; correct the source file and re-import.</p></div><span className="issue-count">{issues.length}</span></div><ul>{issues.slice(0, 8).map((issue) => <li key={`${issue.row}-${issue.message}`}><strong>Row {issue.row}</strong><span>{issue.message}</span></li>)}</ul>{issues.length > 8 && <p className="more-issues">And {issues.length - 8} more row issues.</p>}</section>}
             </>
           ) : activeSection === 'Follow-ups' ? <StalledOpportunities />
-            : activeSection === 'Actions' ? <ActionCenter opportunities={opportunities} />
-            : activeSection === 'Outcomes' ? <OutcomeRegister />
+            : activeSection === 'Actions' ? <ActionCenter opportunities={opportunities} reviewed={reviewedActionIds} setReviewed={setReviewedActionIds} />
+            : activeSection === 'Outcomes' ? <OutcomeRegister records={outcomes} setRecords={setOutcomes} />
             : <BusinessBrain sourceName={sourceName} invoiceCount={invoices.length} issueCount={issues.length} recoveryRate={recoveryRate} setRecoveryRate={setRecoveryRate} assumptionBps={assumptionBps} onDownload={downloadCsvTemplate} />
           )}
 
@@ -199,10 +201,9 @@ function OpportunityRow({ opportunity }: { opportunity: RevenueOpportunity }) {
 export default App
 
 
-type ActionCenterProps = { opportunities: RevenueOpportunity[] }
+type ActionCenterProps = { opportunities: RevenueOpportunity[]; reviewed: string[]; setReviewed: (updater: (current: string[]) => string[]) => void }
 
-function ActionCenter({ opportunities }: ActionCenterProps) {
-  const [reviewed, setReviewed] = useState<string[]>([])
+function ActionCenter({ opportunities, reviewed, setReviewed }: ActionCenterProps) {
   const remaining = opportunities.filter((item) => !reviewed.includes(item.id))
   return (
     <section className="panel functional-panel">
@@ -228,8 +229,9 @@ function ActionCenter({ opportunities }: ActionCenterProps) {
 
 type OutcomeRecord = { id: string; reference: string; amount: string; currency: string; date: string; evidence: string }
 
-function OutcomeRegister() {
-  const [records, setRecords] = useState<OutcomeRecord[]>([])
+type OutcomeRegisterProps = { records: OutcomeRecord[]; setRecords: (updater: (current: OutcomeRecord[]) => OutcomeRecord[]) => void }
+
+function OutcomeRegister({ records, setRecords }: OutcomeRegisterProps) {
   const [reference, setReference] = useState('')
   const [amount, setAmount] = useState('')
   const [currency, setCurrency] = useState('USD')

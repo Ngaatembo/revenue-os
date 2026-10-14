@@ -35,6 +35,9 @@ type DbLead = {
   created_at: string
 }
 
+import { money } from '../domain/money'
+import type { CurrencyCode, InvoiceEvidence } from '../domain/types'
+
 const SESSION_KEY = 'revenue-os.auth-session'
 const supabaseUrl = ((import.meta.env.VITE_SUPABASE_URL as string | undefined) || 'https://zivgfvcmposnbwqsudas.supabase.co').replace(/\/$/, '')
 // Publishable/anon keys are designed for browser use; database access is restricted by RLS.
@@ -247,4 +250,126 @@ export async function signOut(session: SupabaseSession) {
   } finally {
     clearStoredSession()
   }
+}
+
+
+type DbInvoice = {
+  id: string
+  source_id: string
+  external_record_id: string
+  customer_id: string
+  customer_name: string
+  invoice_number: string
+  currency: string
+  total_minor: number | string
+  paid_minor: number | string
+  issued_at: string
+  due_at: string
+  imported_at: string
+}
+
+export async function sha256Hex(value: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')
+}
+
+export async function persistInvoiceImport(
+  session: SupabaseSession,
+  organization: RevenueOrganization,
+  input: {
+    sourceId: string
+    sourceName: string
+    contentHash: string
+    invoices: InvoiceEvidence[]
+    rejectedRows: number
+  },
+): Promise<{ duplicate: boolean; importId: string; acceptedRows: number; rejectedRows: number }> {
+  const rows = input.invoices.map((invoice) => ({
+    id: invoice.id,
+    invoiceNumber: invoice.invoiceNumber,
+    customerId: invoice.customerId,
+    customerName: invoice.customerName,
+    currency: invoice.currency,
+    totalMinor: invoice.total.amount,
+    paidMinor: invoice.paid.amount,
+    issuedAt: invoice.issuedAt,
+    dueAt: invoice.dueAt,
+    importedAt: invoice.source.importedAt,
+  }))
+  const result = await apiRequest<{ duplicate: boolean; import_id: string; accepted_rows: number; rejected_rows: number }>(
+    session,
+    'rpc/persist_invoice_import',
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        org_id: organization.id,
+        source_id: input.sourceId,
+        source_name: input.sourceName,
+        content_hash: input.contentHash,
+        rows,
+        rejected_rows: input.rejectedRows,
+      }),
+    },
+  )
+  return {
+    duplicate: result.duplicate,
+    importId: result.import_id,
+    acceptedRows: result.accepted_rows,
+    rejectedRows: result.rejected_rows,
+  }
+}
+
+export async function loadInvoices(session: SupabaseSession, organizationId: string): Promise<InvoiceEvidence[]> {
+  const params = new URLSearchParams({
+    select: 'id,source_id,external_record_id,customer_id,customer_name,invoice_number,currency,total_minor,paid_minor,issued_at,due_at,imported_at',
+    organization_id: `eq.${organizationId}`,
+    order: 'imported_at.desc',
+    limit: '50000',
+  })
+  const rows = await apiRequest<DbInvoice[]>(session, `invoices?${params.toString()}`)
+  return rows.map((row) => ({
+    id: row.id,
+    customerId: row.customer_id,
+    customerName: row.customer_name,
+    invoiceNumber: row.invoice_number,
+    currency: row.currency as CurrencyCode,
+    total: money(Number(row.total_minor), row.currency),
+    paid: money(Number(row.paid_minor), row.currency),
+    issuedAt: row.issued_at,
+    dueAt: row.due_at,
+    source: {
+      sourceId: row.source_id,
+      recordId: row.external_record_id,
+      importedAt: row.imported_at,
+    },
+  }))
+}
+
+export async function loadRecoveryRate(session: SupabaseSession, organizationId: string): Promise<number | null> {
+  const params = new URLSearchParams({
+    select: 'value_bps',
+    organization_id: `eq.${organizationId}`,
+    id: 'eq.recovery-rate',
+    limit: '1',
+  })
+  const rows = await apiRequest<Array<{ value_bps: number }>>(session, `assumptions?${params.toString()}`)
+  return rows[0] ? Number(rows[0].value_bps) : null
+}
+
+export async function saveRecoveryRate(session: SupabaseSession, organization: RevenueOrganization, valueBps: number): Promise<void> {
+  if (!Number.isInteger(valueBps) || valueBps < 0 || valueBps > 10000) {
+    throw new Error('Recovery rate must be between 0 and 100 percent.')
+  }
+  await apiRequest<unknown>(session, 'assumptions?on_conflict=organization_id,id', {
+    method: 'POST',
+    headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+    body: JSON.stringify({
+      organization_id: organization.id,
+      id: 'recovery-rate',
+      assumption_key: 'recovery_rate',
+      value_bps: valueBps,
+      updated_by: organization.userId,
+      updated_at: new Date().toISOString(),
+    }),
+  })
 }

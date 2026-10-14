@@ -270,7 +270,7 @@ function LeadRecovery({ leads, setLeads, session, organization, loading, loadErr
   async function addLead(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const amount = value.trim() ? Number(value) : null
-    if (!name.trim() || !business.trim() || (value.trim() && (!Number.isFinite(amount) || amount === null || amount < 0))) {
+    if (!name.trim() || !business.trim() || (value.trim() && (amount === null || !Number.isFinite(amount) || amount < 0))) {
       setNotice('Enter a contact name, business, and a valid non-negative opportunity value.')
       return
     }

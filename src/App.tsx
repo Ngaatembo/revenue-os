@@ -1,8 +1,9 @@
-import { useMemo, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { buildOverdueOpportunities } from './domain/overdueInvoices'
 import { parseInvoiceCsv, type CsvIssue } from './domain/invoiceCsv'
 import { addMoney, formatMoney, money } from './domain/money'
 import type { InvoiceEvidence, RevenueOpportunity } from './domain/types'
+import { createSalesLead, deleteSalesLead, loadSalesLeads, updateSalesLead, type RevenueOrganization, type SalesLead, type SupabaseSession } from './lib/supabaseRest'
 import './App.css'
 
 type Section = 'Overview' | 'Opportunities' | 'Lead Recovery' | 'Actions' | 'Outcomes' | 'Business Brain'
@@ -37,10 +38,10 @@ function parseRecoveryRate(value: string): number | null {
   return Math.round(percentage * 100)
 }
 
-type LeadStatus = 'new' | 'follow_up' | 'contacted' | 'converted' | 'closed'
-type LeadRecord = { id: string; name: string; business: string; contact: string; source: string; value: string; currency: string; nextFollowUp: string; notes: string; status: LeadStatus; createdAt: string }
+type LeadRecord = SalesLead
+type LeadStatus = SalesLead['status']
 
-function App() {
+function App({ session, organization, onSignOut }: { session: SupabaseSession; organization: RevenueOrganization; onSignOut: () => void }) {
   const fileRef = useRef<HTMLInputElement>(null)
   const [activeSection, setActiveSection] = useState<Section>('Overview')
   const [invoices, setInvoices] = useState<InvoiceEvidence[]>([])
@@ -50,6 +51,19 @@ function App() {
   const [error, setError] = useState('')
   const [importNote, setImportNote] = useState('')
   const [leads, setLeads] = useState<LeadRecord[]>([])
+  const [leadLoading, setLeadLoading] = useState(true)
+  const [leadError, setLeadError] = useState('')
+
+  useEffect(() => {
+    let cancelled = false
+    setLeadLoading(true)
+    setLeadError('')
+    loadSalesLeads(session, organization.id)
+      .then((records) => { if (!cancelled) setLeads(records) })
+      .catch((cause) => { if (!cancelled) setLeadError(cause instanceof Error ? cause.message : 'Could not load saved leads.') })
+      .finally(() => { if (!cancelled) setLeadLoading(false) })
+    return () => { cancelled = true }
+  }, [session, organization.id])
 
   const assumptionBps = parseRecoveryRate(recoveryRate)
   const opportunities = useMemo<RevenueOpportunity[]>(() => {
@@ -109,7 +123,7 @@ function App() {
         </a>
         <div className="workspace-switcher">
           <span className="workspace-avatar">W</span>
-          <span className="workspace-copy"><strong>Workspace</strong><small>Local preview</small></span>
+          <span className="workspace-copy"><strong>{organization.name}</strong><small>Supabase workspace</small></span>
           <span className="chevron" aria-hidden="true">⌄</span>
         </div>
         <p className="nav-label">WORKSPACE</p>
@@ -124,14 +138,14 @@ function App() {
         </nav>
         <div className="sidebar-bottom">
           <div className="sidebar-rule" />
-          <div className="user-chip"><span className="user-avatar">U</span><span><strong>Local session</strong><small>Not signed in</small></span><span className="more">···</span></div>
+          <div className="user-chip"><span className="user-avatar">{(session.user.email?.[0] || 'U').toUpperCase()}</span><span><strong>{session.user.email || 'Signed in'}</strong><small>Workspace member</small></span><span className="more">···</span></div>
         </div>
       </aside>
 
       <main className="main-area" id="overview">
         <header className="topbar">
           <div className="breadcrumbs"><span>Workspace</span><span className="crumb-separator">/</span><strong>{activeSection}</strong></div>
-          <div className="topbar-right"><span className="connection-state"><i /> No data source connected</span><span className="topbar-avatar">U</span></div>
+          <div className="topbar-right"><span className="connection-state"><i /> Supabase connected</span><button className="button button-secondary" type="button" onClick={onSignOut}>Sign out</button><span className="topbar-avatar">{(session.user.email?.[0] || 'U').toUpperCase()}</span></div>
         </header>
 
         <div className="page-content">
@@ -141,7 +155,7 @@ function App() {
             <input ref={fileRef} className="visually-hidden" type="file" accept=".csv,text/csv" onChange={(event) => void importFile(event.target.files?.[0])} />
           </div>
 
-          <div className="preview-banner"><span className="preview-dot" />Local preview <span className="preview-divider">·</span> Imported data stays in this browser tab and is cleared when you leave.</div>
+          <div className="preview-banner"><span className="preview-dot" />Workspace connected <span className="preview-divider">·</span> Lead records sync to Supabase; invoice imports remain local to this tab for now.</div>
 
           {error && <div className="alert alert-error" role="alert"><strong>Import failed.</strong> {error}</div>}
           {importNote && <div className="alert alert-success" role="status"><strong>Import complete.</strong> {importNote}</div>}
@@ -179,7 +193,7 @@ function App() {
 
               {issues.length > 0 && <section className="panel issues-panel"><div className="panel-heading"><div><h2>Rows needing attention</h2><p>These rows were skipped; correct the source file and re-import.</p></div><span className="issue-count">{issues.length}</span></div><ul>{issues.slice(0, 8).map((issue) => <li key={`${issue.row}-${issue.message}`}><strong>Row {issue.row}</strong><span>{issue.message}</span></li>)}</ul>{issues.length > 8 && <p className="more-issues">And {issues.length - 8} more row issues.</p>}</section>}
             </>
-          ) : activeSection === 'Lead Recovery' ? <LeadRecovery leads={leads} setLeads={setLeads} /> : (
+          ) : activeSection === 'Lead Recovery' ? <LeadRecovery leads={leads} setLeads={setLeads} session={session} organization={organization} loading={leadLoading} loadError={leadError} /> : (
             <section className="panel section-placeholder"><span className="empty-icon"><Icon name={activeSection === 'Actions' ? 'check' : activeSection === 'Outcomes' ? 'chart' : 'brain'} /></span><h2>{activeSection} will follow your source data</h2><p>{activeSection === 'Actions' ? 'Actions will only be proposed from a real opportunity and will require human approval before execution.' : activeSection === 'Outcomes' ? 'Verified outcomes will be recorded separately from estimates and linked to payment evidence.' : 'The Business Brain will hold sourced facts, explicit assumptions, and import history.'}</p>{activeSection === 'Business Brain' && <div id="csv-format" className="format-box"><strong>Invoice CSV columns</strong><code>customer_id, customer_name, invoice_number, currency, total_amount, paid_amount, issued_at, due_at</code><small>Amounts use a decimal point and up to two decimal places. Currency must be a three-letter code such as USD.</small></div>}</section>
           )}
 
@@ -200,7 +214,7 @@ function OpportunityRow({ opportunity }: { opportunity: RevenueOpportunity }) {
 export default App
 
 
-function LeadRecovery({ leads, setLeads }: { leads: LeadRecord[]; setLeads: (updater: (current: LeadRecord[]) => LeadRecord[]) => void }) {
+function LeadRecovery({ leads, setLeads, session, organization, loading, loadError }: { leads: LeadRecord[]; setLeads: (updater: (current: LeadRecord[]) => LeadRecord[]) => void; session: SupabaseSession; organization: RevenueOrganization; loading: boolean; loadError: string }) {
   const [name, setName] = useState('')
   const [business, setBusiness] = useState('')
   const [contact, setContact] = useState('')
@@ -210,22 +224,54 @@ function LeadRecovery({ leads, setLeads }: { leads: LeadRecord[]; setLeads: (upd
   const [nextFollowUp, setNextFollowUp] = useState(new Date().toISOString().slice(0, 10))
   const [notes, setNotes] = useState('')
   const [notice, setNotice] = useState('')
+  const [saving, setSaving] = useState(false)
   const [filter, setFilter] = useState<'all' | LeadStatus>('all')
 
-  function addLead(event: FormEvent<HTMLFormElement>) {
+  async function addLead(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    const amount = value.trim() ? Number(value) : 0
-    if (!name.trim() || !business.trim() || (value.trim() && (!Number.isFinite(amount) || amount < 0))) {
+    const amount = value.trim() ? Number(value) : null
+    if (!name.trim() || !business.trim() || (value.trim() && (!Number.isFinite(amount) || amount === null || amount < 0))) {
       setNotice('Enter a contact name, business, and a valid non-negative opportunity value.')
       return
     }
-    setLeads((current) => [{ id: `lead-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, name: name.trim(), business: business.trim(), contact: contact.trim(), source, value: amount.toFixed(2), currency, nextFollowUp, notes: notes.trim(), status: 'new', createdAt: new Date().toISOString() }, ...current])
-    setName(''); setBusiness(''); setContact(''); setValue(''); setNotes('')
-    setNotice('Lead added to this browser session. No message has been sent.')
+    const record: LeadRecord = {
+      id: 'lead-' + crypto.randomUUID(),
+      name: name.trim(), business: business.trim(), contact: contact.trim(), source,
+      value: amount === null ? '' : amount.toFixed(2), currency, nextFollowUp, notes: notes.trim(),
+      status: 'new', createdAt: new Date().toISOString(),
+    }
+    setSaving(true)
+    setNotice('')
+    try {
+      const saved = await createSalesLead(session, organization, record)
+      setLeads((current) => [saved, ...current])
+      setName(''); setBusiness(''); setContact(''); setValue(''); setNotes('')
+      setNotice('Lead saved to your workspace. No message has been sent.')
+    } catch (cause) {
+      setNotice(cause instanceof Error ? cause.message : 'The lead could not be saved.')
+    } finally { setSaving(false) }
   }
 
-  function updateStatus(id: string, status: LeadStatus) {
-    setLeads((current) => current.map((lead) => lead.id === id ? { ...lead, status } : lead))
+  async function updateStatus(id: string, status: LeadStatus) {
+    const previous = leads.find((lead) => lead.id === id)
+    if (!previous || previous.status === status) return
+    try {
+      await updateSalesLead(session, organization.id, id, { status })
+      setLeads((current) => current.map((lead) => lead.id === id ? { ...lead, status } : lead))
+      setNotice('Lead status saved.')
+    } catch (cause) {
+      setNotice(cause instanceof Error ? cause.message : 'The status could not be saved.')
+    }
+  }
+
+  async function removeLead(id: string) {
+    try {
+      await deleteSalesLead(session, organization.id, id)
+      setLeads((current) => current.filter((lead) => lead.id !== id))
+      setNotice('Lead removed from the workspace.')
+    } catch (cause) {
+      setNotice(cause instanceof Error ? cause.message : 'The lead could not be removed.')
+    }
   }
 
   const active = leads.filter((lead) => lead.status !== 'converted' && lead.status !== 'closed')
@@ -235,15 +281,15 @@ function LeadRecovery({ leads, setLeads }: { leads: LeadRecord[]; setLeads: (upd
   const statusLabel: Record<LeadStatus, string> = { new: 'New', follow_up: 'Follow-up due', contacted: 'Contacted', converted: 'Converted', closed: 'Closed' }
 
   return <div className="lead-workspace">
-    <section className="lead-intro panel"><div><p className="eyebrow">REVENUE RECOVERY</p><h2>Lead Recovery</h2><p>Capture enquiries, schedule follow-ups, and track which opportunities turn into revenue.</p></div><span className="lead-local-pill">LOCAL SESSION</span></section>
+    <section className="lead-intro panel"><div><p className="eyebrow">REVENUE RECOVERY</p><h2>Lead Recovery</h2><p>Capture enquiries, schedule follow-ups, and track which opportunities turn into revenue.</p></div><span className="lead-local-pill">SUPABASE SYNC</span></section>
     <section className="lead-metrics" aria-label="Lead recovery metrics">
-      <article className="lead-metric"><span>Total leads</span><strong>{leads.length}</strong><small>Captured in this session</small></article>
+      <article className="lead-metric"><span>Total leads</span><strong>{leads.length}</strong><small>Saved in your workspace</small></article>
       <article className="lead-metric"><span>Active pipeline</span><strong>{currencyTotals(leads.filter((lead) => lead.status !== 'converted' && lead.status !== 'closed'))}</strong><small>Potential value, not revenue</small></article>
       <article className="lead-metric"><span>Converted value</span><strong>{currencyTotals(leads.filter((lead) => lead.status === 'converted'))}</strong><small>Marked converted by you</small></article>
       <article className="lead-metric"><span>Follow-ups today / overdue</span><strong>{active.filter((lead) => lead.nextFollowUp <= new Date().toISOString().slice(0, 10)).length}</strong><small>Due-date check</small></article>
     </section>
     <section className="panel lead-form-panel"><div className="panel-heading"><div><h2>Add an opportunity</h2><p>Record a lead and its next action. Messages are not sent automatically.</p></div></div>
-      <form className="lead-form" onSubmit={addLead}>
+      <form className="lead-form" onSubmit={(event) => void addLead(event)}>
         <label>Contact name<input value={name} onChange={(e) => setName(e.target.value)} required maxLength={120} placeholder="e.g. Tendai M." /></label>
         <label>Business name<input value={business} onChange={(e) => setBusiness(e.target.value)} required maxLength={160} placeholder="e.g. ABC Guest House" /></label>
         <label>Phone / email<input value={contact} onChange={(e) => setContact(e.target.value)} maxLength={160} placeholder="Optional contact details" /></label>
@@ -252,17 +298,18 @@ function LeadRecovery({ leads, setLeads }: { leads: LeadRecord[]; setLeads: (upd
         <label>Currency<select value={currency} onChange={(e) => setCurrency(e.target.value)}><option>USD</option><option>ZIG</option><option>ZAR</option><option>GBP</option><option>EUR</option></select></label>
         <label>Next follow-up date<input type="date" value={nextFollowUp} onChange={(e) => setNextFollowUp(e.target.value)} required /></label>
         <label className="lead-wide">Notes / next action<input value={notes} onChange={(e) => setNotes(e.target.value)} maxLength={500} placeholder="e.g. Call to confirm website feedback" /></label>
-        <div className="lead-form-actions"><button className="button button-primary" type="submit">Add lead</button><span>Store only the contact information needed to follow up.</span></div>
+        <div className="lead-form-actions"><button className="button button-primary" type="submit" disabled={saving}>{saving ? "Saving…" : "Add lead"}</button><span>Store only the contact information needed to follow up.</span></div>
       </form>
+      {loadError && <p className="lead-notice lead-error" role="alert">{loadError}</p>}
       {notice && <p className="lead-notice" role="status">{notice}</p>}
     </section>
     <section className="panel lead-list-panel"><div className="panel-heading"><div><h2>Follow-up queue</h2><p>Sort by next follow-up date and update the status after each real interaction.</p></div><span className="status-pill">{active.length} active</span></div>
       <div className="lead-filter-row"><label htmlFor="lead-filter">Show</label><select id="lead-filter" value={filter} onChange={(e) => setFilter(e.target.value as 'all' | LeadStatus)}><option value="all">All leads</option><option value="new">New</option><option value="follow_up">Follow-up due</option><option value="contacted">Contacted</option><option value="converted">Converted</option><option value="closed">Closed</option></select></div>
-      {visible.length === 0 ? <div className="empty-state compact"><span className="empty-icon"><Icon name="check" /></span><h3>No leads in this view</h3><p>Add a prospect above. Follow-up records stay in this browser tab for now.</p></div> : <div className="lead-list">{visible.map((lead) => {
+      {loading ? <div className="empty-state compact"><h3>Loading saved leads…</h3><p>Retrieving records for this workspace.</p></div> : visible.length === 0 ? <div className="empty-state compact"><span className="empty-icon"><Icon name="check" /></span><h3>No leads in this view</h3><p>Add a prospect above. Saved leads will be available when you sign in again.</p></div> : <div className="lead-list">{visible.map((lead) => {
         const due = lead.status !== 'converted' && lead.status !== 'closed' && lead.nextFollowUp <= new Date().toISOString().slice(0, 10)
-        return <article className="lead-row" key={lead.id}><div className="lead-row-main"><div className="lead-row-title"><strong>{lead.business}</strong><span className={`lead-status lead-status-${lead.status}`}>{statusLabel[lead.status]}</span>{due && <span className="lead-due">Due</span>}</div><p>{lead.name}{lead.contact ? ` · ${lead.contact}` : ''} · Source: {lead.source}</p><small>Next follow-up: {lead.nextFollowUp}{lead.notes ? ` · ${lead.notes}` : ''}</small></div><div className="lead-row-side"><strong>{lead.currency} {Number(lead.value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong><label>Status<select aria-label={`Status for ${lead.business}`} value={lead.status} onChange={(e) => updateStatus(lead.id, e.target.value as LeadStatus)}><option value="new">New</option><option value="follow_up">Follow-up due</option><option value="contacted">Contacted</option><option value="converted">Converted</option><option value="closed">Closed</option></select></label><button type="button" className="template-link" onClick={() => setLeads((current) => current.filter((item) => item.id !== lead.id))}>Remove</button></div></article>
+        return <article className="lead-row" key={lead.id}><div className="lead-row-main"><div className="lead-row-title"><strong>{lead.business}</strong><span className={`lead-status lead-status-${lead.status}`}>{statusLabel[lead.status]}</span>{due && <span className="lead-due">Due</span>}</div><p>{lead.name}{lead.contact ? ` · ${lead.contact}` : ''} · Source: {lead.source}</p><small>Next follow-up: {lead.nextFollowUp}{lead.notes ? ` · ${lead.notes}` : ''}</small></div><div className="lead-row-side"><strong>{lead.currency} {Number(lead.value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong><label>Status<select aria-label={`Status for ${lead.business}`} value={lead.status} onChange={(e) => void updateStatus(lead.id, e.target.value as LeadStatus)}><option value="new">New</option><option value="follow_up">Follow-up due</option><option value="contacted">Contacted</option><option value="converted">Converted</option><option value="closed">Closed</option></select></label><button type="button" className="template-link" onClick={() => void removeLead(lead.id)}>Remove</button></div></article>
       })}</div>}
-      <p className="lead-disclaimer">Pipeline value is an estimate. Converted value is a user-marked outcome, not independently verified cash. This prototype does not send messages, connect to WhatsApp, or persist records to a database.</p>
+      <p className="lead-disclaimer">Pipeline value is an estimate. Converted value is user-marked, not independently verified cash. Leads are stored in your Supabase workspace; this prototype does not send messages or connect to WhatsApp.</p>
     </section>
   </div>
 }

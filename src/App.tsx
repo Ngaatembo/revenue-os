@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { buildOverdueOpportunities } from './domain/overdueInvoices'
 import { parseInvoiceCsv, type CsvIssue } from './domain/invoiceCsv'
+import { parsePaymentCsv } from './domain/paymentCsv'
 import { addMoney, formatMoney, money } from './domain/money'
 import type { InvoiceEvidence, RevenueOpportunity } from './domain/types'
-import { createSalesLead, deleteSalesLead, loadInvoices, loadRecoveryRate, loadSalesLeads, persistInvoiceImport, saveRecoveryRate, sha256Hex, updateSalesLead, type RevenueOrganization, type SalesLead, type SupabaseSession, type RecoveryAction, loadRecoveryActions, proposeInvoiceReminder, transitionRecoveryAction } from './lib/supabaseRest'
+import { createSalesLead, deleteSalesLead, loadInvoices, loadRecoveryRate, loadSalesLeads, persistInvoiceImport, saveRecoveryRate, sha256Hex, updateSalesLead, type RevenueOrganization, type SalesLead, type SupabaseSession, type RecoveryAction, type VerifiedOutcome, loadRecoveryActions, loadVerifiedOutcomes, persistPaymentImport, proposeInvoiceReminder, transitionRecoveryAction, verifyRecoveryOutcome } from './lib/supabaseRest'
 import './App.css'
 
 type Section = 'Overview' | 'Opportunities' | 'Lead Recovery' | 'Actions' | 'Outcomes' | 'Business Brain'
@@ -43,6 +44,7 @@ type LeadStatus = SalesLead['status']
 
 function App({ session, organization, onSignOut }: { session: SupabaseSession; organization: RevenueOrganization; onSignOut: () => void }) {
   const fileRef = useRef<HTMLInputElement>(null)
+  const paymentFileRef = useRef<HTMLInputElement>(null)
   const [activeSection, setActiveSection] = useState<Section>('Overview')
   const [invoices, setInvoices] = useState<InvoiceEvidence[]>([])
   const [issues, setIssues] = useState<CsvIssue[]>([])
@@ -57,6 +59,10 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
   const [actionsLoading, setActionsLoading] = useState(true)
   const [actionBusy, setActionBusy] = useState('')
   const [actionNotice, setActionNotice] = useState('')
+  const [verifiedOutcomes, setVerifiedOutcomes] = useState<VerifiedOutcome[]>([])
+  const [outcomesLoading, setOutcomesLoading] = useState(true)
+  const [paymentNotice, setPaymentNotice] = useState('')
+  const [paymentIssues, setPaymentIssues] = useState<CsvIssue[]>([])
 
   useEffect(() => {
     let cancelled = false
@@ -129,6 +135,55 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
       setActionNotice(transition === 'approve' ? 'Reminder approved. It has not been sent.' : transition === 'mark_sent' ? 'Marked as manually sent. No message was sent by Revenue OS.' : 'Reminder draft cancelled.')
     } catch (cause) {
       setActionNotice(cause instanceof Error ? cause.message : 'Could not update this action.')
+    } finally { setActionBusy('') }
+  }
+
+  useEffect(() => {
+    let cancelled = false
+    loadVerifiedOutcomes(session, organization.id)
+      .then((records) => { if (!cancelled) setVerifiedOutcomes(records) })
+      .catch((cause) => { if (!cancelled) setPaymentNotice(cause instanceof Error ? cause.message : 'Could not load verified outcomes.') })
+      .finally(() => { if (!cancelled) setOutcomesLoading(false) })
+    return () => { cancelled = true }
+  }, [session, organization.id])
+
+  async function handleImportPayments(file?: File) {
+    if (!file) return
+    setPaymentNotice('')
+    setPaymentIssues([])
+    try {
+      const text = await file.text()
+      const parsed = parsePaymentCsv(text)
+      setPaymentIssues(parsed.issues)
+      if (!parsed.payments.length) {
+        setPaymentNotice('No valid payment rows were saved. Correct the row issues and try again.')
+        return
+      }
+      const result = await persistPaymentImport(session, organization, {
+        sourceId: 'payments:' + file.name.trim().slice(0, 180),
+        sourceName: file.name,
+        contentHash: await sha256Hex(text),
+        payments: parsed.payments,
+        rejectedRows: parsed.issues.length,
+      })
+      setPaymentNotice(result.duplicate ? 'This exact payment file was already imported.' : result.acceptedRows + ' payment record(s) saved as evidence.' + (result.rejectedRows ? ' ' + result.rejectedRows + ' invalid row(s) were skipped.' : ''))
+      setVerifiedOutcomes(await loadVerifiedOutcomes(session, organization.id))
+    } catch (cause) {
+      setPaymentNotice(cause instanceof Error ? cause.message : 'Could not import payment evidence.')
+    } finally {
+      if (paymentFileRef.current) paymentFileRef.current.value = ''
+    }
+  }
+
+  async function handleVerifyOutcome(action: RecoveryAction) {
+    setActionBusy(action.id)
+    setPaymentNotice('')
+    try {
+      const result = await verifyRecoveryOutcome(session, organization.id, action.id, 30)
+      setVerifiedOutcomes(await loadVerifiedOutcomes(session, organization.id))
+      setPaymentNotice(result.verified ? 'Matched ' + (result.paymentCount ?? 0) + ' payment record(s). The verified outcome is saved; timing does not prove the reminder caused payment.' : result.reason || 'No matching payment evidence was found.')
+    } catch (cause) {
+      setPaymentNotice(cause instanceof Error ? cause.message : 'Could not verify payment evidence.')
     } finally { setActionBusy('') }
   }
 
@@ -273,7 +328,7 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
 
               {issues.length > 0 && <section className="panel issues-panel"><div className="panel-heading"><div><h2>Rows needing attention</h2><p>These rows were skipped; correct the source file and re-import.</p></div><span className="issue-count">{issues.length}</span></div><ul>{issues.slice(0, 8).map((issue) => <li key={`${issue.row}-${issue.message}`}><strong>Row {issue.row}</strong><span>{issue.message}</span></li>)}</ul>{issues.length > 8 && <p className="more-issues">And {issues.length - 8} more row issues.</p>}</section>}
             </>
-          ) : activeSection === 'Lead Recovery' ? <LeadRecovery leads={leads} setLeads={setLeads} session={session} organization={organization} loading={leadLoading} loadError={leadError} /> : activeSection === 'Actions' ? <RecoveryActions actions={recoveryActions} invoices={invoices} loading={actionsLoading} busyId={actionBusy} notice={actionNotice} onTransition={(action, transition) => void handleActionTransition(action, transition)} /> : (
+          ) : activeSection === 'Lead Recovery' ? <LeadRecovery leads={leads} setLeads={setLeads} session={session} organization={organization} loading={leadLoading} loadError={leadError} /> : activeSection === 'Actions' ? <RecoveryActions actions={recoveryActions} invoices={invoices} loading={actionsLoading} busyId={actionBusy} notice={actionNotice} onTransition={(action, transition) => void handleActionTransition(action, transition)} /> : activeSection === 'Outcomes' ? <RecoveryOutcomes actions={recoveryActions} invoices={invoices} outcomes={verifiedOutcomes} loading={outcomesLoading} busyId={actionBusy} notice={paymentNotice} issues={paymentIssues} fileRef={paymentFileRef} onImport={(file) => void handleImportPayments(file)} onVerify={(action) => void handleVerifyOutcome(action)} /> : (
             <section className="panel section-placeholder"><span className="empty-icon"><Icon name={activeSection === 'Actions' ? 'check' : activeSection === 'Outcomes' ? 'chart' : 'brain'} /></span><h2>{activeSection} will follow your source data</h2><p>{activeSection === 'Actions' ? 'Actions will only be proposed from a real opportunity and will require human approval before execution.' : activeSection === 'Outcomes' ? 'Verified outcomes will be recorded separately from estimates and linked to payment evidence.' : 'The Business Brain will hold sourced facts, explicit assumptions, and import history.'}</p>{activeSection === 'Business Brain' && <div id="csv-format" className="format-box"><strong>Invoice CSV columns</strong><code>customer_id, customer_name, invoice_number, currency, total_amount, paid_amount, issued_at, due_at</code><small>Amounts use a decimal point and up to two decimal places. Currency must be a three-letter code such as USD.</small></div>}</section>
           )}
 

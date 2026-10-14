@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useMemo, useRef, useState, type FormEvent } from 'react'
 import StalledOpportunities from './components/StalledOpportunities'
 import { buildOverdueOpportunities } from './domain/overdueInvoices'
 import { parseInvoiceCsv, type CsvIssue } from './domain/invoiceCsv'
@@ -17,7 +17,7 @@ function downloadCsvTemplate() {
   link.href = url
   link.download = 'revenue-os-invoice-template.csv'
   link.click()
-  URL.revokeObjectURL(url)
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
 function Icon({ name }: { name: string }) {
@@ -47,6 +47,8 @@ function App() {
   const [recoveryRate, setRecoveryRate] = useState('')
   const [error, setError] = useState('')
   const [importNote, setImportNote] = useState('')
+  const [reviewedActionIds, setReviewedActionIds] = useState<string[]>([])
+  const [outcomes, setOutcomes] = useState<OutcomeRecord[]>([])
 
   const assumptionBps = parseRecoveryRate(recoveryRate)
   const opportunities = useMemo<RevenueOpportunity[]>(() => {
@@ -107,7 +109,6 @@ function App() {
         <div className="workspace-switcher">
           <span className="workspace-avatar">W</span>
           <span className="workspace-copy"><strong>Workspace</strong><small>Local preview</small></span>
-          <span className="chevron" aria-hidden="true">⌄</span>
         </div>
         <p className="nav-label">WORKSPACE</p>
         <nav className="primary-nav">
@@ -121,7 +122,7 @@ function App() {
         </nav>
         <div className="sidebar-bottom">
           <div className="sidebar-rule" />
-          <div className="user-chip"><span className="user-avatar">U</span><span><strong>Local session</strong><small>Not signed in</small></span><span className="more">···</span></div>
+          <div className="user-chip"><span className="user-avatar">U</span><span><strong>Local session</strong><small>Not signed in</small></span></div>
         </div>
       </aside>
 
@@ -176,8 +177,10 @@ function App() {
 
               {issues.length > 0 && <section className="panel issues-panel"><div className="panel-heading"><div><h2>Rows needing attention</h2><p>These rows were skipped; correct the source file and re-import.</p></div><span className="issue-count">{issues.length}</span></div><ul>{issues.slice(0, 8).map((issue) => <li key={`${issue.row}-${issue.message}`}><strong>Row {issue.row}</strong><span>{issue.message}</span></li>)}</ul>{issues.length > 8 && <p className="more-issues">And {issues.length - 8} more row issues.</p>}</section>}
             </>
-          ) : activeSection === 'Follow-ups' ? <StalledOpportunities /> : (
-            <section className="panel section-placeholder"><span className="empty-icon"><Icon name={activeSection === 'Actions' ? 'check' : activeSection === 'Outcomes' ? 'chart' : 'brain'} /></span><h2>{activeSection} will follow your source data</h2><p>{activeSection === 'Actions' ? 'Actions will only be proposed from a real opportunity and will require human approval before execution.' : activeSection === 'Outcomes' ? 'Verified outcomes will be recorded separately from estimates and linked to payment evidence.' : 'The Business Brain will hold sourced facts, explicit assumptions, and import history.'}</p>{activeSection === 'Business Brain' && <div id="csv-format" className="format-box"><strong>Invoice CSV columns</strong><code>customer_id, customer_name, invoice_number, currency, total_amount, paid_amount, issued_at, due_at</code><small>Amounts use a decimal point and up to two decimal places. Currency must be a three-letter code such as USD.</small></div>}</section>
+          ) : activeSection === 'Follow-ups' ? <StalledOpportunities />
+            : activeSection === 'Actions' ? <ActionCenter opportunities={opportunities} reviewed={reviewedActionIds} setReviewed={setReviewedActionIds} />
+            : activeSection === 'Outcomes' ? <OutcomeRegister opportunities={opportunities} records={outcomes} setRecords={setOutcomes} />
+            : <BusinessBrain sourceName={sourceName} invoiceCount={invoices.length} issueCount={issues.length} recoveryRate={recoveryRate} setRecoveryRate={setRecoveryRate} assumptionBps={assumptionBps} onDownload={downloadCsvTemplate} />
           )}
 
           <footer className="page-footer"><span>Revenue OS</span><span>Estimates and verified revenue are kept separate.</span></footer>
@@ -195,3 +198,168 @@ function OpportunityRow({ opportunity }: { opportunity: RevenueOpportunity }) {
 }
 
 export default App
+
+
+type ActionCenterProps = { opportunities: RevenueOpportunity[]; reviewed: string[]; setReviewed: (updater: (current: string[]) => string[]) => void }
+
+function ActionCenter({ opportunities, reviewed, setReviewed }: ActionCenterProps) {
+  const remaining = opportunities.filter((item) => !reviewed.includes(item.id))
+  return (
+    <section className="panel functional-panel">
+      <div className="panel-heading"><div><h2>Action queue</h2><p>Review each overdue invoice before deciding what to do next.</p></div><span className="status-pill">{remaining.length} to review</span></div>
+      {opportunities.length === 0 ? (
+        <div className="empty-state"><span className="empty-icon"><Icon name="check" /></span><h3>No actions to review yet</h3><p>Import invoice data and set a recovery-rate assumption to generate review tasks.</p></div>
+      ) : (
+        <div className="functional-list">
+          {opportunities.map((item) => {
+            const invoice = item.evidence[0]
+            const isReviewed = reviewed.includes(item.id)
+            return <article className={'functional-row ' + (isReviewed ? 'is-complete' : '')} key={item.id}>
+              <div className="functional-row-copy"><strong>{invoice.customerName} · Invoice {invoice.invoiceNumber}</strong><p>Outstanding {formatMoney(item.outstanding)} · estimated recovery {formatMoney(item.estimate.low)}</p><small>Next action: review the invoice and decide whether to contact the customer.</small></div>
+              <button className={isReviewed ? 'button button-secondary' : 'button button-primary'} type="button" onClick={() => setReviewed((current) => isReviewed ? current.filter((id) => id !== item.id) : [...current, item.id])}>{isReviewed ? 'Reopen review' : 'Mark reviewed'}</button>
+            </article>
+          })}
+        </div>
+      )}
+      <p className="functional-note">These are manual review tasks only. Revenue OS does not contact customers or send payments from this screen.</p>
+    </section>
+  )
+}
+
+type OutcomeRecord = {
+  id: string
+  opportunityId: string
+  customerName: string
+  invoiceNumber: string
+  reference: string
+  amount: string
+  currency: string
+  date: string
+  evidence: string
+}
+
+type OutcomeRegisterProps = {
+  opportunities: RevenueOpportunity[]
+  records: OutcomeRecord[]
+  setRecords: (updater: (current: OutcomeRecord[]) => OutcomeRecord[]) => void
+}
+
+function OutcomeRegister({ opportunities, records, setRecords }: OutcomeRegisterProps) {
+  const [opportunityId, setOpportunityId] = useState(opportunities[0]?.id ?? '')
+  const [reference, setReference] = useState('')
+  const [amount, setAmount] = useState('')
+  const [date, setDate] = useState(new Date().toISOString().slice(0, 10))
+  const [evidence, setEvidence] = useState('')
+  const [formError, setFormError] = useState('')
+  const [notice, setNotice] = useState('')
+  const selectedOpportunity = opportunities.find((item) => item.id === opportunityId) ?? opportunities[0]
+  const selectedInvoice = selectedOpportunity?.evidence[0]
+
+  function submitOutcome(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const amountMatch = /^(0|[1-9]\d*)(?:\.(\d{1,2}))?$/.exec(amount.trim())
+    const dateMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date)
+    const paymentDate = dateMatch ? new Date(Date.UTC(Number(dateMatch[1]), Number(dateMatch[2]) - 1, Number(dateMatch[3]))) : null
+    const dateIsValid = Boolean(dateMatch && paymentDate
+      && paymentDate.getUTCFullYear() === Number(dateMatch[1])
+      && paymentDate.getUTCMonth() === Number(dateMatch[2]) - 1
+      && paymentDate.getUTCDate() === Number(dateMatch[3]))
+    const amountMinor = amountMatch
+      ? Number(amountMatch[1]) * 100 + Number((amountMatch[2] ?? '').padEnd(2, '0'))
+      : Number.NaN
+
+    if (!selectedOpportunity || !selectedInvoice) {
+      setFormError('Import invoices and generate an overdue opportunity before recording an outcome.')
+      return
+    }
+    if (!reference.trim() || !evidence.trim() || !dateIsValid || date > new Date().toISOString().slice(0, 10)
+      || !Number.isSafeInteger(amountMinor) || amountMinor <= 0) {
+      setFormError('Enter a payment reference, a valid past or current date, a positive amount with up to two decimal places, and an evidence note.')
+      return
+    }
+    const previouslyReportedMinor = records
+      .filter((record) => record.opportunityId === selectedOpportunity.id)
+      .reduce((total, record) => total + Math.round(Number(record.amount) * 100), 0)
+    const remainingReportableMinor = selectedOpportunity.outstanding.amount - previouslyReportedMinor
+    if (amountMinor > remainingReportableMinor) {
+      setFormError('This amount exceeds the invoice balance remaining after other outcomes already recorded in this session.')
+      return
+    }
+
+    setRecords((current) => [{
+      id: 'outcome-' + Date.now(),
+      opportunityId: selectedOpportunity.id,
+      customerName: selectedInvoice.customerName,
+      invoiceNumber: selectedInvoice.invoiceNumber,
+      reference: reference.trim(),
+      amount: (amountMinor / 100).toFixed(2),
+      currency: selectedOpportunity.outstanding.currency,
+      date,
+      evidence: evidence.trim(),
+    }, ...current])
+    setReference('')
+    setAmount('')
+    setEvidence('')
+    setFormError('')
+    setNotice('Outcome linked to the selected invoice and recorded in this tab. It is awaiting independent verification.')
+  }
+
+  return (
+    <section className="panel functional-panel">
+      <div className="panel-heading"><div><h2>Outcome register</h2><p>Link a reported payment to an overdue invoice and record evidence for review.</p></div><span className="brain-status">LOCAL ONLY</span></div>
+      {opportunities.length === 0 ? (
+        <div className="empty-state"><span className="empty-icon"><Icon name="chart" /></span><h3>No invoice opportunities available</h3><p>Import invoices and set a recovery-rate assumption. Outcomes must be linked to an invoice opportunity.</p></div>
+      ) : (
+        <form className="functional-form" onSubmit={submitOutcome}>
+          <label className="functional-field functional-field-wide">Invoice opportunity<select value={selectedOpportunity?.id ?? ''} onChange={(event) => setOpportunityId(event.target.value)} required>{opportunities.map((item) => { const invoice = item.evidence[0]; return <option key={item.id} value={item.id}>{invoice.customerName} · {invoice.invoiceNumber} · Outstanding {formatMoney(item.outstanding)}</option> })}</select></label>
+          <label className="functional-field">Payment / receipt reference<input value={reference} onChange={(event) => setReference(event.target.value)} placeholder="e.g. receipt or transfer reference" required maxLength={120} /></label>
+          <label className="functional-field">Amount received<input value={amount} onChange={(event) => setAmount(event.target.value)} inputMode="decimal" placeholder="e.g. 150.00" required /></label>
+          <label className="functional-field">Payment date<input type="date" value={date} onChange={(event) => setDate(event.target.value)} max={new Date().toISOString().slice(0, 10)} required /></label>
+          <label className="functional-field functional-field-wide">Evidence note<input value={evidence} onChange={(event) => setEvidence(event.target.value)} placeholder="e.g. receipt number or bank statement reference" required maxLength={240} /></label>
+          <div className="functional-form-actions"><button className="button button-primary" type="submit">Record outcome</button><span>Currency is taken from the selected invoice. Recording is not verification.</span></div>
+        </form>
+      )}
+      {formError && <p className="functional-error" role="alert">{formError}</p>}
+      {notice && <p className="functional-note" role="status">{notice}</p>}
+      <div className="panel-heading functional-list-heading"><div><h2>Recorded outcomes</h2><p>Entries remain in memory for this page session only.</p></div><span className="status-pill">{records.length} recorded</span></div>
+      {records.length === 0 ? <div className="empty-state compact"><h3>No outcomes recorded</h3><p>Once an invoice is overdue, record a reported payment with its reference and evidence.</p></div> : (
+        <div className="functional-list">{records.map((record) => <article className="functional-row" key={record.id}>
+          <div className="functional-row-copy"><strong>{record.customerName} · Invoice {record.invoiceNumber}</strong><p>{record.currency} {record.amount} · {record.date} · Receipt {record.reference}</p><small>{record.evidence}</small><span className="outcome-pending">Awaiting verification</span></div>
+          <button className="button button-secondary" type="button" onClick={() => setRecords((current) => current.filter((item) => item.id !== record.id))}>Remove</button>
+        </article>)}</div>
+      )}
+      <p className="functional-note">No bank, payment-provider, or invoice-system connection is active. Entries are user-reported and are not counted as verified revenue.</p>
+    </section>
+  )
+}
+
+type BusinessBrainProps = {
+  sourceName: string
+  invoiceCount: number
+  issueCount: number
+  recoveryRate: string
+  setRecoveryRate: (value: string) => void
+  assumptionBps: number | null
+  onDownload: () => void
+}
+
+function BusinessBrain({ sourceName, invoiceCount, issueCount, recoveryRate, setRecoveryRate, assumptionBps, onDownload }: BusinessBrainProps) {
+  return (
+    <section className="panel functional-panel">
+      <div className="panel-heading"><div><h2>Business Brain</h2><p>Inspect the evidence and assumptions used by this local preview.</p></div><span className="brain-status">{invoiceCount ? 'IN SESSION' : 'NO SOURCE'}</span></div>
+      <div className="brain-detail-grid">
+        <article><span>Imported source</span><strong>{sourceName || 'No CSV imported'}</strong><small>{invoiceCount} invoice record(s) loaded</small></article>
+        <article><span>Rows needing attention</span><strong>{issueCount}</strong><small>Skipped during the most recent import</small></article>
+        <article><span>Recovery assumption</span><strong>{assumptionBps === null ? 'Not set' : (assumptionBps / 100).toFixed(2).replace(/\.00$/, '') + '%'}</strong><small>Used for estimates only</small></article>
+      </div>
+      <div className="functional-settings">
+        <h3>Recovery-rate assumption</h3>
+        <p>Set a percentage from 0 to 100. This changes estimated recovery values; it does not change the amount outstanding.</p>
+        <div className="functional-inline-field"><label htmlFor="brain-recovery-rate">Expected recovery rate (%)</label><input id="brain-recovery-rate" inputMode="decimal" value={recoveryRate} onChange={(event) => setRecoveryRate(event.target.value)} placeholder="e.g. 25" /></div>
+        {recoveryRate && parseRecoveryRate(recoveryRate) === null && <small className="functional-error">Enter a valid percentage between 0 and 100.</small>}
+      </div>
+      <div className="format-box"><strong>Required invoice CSV columns</strong><code>customer_id, customer_name, invoice_number, currency, total_amount, paid_amount, issued_at, due_at</code><small>Amounts use a decimal point and up to two decimal places. Currency must be a three-letter code such as USD.</small><div><button className="button button-secondary" type="button" onClick={onDownload}>Download CSV template</button></div></div>
+      <p className="functional-note">This page describes the current browser session only. There is no connected database, persistent history, or automatic recommendation execution.</p>
+    </section>
+  )
+}

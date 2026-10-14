@@ -262,3 +262,20 @@ h1 { margin-bottom: 7px; color: var(--ink); font-size: clamp(25px, 3vw, 31px); l
   .recovery-action-controls { align-items: stretch; }
   .recovery-action-controls button { flex: 1 1 auto; }
 }
+
+/* Payment evidence and verified outcome workspace */
+.outcomes-workspace { display: grid; gap: 16px; }
+.outcomes-import-panel,.outcomes-list-panel { display: grid; gap: 14px; }
+.payment-import-content { display: grid; gap: 14px; padding: 0 20px 20px; }
+.payment-csv-format { display: grid; gap: 7px; margin: 0; }
+.payment-csv-format strong { color: #36435a; font-size: 11px; }
+.payment-csv-format code { padding: 12px; border: 1px solid #e8ebf3; border-radius: 8px; color: #5c60bb; background: #f8f9fe; font-size: 10px; overflow-wrap: anywhere; }
+.payment-csv-format small { color: #8993a4; font-size: 10px; line-height: 1.7; }
+.payment-issues { padding: 12px; border: 1px solid #f1d8cf; border-radius: 8px; color: #8e453b; background: #fff7f4; font-size: 10px; }
+.payment-issues ul { display: grid; gap: 5px; padding-left: 17px; margin: 9px 0; line-height: 1.6; }
+.payment-issues small { color: #8e453b; }
+.verified-outcome-detail { display: grid; gap: 6px; padding: 13px; border: 1px solid #d8eee2; border-radius: 8px; background: #f4fbf7; }
+.verified-outcome-detail strong { color: #236c52; font-size: 18px; }
+.verified-outcome-detail small { color: #718879; font-size: 9px; overflow-wrap: anywhere; }
+.verified-outcome-detail p { margin: 0; color: #4d6d5e; font-size: 10px; line-height: 1.65; }
+@media (max-width: 620px) { .payment-import-content { padding: 0 14px 14px; } }

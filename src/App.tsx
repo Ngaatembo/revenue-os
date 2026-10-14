@@ -3,9 +3,14 @@ import { buildOverdueOpportunities } from './domain/overdueInvoices'
 import { parseInvoiceCsv, type CsvIssue } from './domain/invoiceCsv'
 import { parsePaymentCsv } from './domain/paymentCsv'
 import { addMoney, formatMoney, money } from './domain/money'
+import { agingSummary, rankOpportunities, daysOverdue, type ActionProgress, type RankedOpportunity } from './domain/prioritization'
+import { draftReminderMessage } from './domain/reminderDraft'
+import { buildDashboardSummary } from './domain/dashboardSummary'
+import { BILLING_STATUS, checkInvoiceImportSize, checkLeadCapacity, getPlan } from './domain/plans'
 import type { InvoiceEvidence, RevenueOpportunity } from './domain/types'
 import { createSalesLead, deleteSalesLead, loadInvoices, loadRecoveryRate, loadSalesLeads, persistInvoiceImport, saveRecoveryRate, sha256Hex, updateSalesLead, type RevenueOrganization, type SalesLead, type SupabaseSession, type RecoveryAction, type VerifiedOutcome, loadRecoveryActions, loadVerifiedOutcomes, persistPaymentImport, proposeInvoiceReminder, transitionRecoveryAction, verifyRecoveryOutcome } from './lib/supabaseRest'
 import './App.css'
+import './design.css'
 
 type Section = 'Overview' | 'Opportunities' | 'Lead Recovery' | 'Actions' | 'Outcomes' | 'Business Brain'
 
@@ -127,8 +132,7 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
     setActionBusy(invoice.id)
     setActionNotice('')
     setActionNoticeIsError(false)
-    const dueDate = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(invoice.dueAt))
-    const message = 'Hello ' + invoice.customerName + ', our records show that invoice ' + invoice.invoiceNumber + ' for ' + formatMoney(opportunity.outstanding) + ' was due on ' + dueDate + '. Could you please let us know when we can expect payment? If payment has already been made, please share the confirmation so we can update our records. Thank you.'
+    const message = draftReminderMessage(invoice, opportunity.outstanding)
     try {
       await proposeInvoiceReminder(session, organization.id, invoice.id, message)
       setRecoveryActions(await loadRecoveryActions(session, organization.id))
@@ -250,6 +254,24 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
     return [...totals.values()]
   }, [opportunities])
 
+  const progressByInvoiceId = useMemo(() => {
+    const rank: Record<ActionProgress, number> = { none: 0, proposed: 1, approved: 2, executed: 3 }
+    const map = new Map<string, ActionProgress>()
+    for (const action of recoveryActions) {
+      if (action.status !== 'proposed' && action.status !== 'approved' && action.status !== 'executed') continue
+      const current = map.get(action.invoiceId) ?? 'none'
+      if (rank[action.status] > rank[current]) map.set(action.invoiceId, action.status)
+    }
+    return map
+  }, [recoveryActions])
+  const rankedOpportunities = useMemo<RankedOpportunity[]>(
+    () => rankOpportunities(opportunities, new Date().toISOString(), progressByInvoiceId),
+    [opportunities, progressByInvoiceId],
+  )
+  const aging = useMemo(() => agingSummary(opportunities, new Date().toISOString()), [opportunities])
+  const summary = useMemo(() => buildDashboardSummary(recoveryActions, verifiedOutcomes), [recoveryActions, verifiedOutcomes])
+  const plan = getPlan(undefined)
+
   async function importFile(file?: File) {
     if (!file) return
     setError('')
@@ -262,6 +284,8 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
       setIssues(result.issues)
       setSourceName(file.name)
       setActiveSection('Overview')
+      const limit = checkInvoiceImportSize(plan, result.invoices.length)
+      if (!limit.allowed) { setError(limit.message); return }
       if (result.invoices.length === 0) {
         setImportNote('No valid invoice rows were saved. Review the row issues below and correct the source file.')
         return
@@ -293,7 +317,7 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
         </a>
         <div className="workspace-switcher">
           <span className="workspace-avatar">W</span>
-          <span className="workspace-copy"><strong>{organization.name}</strong><small>Supabase workspace</small></span>
+          <span className="workspace-copy"><strong>{organization.name}</strong><small>{plan.name} plan · billing {BILLING_STATUS === 'not_connected' ? 'not connected' : 'active'}</small></span>
           <span className="chevron" aria-hidden="true">⌄</span>
         </div>
         <p className="nav-label">WORKSPACE</p>
@@ -332,10 +356,12 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
 
           {activeSection === 'Overview' || activeSection === 'Opportunities' ? (
             <>
+              {aging.length > 0 && <AgingStrip aging={aging} />}
               <section className="metric-grid" aria-label="Revenue summary">
                 <article className="metric-card"><div className="metric-top"><span>Open opportunities</span><span className="metric-icon teal"><Icon name="spark" /></span></div><strong className="metric-value">{invoices.length && assumptionBps !== null ? opportunities.length : '—'}</strong><p>{invoices.length ? `${opportunities.length} matched from imported invoice evidence` : 'Connect data to identify opportunities'}</p></article>
                 <article className="metric-card"><div className="metric-top"><span>Estimated recovery</span><span className="metric-icon amber"><Icon name="chart" /></span></div><strong className="metric-value metric-money">{estimatedByCurrency.length === 1 ? formatMoney(estimatedByCurrency[0]) : estimatedByCurrency.length > 1 ? 'Multiple currencies' : '—'}</strong><p>{estimatedByCurrency.length ? <>{estimatedByCurrency.length > 1 && <span className="currency-breakdown">{estimatedByCurrency.map((total) => formatMoney(total)).join(' · ')}<br /></span>}Estimate only · not verified revenue</> : 'Requires invoice data and an assumption'}</p></article>
-                <article className="metric-card"><div className="metric-top"><span>Verified revenue</span><span className="metric-icon green"><Icon name="check" /></span></div><strong className="metric-value">—</strong><p>Recorded only when payment evidence is matched</p></article>
+                <article className="metric-card"><div className="metric-top"><span>Verified revenue</span><span className="metric-icon green"><Icon name="check" /></span></div><strong className="metric-value metric-money">{summary.verifiedByCurrency.length === 0 ? '—' : summary.verifiedByCurrency.length === 1 ? formatMoney(summary.verifiedByCurrency[0]) : 'Multiple currencies'}</strong><p>{summary.verifiedByCurrency.length > 1 && <span className="currency-breakdown">{summary.verifiedByCurrency.map((total) => formatMoney(total)).join(' · ')}<br /></span>}{summary.verifiedOutcomeCount ? summary.verifiedOutcomeCount + ' payment-matched outcome(s) · observed after a reminder, not proven caused by it' : 'Recorded only when payment evidence is matched'}</p></article>
+                <article className="metric-card"><div className="metric-top"><span>Waiting on you</span><span className="metric-icon amber"><Icon name="check" /></span></div><strong className="metric-value">{actionsLoading ? '—' : summary.needsOwner}</strong><p>{actionsLoading ? 'Loading actions…' : summary.actionCounts.proposed + ' draft(s) to review · ' + summary.actionCounts.approved + ' approved to send · ' + summary.awaitingEvidence + ' sent, awaiting payment evidence'}</p></article>
               </section>
 
               <section className="work-grid">
@@ -348,7 +374,7 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
                   ) : opportunities.length === 0 ? (
                     <div className="empty-state compact"><span className="empty-icon"><Icon name="check" /></span><h3>No overdue balances matched</h3><p>{outstandingInvoiceCount ? 'There are outstanding invoices, but none meet the overdue rule as of today.' : 'Imported invoices show no unpaid balances.'}</p></div>
                   ) : (
-                    <div className="opportunity-list">{opportunities.map((opportunity) => <OpportunityRow key={opportunity.id} opportunity={opportunity} onPropose={() => void handleProposeReminder(opportunity)} proposing={actionBusy === opportunity.evidence[0]?.id} />)}</div>
+                    <div className="opportunity-list">{rankedOpportunities.map((ranked, index) => <OpportunityRow key={ranked.opportunity.id} ranked={ranked} rank={index + 1} progress={progressByInvoiceId.get(ranked.opportunity.evidence[0]?.id) ?? 'none'} onPropose={() => void handleProposeReminder(ranked.opportunity)} onViewActions={() => setActiveSection('Actions')} proposing={actionBusy === ranked.opportunity.evidence[0]?.id} />)}</div>
                   )}
                 </div>
 
@@ -363,7 +389,7 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
 
               {issues.length > 0 && <section className="panel issues-panel"><div className="panel-heading"><div><h2>Rows needing attention</h2><p>These rows were skipped; correct the source file and re-import.</p></div><span className="issue-count">{issues.length}</span></div><ul>{issues.slice(0, 8).map((issue) => <li key={`${issue.row}-${issue.message}`}><strong>Row {issue.row}</strong><span>{issue.message}</span></li>)}</ul>{issues.length > 8 && <p className="more-issues">And {issues.length - 8} more row issues.</p>}</section>}
             </>
-          ) : activeSection === 'Lead Recovery' ? <LeadRecovery leads={leads} setLeads={setLeads} session={session} organization={organization} loading={leadLoading} loadError={leadError} /> : activeSection === 'Actions' ? <RecoveryActions actions={recoveryActions} invoices={invoices} loading={actionsLoading} busyId={actionBusy} notice={actionNotice} noticeIsError={actionNoticeIsError} onTransition={(action, transition) => void handleActionTransition(action, transition)} /> : activeSection === 'Outcomes' ? <RecoveryOutcomes actions={recoveryActions} invoices={invoices} outcomes={verifiedOutcomes} loading={outcomesLoading} busyId={actionBusy} notice={paymentNotice} noticeIsError={paymentNoticeIsError} issues={paymentIssues} fileRef={paymentFileRef} onImport={(file) => void handleImportPayments(file)} onVerify={(action) => void handleVerifyOutcome(action)} /> : (
+          ) : activeSection === 'Lead Recovery' ? <LeadRecovery leadCapacity={checkLeadCapacity(plan, leads.filter((lead) => lead.status !== 'converted' && lead.status !== 'closed').length)} leads={leads} setLeads={setLeads} session={session} organization={organization} loading={leadLoading} loadError={leadError} /> : activeSection === 'Actions' ? <RecoveryActions actions={recoveryActions} invoices={invoices} loading={actionsLoading} busyId={actionBusy} notice={actionNotice} noticeIsError={actionNoticeIsError} onTransition={(action, transition) => void handleActionTransition(action, transition)} /> : activeSection === 'Outcomes' ? <RecoveryOutcomes actions={recoveryActions} invoices={invoices} outcomes={verifiedOutcomes} loading={outcomesLoading} busyId={actionBusy} notice={paymentNotice} noticeIsError={paymentNoticeIsError} issues={paymentIssues} fileRef={paymentFileRef} onImport={(file) => void handleImportPayments(file)} onVerify={(action) => void handleVerifyOutcome(action)} /> : (
             <section className="panel section-placeholder"><span className="empty-icon"><Icon name="brain" /></span><h2>Business Brain</h2><p>The Business Brain holds sourced facts, explicit assumptions, and import history. Current invoice estimates are derived from saved invoice records and the recovery-rate assumption.</p><div id="csv-format" className="format-box"><strong>Invoice CSV columns</strong><code>customer_id, customer_name, invoice_number, currency, total_amount, paid_amount, issued_at, due_at</code><small>Amounts use a decimal point and up to two decimal places. Currency must be a three-letter ISO code such as USD.</small></div></section>
           )}
 
@@ -376,21 +402,43 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
   )
 }
 
-function OpportunityRow({ opportunity, onPropose, proposing }: { opportunity: RevenueOpportunity; onPropose: () => void; proposing: boolean }) {
-  const invoice = opportunity.evidence[0]
-  return <article className="opportunity-row"><span className="opportunity-indicator" /><div className="opportunity-main"><div className="opportunity-title"><strong>{invoice.customerName}</strong><span className="overdue-pill">Overdue</span></div><p>Invoice {invoice.invoiceNumber} <span>·</span> Due {new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(invoice.dueAt))}</p><small>Source record: {invoice.source.recordId}</small><button className="button button-secondary recovery-draft-button" type="button" onClick={onPropose} disabled={proposing}>{proposing ? 'Saving draft…' : 'Draft reminder'}</button></div><div className="opportunity-values"><strong>{formatMoney(opportunity.outstanding)}</strong><small>outstanding</small><span>Est. {formatMoney(opportunity.estimate.low)}</span></div></article>
+function AgingStrip({ aging }: { aging: ReturnType<typeof agingSummary> }) {
+  return <section className="aging" aria-label="Overdue money by how late it is">
+    {aging.map((group) => {
+      const total = group.total.amount || 1
+      return <div className="aging-group" key={group.currency}>
+        <div className="aging-head"><h2>{formatMoney(group.total)} overdue</h2><p>{group.count} invoice{group.count === 1 ? '' : 's'} with an unpaid balance. These are balances, not predictions.</p></div>
+        <div className="aging-bar" role="img" aria-label={group.bands.map((band) => band.label + ': ' + formatMoney(band.amount)).join(', ')}>
+          {group.bands.filter((band) => band.amount.amount > 0).map((band) => <span key={band.band} className={'aging-seg aging-' + band.band} style={{ flexGrow: Math.max(band.amount.amount / total, 0.04) }} />)}
+        </div>
+        <dl className="aging-legend">{group.bands.map((band) => <div key={band.band} className={band.amount.amount === 0 ? 'is-empty' : ''}><dt><i className={'aging-key aging-' + band.band} />{band.label}</dt><dd>{formatMoney(band.amount)}</dd></div>)}</dl>
+      </div>
+    })}
+  </section>
 }
+
+function OpportunityRow({ ranked, rank, progress, onPropose, onViewActions, proposing }: { ranked: RankedOpportunity; rank: number; progress: ActionProgress; onPropose: () => void; onViewActions: () => void; proposing: boolean }) {
+  const { opportunity } = ranked
+  const invoice = opportunity.evidence[0]
+  return <article className="opportunity-row"><span className="opportunity-indicator" /><div className="opportunity-main"><div className="opportunity-title"><span className="rank-badge" aria-label={'Priority ' + rank}>#{rank}</span><strong>{invoice.customerName}</strong><span className={'overdue-pill urgency-' + ranked.urgency}>{ranked.urgencyLabel}</span></div><p>Invoice {invoice.invoiceNumber} <span>·</span> Due {new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(invoice.dueAt))}</p>
+    <details className="why-details"><summary>Why this needs attention</summary><ul>{ranked.reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul><small>{ranked.uncertainty}</small><small>Source record: {invoice.source.recordId}</small></details>
+    <p className="next-step"><strong>Next step:</strong> {ranked.nextAction}</p>
+    {progress === 'none' ? <button className="button button-secondary recovery-draft-button" type="button" onClick={onPropose} disabled={proposing}>{proposing ? 'Saving draft…' : 'Draft reminder'}</button> : <button className="button button-secondary recovery-draft-button" type="button" onClick={onViewActions}>View in Actions ({progress})</button>}</div><div className="opportunity-values"><strong>{formatMoney(opportunity.outstanding)}</strong><small>outstanding</small><span>Est. {formatMoney(opportunity.estimate.low)}</span></div></article>
+}
+
+const statusOrder: Record<RecoveryAction['status'], number> = { approved: 0, proposed: 1, executed: 2, failed: 3, cancelled: 4 }
 
 function RecoveryActions({ actions, invoices, loading, busyId, notice, noticeIsError, onTransition }: { actions: RecoveryAction[]; invoices: InvoiceEvidence[]; loading: boolean; busyId: string; notice: string; noticeIsError: boolean; onTransition: (action: RecoveryAction, transition: 'approve' | 'mark_sent' | 'cancel') => void }) {
   const invoiceById = new Map(invoices.map((invoice) => [invoice.id, invoice]))
   return <section className="panel recovery-actions-panel">
     <div className="panel-heading"><div><h2>Recovery action queue</h2><p>Review the draft, approve it, then send it yourself outside Revenue OS.</p></div><span className="status-pill">{actions.filter((action) => action.status === 'proposed' || action.status === 'approved').length} pending</span></div>
     {notice && <div className={'alert ' + (noticeIsError ? 'alert-error' : 'alert-success')} role={noticeIsError ? 'alert' : 'status'}>{notice}</div>}
-    {loading ? <div className="empty-state compact"><h3>Loading actions…</h3><p>Retrieving saved recovery drafts.</p></div> : actions.length === 0 ? <div className="empty-state compact"><span className="empty-icon"><Icon name="check" /></span><h3>No recovery drafts yet</h3><p>Go to Opportunities and choose Draft reminder for an overdue invoice.</p></div> : <div className="recovery-action-list">{actions.map((action) => {
+    {loading ? <div className="empty-state compact"><h3>Loading actions…</h3><p>Retrieving saved recovery drafts.</p></div> : actions.length === 0 ? <div className="empty-state compact"><span className="empty-icon"><Icon name="check" /></span><h3>No recovery drafts yet</h3><p>Go to Opportunities and choose Draft reminder for an overdue invoice.</p></div> : <div className="recovery-action-list">{[...actions].sort((a, b) => statusOrder[a.status] - statusOrder[b.status]).map((action) => {
       const invoice = invoiceById.get(action.invoiceId)
       const busy = busyId === action.id
       return <article className="recovery-action-card" key={action.id}>
         <div className="recovery-action-top"><div><strong>{invoice ? invoice.customerName : action.recipientCustomerId}</strong><small>{invoice ? 'Invoice ' + invoice.invoiceNumber : 'Invoice record unavailable'} · Created {new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(action.proposedAt))}</small></div><span className={'action-status action-status-' + action.status}>{action.status.replace('_', ' ')}</span></div>
+        {invoice && <p className="action-context">Outstanding {formatMoney(money(invoice.total.amount - invoice.paid.amount, invoice.total.currency))} of {formatMoney(invoice.total)} · {daysOverdue(invoice.dueAt, new Date().toISOString())} day(s) past due. <strong>Next step:</strong> {action.status === 'proposed' ? 'review the draft and approve it.' : action.status === 'approved' ? 'send it yourself, then record that it was sent.' : action.status === 'executed' ? 'import payment evidence in Outcomes and check for a match.' : 'no further step.'}</p>}
         <p className="recovery-message">{action.message}</p>
         <div className="recovery-action-controls">
           <button className="button button-secondary" type="button" onClick={() => { void navigator.clipboard?.writeText(action.message).catch(() => undefined) }}>Copy draft</button>
@@ -408,7 +456,7 @@ function RecoveryActions({ actions, invoices, loading, busyId, notice, noticeIsE
 export default App
 
 
-function LeadRecovery({ leads, setLeads, session, organization, loading, loadError }: { leads: LeadRecord[]; setLeads: (updater: (current: LeadRecord[]) => LeadRecord[]) => void; session: SupabaseSession; organization: RevenueOrganization; loading: boolean; loadError: string }) {
+function LeadRecovery({ leadCapacity, leads, setLeads, session, organization, loading, loadError }: { leadCapacity: ReturnType<typeof checkLeadCapacity>; leads: LeadRecord[]; setLeads: (updater: (current: LeadRecord[]) => LeadRecord[]) => void; session: SupabaseSession; organization: RevenueOrganization; loading: boolean; loadError: string }) {
   const [name, setName] = useState('')
   const [business, setBusiness] = useState('')
   const [contact, setContact] = useState('')
@@ -423,6 +471,7 @@ function LeadRecovery({ leads, setLeads, session, organization, loading, loadErr
 
   async function addLead(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (!leadCapacity.allowed) { setNotice(leadCapacity.message); return }
     const amount = value.trim() ? Number(value) : null
     if (!name.trim() || !business.trim() || (value.trim() && (amount === null || !Number.isFinite(amount) || amount < 0))) {
       setNotice('Enter a contact name, business, and a valid non-negative opportunity value.')

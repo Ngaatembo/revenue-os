@@ -84,7 +84,7 @@ export default function AuthApp() {
   }
 
   async function handleSignOut() {
-    if (session) await signOut(session)
+    try { if (session) await signOut(session) } catch { clearStoredSession() }
     setSession(null)
     setOrganization(null)
     setPassword('')

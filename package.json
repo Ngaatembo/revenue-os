@@ -9,10 +9,9 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "cf:dev": "npx --yes wrangler@4.149.0 dev",
-    "cf:migrate:local": "npx --yes wrangler@4.149.0 d1 migrations apply revenue-os-local --local",
     "cf:deploy": "npm run build && npx --yes wrangler@4.149.0 deploy",
     "cf:types": "npx --yes wrangler@4.149.0 types",
-    "test:domain": "node --experimental-strip-types --test src/domain/__tests__/*.test.ts"
+    "test:domain": "node --experimental-strip-types --test src/domain/__tests__/*.test.ts src/worker/__tests__/*.test.ts"
   },
   "dependencies": {
     "react": "^19.2.8",

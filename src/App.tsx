@@ -3,13 +3,14 @@ import { buildOverdueOpportunities } from './domain/overdueInvoices'
 import { parseInvoiceCsv, type CsvIssue } from './domain/invoiceCsv'
 import { parsePaymentCsv } from './domain/paymentCsv'
 import { addMoney, formatMoney, money } from './domain/money'
-import { rankOpportunities, daysOverdue, type ActionProgress, type RankedOpportunity } from './domain/prioritization'
+import { agingSummary, rankOpportunities, daysOverdue, type ActionProgress, type RankedOpportunity } from './domain/prioritization'
 import { draftReminderMessage } from './domain/reminderDraft'
 import { buildDashboardSummary } from './domain/dashboardSummary'
 import { BILLING_STATUS, checkInvoiceImportSize, checkLeadCapacity, getPlan } from './domain/plans'
 import type { InvoiceEvidence, RevenueOpportunity } from './domain/types'
 import { createSalesLead, deleteSalesLead, loadInvoices, loadRecoveryRate, loadSalesLeads, persistInvoiceImport, saveRecoveryRate, sha256Hex, updateSalesLead, type RevenueOrganization, type SalesLead, type SupabaseSession, type RecoveryAction, type VerifiedOutcome, loadRecoveryActions, loadVerifiedOutcomes, persistPaymentImport, proposeInvoiceReminder, transitionRecoveryAction, verifyRecoveryOutcome } from './lib/supabaseRest'
 import './App.css'
+import './design.css'
 
 type Section = 'Overview' | 'Opportunities' | 'Lead Recovery' | 'Actions' | 'Outcomes' | 'Business Brain'
 
@@ -267,6 +268,7 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
     () => rankOpportunities(opportunities, new Date().toISOString(), progressByInvoiceId),
     [opportunities, progressByInvoiceId],
   )
+  const aging = useMemo(() => agingSummary(opportunities, new Date().toISOString()), [opportunities])
   const summary = useMemo(() => buildDashboardSummary(recoveryActions, verifiedOutcomes), [recoveryActions, verifiedOutcomes])
   const plan = getPlan(undefined)
 
@@ -354,6 +356,7 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
 
           {activeSection === 'Overview' || activeSection === 'Opportunities' ? (
             <>
+              {aging.length > 0 && <AgingStrip aging={aging} />}
               <section className="metric-grid" aria-label="Revenue summary">
                 <article className="metric-card"><div className="metric-top"><span>Open opportunities</span><span className="metric-icon teal"><Icon name="spark" /></span></div><strong className="metric-value">{invoices.length && assumptionBps !== null ? opportunities.length : '—'}</strong><p>{invoices.length ? `${opportunities.length} matched from imported invoice evidence` : 'Connect data to identify opportunities'}</p></article>
                 <article className="metric-card"><div className="metric-top"><span>Estimated recovery</span><span className="metric-icon amber"><Icon name="chart" /></span></div><strong className="metric-value metric-money">{estimatedByCurrency.length === 1 ? formatMoney(estimatedByCurrency[0]) : estimatedByCurrency.length > 1 ? 'Multiple currencies' : '—'}</strong><p>{estimatedByCurrency.length ? <>{estimatedByCurrency.length > 1 && <span className="currency-breakdown">{estimatedByCurrency.map((total) => formatMoney(total)).join(' · ')}<br /></span>}Estimate only · not verified revenue</> : 'Requires invoice data and an assumption'}</p></article>
@@ -397,6 +400,21 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
       <nav className="mobile-nav" aria-label="Mobile navigation">{sections.map((section) => <button key={section} className={activeSection === section ? 'active' : ''} onClick={() => setActiveSection(section)} aria-label={section}><Icon name={section === 'Overview' ? 'grid' : section === 'Opportunities' ? 'spark' : section === 'Lead Recovery' ? 'check' : section === 'Actions' ? 'check' : section === 'Outcomes' ? 'chart' : 'brain'} /><span>{section}</span></button>)}</nav>
     </div>
   )
+}
+
+function AgingStrip({ aging }: { aging: ReturnType<typeof agingSummary> }) {
+  return <section className="aging" aria-label="Overdue money by how late it is">
+    {aging.map((group) => {
+      const total = group.total.amount || 1
+      return <div className="aging-group" key={group.currency}>
+        <div className="aging-head"><h2>{formatMoney(group.total)} overdue</h2><p>{group.count} invoice{group.count === 1 ? '' : 's'} with an unpaid balance. These are balances, not predictions.</p></div>
+        <div className="aging-bar" role="img" aria-label={group.bands.map((band) => band.label + ': ' + formatMoney(band.amount)).join(', ')}>
+          {group.bands.filter((band) => band.amount.amount > 0).map((band) => <span key={band.band} className={'aging-seg aging-' + band.band} style={{ flexGrow: Math.max(band.amount.amount / total, 0.04) }} />)}
+        </div>
+        <dl className="aging-legend">{group.bands.map((band) => <div key={band.band} className={band.amount.amount === 0 ? 'is-empty' : ''}><dt><i className={'aging-key aging-' + band.band} />{band.label}</dt><dd>{formatMoney(band.amount)}</dd></div>)}</dl>
+      </div>
+    })}
+  </section>
 }
 
 function OpportunityRow({ ranked, rank, progress, onPropose, onViewActions, proposing }: { ranked: RankedOpportunity; rank: number; progress: ActionProgress; onPropose: () => void; onViewActions: () => void; proposing: boolean }) {

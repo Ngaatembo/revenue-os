@@ -3,7 +3,7 @@ import { buildOverdueOpportunities } from './domain/overdueInvoices'
 import { parseInvoiceCsv, type CsvIssue } from './domain/invoiceCsv'
 import { addMoney, formatMoney, money } from './domain/money'
 import type { InvoiceEvidence, RevenueOpportunity } from './domain/types'
-import { createSalesLead, deleteSalesLead, loadInvoices, loadRecoveryRate, loadSalesLeads, persistInvoiceImport, saveRecoveryRate, sha256Hex, updateSalesLead, type RevenueOrganization, type SalesLead, type SupabaseSession } from './lib/supabaseRest'
+import { createSalesLead, deleteSalesLead, loadInvoices, loadRecoveryRate, loadSalesLeads, persistInvoiceImport, saveRecoveryRate, sha256Hex, updateSalesLead, type RevenueOrganization, type SalesLead, type SupabaseSession, type RecoveryAction, loadRecoveryActions, proposeInvoiceReminder, transitionRecoveryAction } from './lib/supabaseRest'
 import './App.css'
 
 type Section = 'Overview' | 'Opportunities' | 'Lead Recovery' | 'Actions' | 'Outcomes' | 'Business Brain'
@@ -53,6 +53,10 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
   const [leads, setLeads] = useState<LeadRecord[]>([])
   const [leadLoading, setLeadLoading] = useState(true)
   const [leadError, setLeadError] = useState('')
+  const [recoveryActions, setRecoveryActions] = useState<RecoveryAction[]>([])
+  const [actionsLoading, setActionsLoading] = useState(true)
+  const [actionBusy, setActionBusy] = useState('')
+  const [actionNotice, setActionNotice] = useState('')
 
   useEffect(() => {
     let cancelled = false
@@ -88,6 +92,44 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Could not save the recovery-rate assumption.')
     }
+  }
+
+  useEffect(() => {
+    let cancelled = false
+    loadRecoveryActions(session, organization.id)
+      .then((records) => { if (!cancelled) setRecoveryActions(records) })
+      .catch((cause) => { if (!cancelled) setActionNotice(cause instanceof Error ? cause.message : 'Could not load recovery actions.') })
+      .finally(() => { if (!cancelled) setActionsLoading(false) })
+    return () => { cancelled = true }
+  }, [session, organization.id])
+
+  async function handleProposeReminder(opportunity: RevenueOpportunity) {
+    const invoice = opportunity.evidence[0]
+    if (!invoice) return
+    setActionBusy(invoice.id)
+    setActionNotice('')
+    const dueDate = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(invoice.dueAt))
+    const message = 'Hello ' + invoice.customerName + ', our records show that invoice ' + invoice.invoiceNumber + ' for ' + formatMoney(opportunity.outstanding) + ' was due on ' + dueDate + '. Could you please let us know when we can expect payment? If payment has already been made, please share the confirmation so we can update our records. Thank you.'
+    try {
+      await proposeInvoiceReminder(session, organization.id, invoice.id, message)
+      setRecoveryActions(await loadRecoveryActions(session, organization.id))
+      setActiveSection('Actions')
+      setActionNotice('Reminder draft saved. Review and approve it before sending manually.')
+    } catch (cause) {
+      setActionNotice(cause instanceof Error ? cause.message : 'Could not create the reminder draft.')
+    } finally { setActionBusy('') }
+  }
+
+  async function handleActionTransition(action: RecoveryAction, transition: 'approve' | 'mark_sent' | 'cancel') {
+    setActionBusy(action.id)
+    setActionNotice('')
+    try {
+      await transitionRecoveryAction(session, organization.id, action.id, transition)
+      setRecoveryActions(await loadRecoveryActions(session, organization.id))
+      setActionNotice(transition === 'approve' ? 'Reminder approved. It has not been sent.' : transition === 'mark_sent' ? 'Marked as manually sent. No message was sent by Revenue OS.' : 'Reminder draft cancelled.')
+    } catch (cause) {
+      setActionNotice(cause instanceof Error ? cause.message : 'Could not update this action.')
+    } finally { setActionBusy('') }
   }
 
   const assumptionBps = parseRecoveryRate(recoveryRate)
@@ -216,7 +258,7 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
                   ) : opportunities.length === 0 ? (
                     <div className="empty-state compact"><span className="empty-icon"><Icon name="check" /></span><h3>No overdue balances matched</h3><p>{outstandingInvoiceCount ? 'There are outstanding invoices, but none meet the overdue rule as of today.' : 'Imported invoices show no unpaid balances.'}</p></div>
                   ) : (
-                    <div className="opportunity-list">{opportunities.map((opportunity) => <OpportunityRow key={opportunity.id} opportunity={opportunity} />)}</div>
+                    <div className="opportunity-list">{opportunities.map((opportunity) => <OpportunityRow key={opportunity.id} opportunity={opportunity} onPropose={() => void handleProposeReminder(opportunity)} proposing={actionBusy === opportunity.evidence[0]?.id} />)}</div>
                   )}
                 </div>
 
@@ -231,7 +273,7 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
 
               {issues.length > 0 && <section className="panel issues-panel"><div className="panel-heading"><div><h2>Rows needing attention</h2><p>These rows were skipped; correct the source file and re-import.</p></div><span className="issue-count">{issues.length}</span></div><ul>{issues.slice(0, 8).map((issue) => <li key={`${issue.row}-${issue.message}`}><strong>Row {issue.row}</strong><span>{issue.message}</span></li>)}</ul>{issues.length > 8 && <p className="more-issues">And {issues.length - 8} more row issues.</p>}</section>}
             </>
-          ) : activeSection === 'Lead Recovery' ? <LeadRecovery leads={leads} setLeads={setLeads} session={session} organization={organization} loading={leadLoading} loadError={leadError} /> : (
+          ) : activeSection === 'Lead Recovery' ? <LeadRecovery leads={leads} setLeads={setLeads} session={session} organization={organization} loading={leadLoading} loadError={leadError} /> : activeSection === 'Actions' ? <RecoveryActions actions={recoveryActions} invoices={invoices} loading={actionsLoading} busyId={actionBusy} notice={actionNotice} onTransition={(action, transition) => void handleActionTransition(action, transition)} /> : (
             <section className="panel section-placeholder"><span className="empty-icon"><Icon name={activeSection === 'Actions' ? 'check' : activeSection === 'Outcomes' ? 'chart' : 'brain'} /></span><h2>{activeSection} will follow your source data</h2><p>{activeSection === 'Actions' ? 'Actions will only be proposed from a real opportunity and will require human approval before execution.' : activeSection === 'Outcomes' ? 'Verified outcomes will be recorded separately from estimates and linked to payment evidence.' : 'The Business Brain will hold sourced facts, explicit assumptions, and import history.'}</p>{activeSection === 'Business Brain' && <div id="csv-format" className="format-box"><strong>Invoice CSV columns</strong><code>customer_id, customer_name, invoice_number, currency, total_amount, paid_amount, issued_at, due_at</code><small>Amounts use a decimal point and up to two decimal places. Currency must be a three-letter code such as USD.</small></div>}</section>
           )}
 
@@ -244,9 +286,33 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
   )
 }
 
-function OpportunityRow({ opportunity }: { opportunity: RevenueOpportunity }) {
+function OpportunityRow({ opportunity, onPropose, proposing }: { opportunity: RevenueOpportunity; onPropose: () => void; proposing: boolean }) {
   const invoice = opportunity.evidence[0]
-  return <article className="opportunity-row"><span className="opportunity-indicator" /><div className="opportunity-main"><div className="opportunity-title"><strong>{invoice.customerName}</strong><span className="overdue-pill">Overdue</span></div><p>Invoice {invoice.invoiceNumber} <span>·</span> Due {new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(invoice.dueAt))}</p><small>Source record: {invoice.source.recordId}</small></div><div className="opportunity-values"><strong>{formatMoney(opportunity.outstanding)}</strong><small>outstanding</small><span>Est. {formatMoney(opportunity.estimate.low)}</span></div></article>
+  return <article className="opportunity-row"><span className="opportunity-indicator" /><div className="opportunity-main"><div className="opportunity-title"><strong>{invoice.customerName}</strong><span className="overdue-pill">Overdue</span></div><p>Invoice {invoice.invoiceNumber} <span>·</span> Due {new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(invoice.dueAt))}</p><small>Source record: {invoice.source.recordId}</small><button className="button button-secondary recovery-draft-button" type="button" onClick={onPropose} disabled={proposing}>{proposing ? 'Saving draft…' : 'Draft reminder'}</button></div><div className="opportunity-values"><strong>{formatMoney(opportunity.outstanding)}</strong><small>outstanding</small><span>Est. {formatMoney(opportunity.estimate.low)}</span></div></article>
+}
+
+function RecoveryActions({ actions, invoices, loading, busyId, notice, onTransition }: { actions: RecoveryAction[]; invoices: InvoiceEvidence[]; loading: boolean; busyId: string; notice: string; onTransition: (action: RecoveryAction, transition: 'approve' | 'mark_sent' | 'cancel') => void }) {
+  const invoiceById = new Map(invoices.map((invoice) => [invoice.id, invoice]))
+  return <section className="panel recovery-actions-panel">
+    <div className="panel-heading"><div><h2>Recovery action queue</h2><p>Review the draft, approve it, then send it yourself outside Revenue OS.</p></div><span className="status-pill">{actions.filter((action) => action.status === 'proposed' || action.status === 'approved').length} pending</span></div>
+    {notice && <div className="alert alert-success" role="status">{notice}</div>}
+    {loading ? <div className="empty-state compact"><h3>Loading actions…</h3><p>Retrieving saved recovery drafts.</p></div> : actions.length === 0 ? <div className="empty-state compact"><span className="empty-icon"><Icon name="check" /></span><h3>No recovery drafts yet</h3><p>Go to Opportunities and choose Draft reminder for an overdue invoice.</p></div> : <div className="recovery-action-list">{actions.map((action) => {
+      const invoice = invoiceById.get(action.invoiceId)
+      const busy = busyId === action.id
+      return <article className="recovery-action-card" key={action.id}>
+        <div className="recovery-action-top"><div><strong>{invoice ? invoice.customerName : action.recipientCustomerId}</strong><small>{invoice ? 'Invoice ' + invoice.invoiceNumber : 'Invoice record unavailable'} · Created {new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(action.proposedAt))}</small></div><span className={'action-status action-status-' + action.status}>{action.status.replace('_', ' ')}</span></div>
+        <p className="recovery-message">{action.message}</p>
+        <div className="recovery-action-controls">
+          <button className="button button-secondary" type="button" onClick={() => { void navigator.clipboard?.writeText(action.message).catch(() => undefined) }}>Copy draft</button>
+          {action.status === 'proposed' && <button className="button button-primary" type="button" disabled={busy} onClick={() => onTransition(action, 'approve')}>{busy ? 'Saving…' : 'Approve draft'}</button>}
+          {action.status === 'approved' && <button className="button button-primary" type="button" disabled={busy} onClick={() => { if (window.confirm('Only confirm this after you have actually sent the reminder outside Revenue OS. Continue?')) onTransition(action, 'mark_sent') }}>I've sent it manually</button>}
+          {(action.status === 'proposed' || action.status === 'approved') && <button className="button button-quiet" type="button" disabled={busy} onClick={() => onTransition(action, 'cancel')}>Cancel</button>}
+        </div>
+        {action.status === 'approved' && <small className="action-human-note">Approved, not sent. Copy the draft, send it through your normal channel, then record that it was sent.</small>}
+        {action.status === 'executed' && <small className="action-human-note">Marked as sent manually. This is not proof of payment or recovered revenue.</small>}
+      </article>
+    })}</div>}
+  </section>
 }
 
 export default App

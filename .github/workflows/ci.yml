@@ -27,5 +27,7 @@ jobs:
         run: npm ci
       - name: Type-check and build
         run: npm run build
+      - name: Domain tests
+        run: npm run test:domain
       - name: Lint
         run: npm run lint

@@ -236,3 +236,29 @@ h1 { margin-bottom: 7px; color: var(--ink); font-size: clamp(25px, 3vw, 31px); l
 
 .lead-error { color: #923a32; border: 1px solid #f3d2cd; border-radius: 8px; background: #fff4f2; }
 .topbar-right .button { min-height: 32px; padding: 0 11px; font-size: 10px; }
+
+/* Approval-gated invoice recovery */
+.recovery-draft-button { margin-top: 10px; min-height: 30px; padding: 0 10px; font-size: 10px; }
+.recovery-actions-panel { display: grid; gap: 15px; }
+.recovery-action-list { display: grid; gap: 12px; }
+.recovery-action-card { display: grid; gap: 13px; padding: 17px; border: 1px solid var(--line); border-radius: 11px; background: #fff; }
+.recovery-action-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.recovery-action-top > div { display: grid; gap: 5px; min-width: 0; }
+.recovery-action-top strong { color: #27354e; font-size: 12px; overflow-wrap: anywhere; }
+.recovery-action-top small,.action-human-note { color: #8993a4; font-size: 10px; line-height: 1.6; }
+.action-status { display: inline-flex; flex: 0 0 auto; padding: 5px 8px; border-radius: 6px; color: #6265c5; background: #f1f1ff; font-size: 9px; font-weight: 800; text-transform: capitalize; }
+.action-status-approved { color: #916018; background: #fff4df; }
+.action-status-executed { color: #24745c; background: #e7f7ee; }
+.action-status-cancelled,.action-status-failed { color: #7c8493; background: #f0f2f6; }
+.recovery-message { padding: 13px; margin: 0; border: 1px solid #edf0f5; border-radius: 8px; color: #46536a; background: #fafbfe; font-size: 11px; line-height: 1.75; white-space: pre-wrap; overflow-wrap: anywhere; }
+.recovery-action-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.action-human-note { display: block; padding-top: 9px; border-top: 1px solid #edf0f5; }
+.button-quiet { min-height: 36px; padding: 0 11px; border: 1px solid transparent; border-radius: 8px; color: #7a8495; background: transparent; font-size: 10px; font-weight: 700; cursor: pointer; }
+.button-quiet:hover { color: #9b4038; background: #fff4f2; }
+.recovery-action-controls button:disabled,.recovery-draft-button:disabled { cursor: wait; opacity: .65; }
+@media (max-width: 620px) {
+  .recovery-action-card { padding: 13px; }
+  .recovery-action-top { flex-direction: column; }
+  .recovery-action-controls { align-items: stretch; }
+  .recovery-action-controls button { flex: 1 1 auto; }
+}

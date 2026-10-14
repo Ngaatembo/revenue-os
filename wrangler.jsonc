@@ -15,6 +15,14 @@
   "vars": {
     "SUPABASE_URL": "https://zivgfvcmposnbwqsudas.supabase.co"
   },
+  // Required by `wrangler preview` (used by Workers Builds for non-production branches).
+  // There is only one Supabase project, so previews read the same public URL; the health check
+  // makes a read-only GET and the browser app already uses this project in every build.
+  "previews": {
+    "vars": {
+      "SUPABASE_URL": "https://zivgfvcmposnbwqsudas.supabase.co"
+    }
+  },
   "observability": {
     "enabled": true
   }

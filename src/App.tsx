@@ -143,6 +143,7 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
   async function handleActionTransition(action: RecoveryAction, transition: 'approve' | 'mark_sent' | 'cancel') {
     setActionBusy(action.id)
     setActionNotice('')
+    setActionNoticeIsError(false)
     try {
       await transitionRecoveryAction(session, organization.id, action.id, transition)
       setRecoveryActions(await loadRecoveryActions(session, organization.id))
@@ -196,6 +197,7 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
   async function handleVerifyOutcome(action: RecoveryAction) {
     setActionBusy(action.id)
     setPaymentNotice('')
+    setPaymentNoticeIsError(false)
     try {
       const result = await verifyRecoveryOutcome(session, organization.id, action.id, 30)
       setVerifiedOutcomes(await loadVerifiedOutcomes(session, organization.id))

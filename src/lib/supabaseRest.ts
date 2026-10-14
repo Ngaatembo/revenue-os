@@ -242,7 +242,7 @@ export async function deleteSalesLead(session: SupabaseSession, organizationId: 
 
 export async function signOut(session: SupabaseSession) {
   try {
-    await authRequest('logout', undefined, session.access_token)
+    await authRequest('logout', {}, session.access_token)
   } finally {
     clearStoredSession()
   }

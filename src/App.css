@@ -233,3 +233,6 @@ h1 { margin-bottom: 7px; color: var(--ink); font-size: clamp(25px, 3vw, 31px); l
 .lead-disclaimer { padding: 12px 14px; margin: 0 21px 17px; border: 1px solid #e9e9ff; border-radius: 8px; color: #7779c9; background: #f7f7ff; }
 @media (max-width: 950px) { .lead-metrics { grid-template-columns: repeat(2,minmax(0,1fr)); } .lead-form { grid-template-columns: repeat(2,minmax(0,1fr)); } }
 @media (max-width: 620px) { .lead-intro { align-items: flex-start; flex-direction: column; padding: 18px; } .lead-metrics { gap: 9px; } .lead-metric { padding: 13px; } .lead-form { grid-template-columns: minmax(0,1fr); padding: 16px; } .lead-wide,.lead-form-actions { grid-column: auto; } .lead-row { align-items: stretch; flex-direction: column; } .lead-row-side { flex-basis: auto; grid-template-columns: minmax(0,1fr) minmax(0,1fr); align-items: end; } .lead-row-side > strong { grid-column: 1 / -1; } .lead-row-side .template-link { grid-column: 1 / -1; justify-self: start; } .lead-filter-row { padding-inline: 14px; } .lead-list { padding-inline: 14px; } .lead-disclaimer { margin-inline: 14px; } }
+
+.lead-error { color: #923a32; border: 1px solid #f3d2cd; border-radius: 8px; background: #fff4f2; }
+.topbar-right .button { min-height: 32px; padding: 0 11px; font-size: 10px; }

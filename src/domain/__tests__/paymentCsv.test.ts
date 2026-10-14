@@ -11,6 +11,7 @@ test('parsePaymentCsv accepts valid payment evidence and converts money to minor
     currency: 'USD',
     amountMinor: 12550,
     receivedAt: '2026-10-13T10:00:00.000Z',
+    rowNumber: 2,
   })
 })
 

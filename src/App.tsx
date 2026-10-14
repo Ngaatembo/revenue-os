@@ -257,7 +257,7 @@ function OutcomeRegister({ opportunities, records, setRecords }: OutcomeRegister
 
   function submitOutcome(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    const amountMatch = /^(0|[1-9]\d*)(?:\\.(\d{1,2}))?$/.exec(amount.trim())
+    const amountMatch = /^(0|[1-9]\d*)(?:\.(\d{1,2}))?$/.exec(amount.trim())
     const dateMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date)
     const paymentDate = dateMatch ? new Date(Date.UTC(Number(dateMatch[1]), Number(dateMatch[2]) - 1, Number(dateMatch[3]))) : null
     const dateIsValid = Boolean(dateMatch && paymentDate

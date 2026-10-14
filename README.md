@@ -11,27 +11,25 @@ The current build has two connected work areas:
 
 Lead Recovery does not send WhatsApp messages or email, and a user-marked conversion is not independently verified revenue. Actions remain human-controlled.
 
-## Supabase setup
+## Supabase configuration
 
-The active Supabase project is named `revenue-os`. The current frontend expects these **public client** environment variables at Vite build time:
+The active Supabase project is named `revenue-os`. The frontend is configured with its **public publishable key** as a safe default, so the preview can start without local setup. You may override the defaults at Vite build time with:
 
 ```env
 VITE_SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
 VITE_SUPABASE_ANON_KEY=YOUR_PUBLISHABLE_OR_ANON_KEY
 ```
 
-Copy `.env.example` to `.env.local` for local development. Never place a Supabase service-role key in a browser build or commit one to Git.
+The publishable/anon key is intended for browser use. Never put a Supabase service-role key in a browser build or commit one to Git.
 
 The migration `supabase/migrations/20261014120000_sales_leads_and_org_bootstrap.sql` creates the `sales_leads` table, organization-scoped RLS policies, and an authenticated onboarding RPC. The RPC creates a user's first organization and owner membership, and returns an existing membership if the user already has one. It does not accept an arbitrary user ID.
 
-For a deployed build, configure the two `VITE_*` variables in the build environment before building the Vite assets. The application displays a setup screen when they are missing.
-
 ## Security boundaries
 
-- All client requests use the publishable/anon key and the signed-in user's access token; no service-role key is used by the frontend.
+- All client requests use the publishable key and the signed-in user's access token; no service-role key is used by the frontend.
 - RLS policies scope lead reads to organization membership and writes to owner/admin/operator roles.
 - The browser never chooses the authenticated user ID or grants itself a role.
-- Keep real customer financial data out of the invoice CSV prototype until invoice imports are persisted through the authenticated API and the complete access-control flow has been tested.
+- Keep real customer financial data out of the invoice CSV prototype until invoice imports are persisted through authenticated operations and the complete access-control flow has been tested.
 - The current lightweight auth wrapper uses Supabase Auth endpoints and keeps the session in `sessionStorage`. For a production release, review session handling, recovery flows, rate limits, and security headers before onboarding customers.
 
 ## Invoice CSV format
@@ -62,7 +60,7 @@ cp .env.example .env.local
 npm run dev
 ```
 
-On Windows PowerShell, use `Copy-Item .env.example .env.local` instead of `cp`.
+On Windows PowerShell, use `Copy-Item .env.example .env.local` instead of `cp`. The example file contains placeholders; the built-in public project defaults are used unless you replace them with valid environment variables.
 
 ## Next engineering milestones
 

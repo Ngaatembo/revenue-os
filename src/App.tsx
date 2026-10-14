@@ -17,7 +17,7 @@ function downloadCsvTemplate() {
   link.href = url
   link.download = 'revenue-os-invoice-template.csv'
   link.click()
-  URL.revokeObjectURL(url)
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
 function Icon({ name }: { name: string }) {
@@ -109,7 +109,6 @@ function App() {
         <div className="workspace-switcher">
           <span className="workspace-avatar">W</span>
           <span className="workspace-copy"><strong>Workspace</strong><small>Local preview</small></span>
-          <span className="chevron" aria-hidden="true">⌄</span>
         </div>
         <p className="nav-label">WORKSPACE</p>
         <nav className="primary-nav">
@@ -123,7 +122,7 @@ function App() {
         </nav>
         <div className="sidebar-bottom">
           <div className="sidebar-rule" />
-          <div className="user-chip"><span className="user-avatar">U</span><span><strong>Local session</strong><small>Not signed in</small></span><span className="more">···</span></div>
+          <div className="user-chip"><span className="user-avatar">U</span><span><strong>Local session</strong><small>Not signed in</small></span></div>
         </div>
       </aside>
 

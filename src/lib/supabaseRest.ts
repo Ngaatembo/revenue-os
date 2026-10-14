@@ -379,3 +379,114 @@ export async function saveRecoveryRate(session: SupabaseSession, organization: R
     }),
   })
 }
+
+
+export type RecoveryActionStatus = 'proposed' | 'approved' | 'executed' | 'failed' | 'cancelled'
+export type RecoveryAction = {
+  id: string
+  opportunityId: string
+  status: RecoveryActionStatus
+  message: string
+  recipientCustomerId: string
+  proposedAt: string
+  approvedAt: string | null
+  approvedBy: string | null
+  executedAt: string | null
+  executedBy: string | null
+  invoiceId: string
+}
+
+type DbRecoveryAction = {
+  id: string
+  opportunity_id: string
+  status: RecoveryActionStatus
+  message: string
+  recipient_customer_id: string
+  proposed_at: string
+  approved_at: string | null
+  approved_by: string | null
+  executed_at: string | null
+  executed_by: string | null
+}
+type DbActionTarget = { action_id: string; invoice_id: string }
+
+function mapRecoveryAction(row: DbRecoveryAction, invoiceId: string): RecoveryAction {
+  return {
+    id: row.id,
+    opportunityId: row.opportunity_id,
+    status: row.status,
+    message: row.message,
+    recipientCustomerId: row.recipient_customer_id,
+    proposedAt: row.proposed_at,
+    approvedAt: row.approved_at,
+    approvedBy: row.approved_by,
+    executedAt: row.executed_at,
+    executedBy: row.executed_by,
+    invoiceId,
+  }
+}
+
+export async function loadRecoveryActions(session: SupabaseSession, organizationId: string): Promise<RecoveryAction[]> {
+  const params = new URLSearchParams({
+    select: 'id,opportunity_id,status,message,recipient_customer_id,proposed_at,approved_at,approved_by,executed_at,executed_by',
+    organization_id: `eq.${organizationId}`,
+    order: 'proposed_at.desc',
+    limit: '200',
+  })
+  const targetsParams = new URLSearchParams({
+    select: 'action_id,invoice_id',
+    organization_id: `eq.${organizationId}`,
+  })
+  const [actions, targets] = await Promise.all([
+    apiRequest<DbRecoveryAction[]>(session, `actions?${params.toString()}`),
+    apiRequest<DbActionTarget[]>(session, `action_invoice_targets?${targetsParams.toString()}`),
+  ])
+  const invoiceByAction = new Map(targets.map((target) => [target.action_id, target.invoice_id]))
+  return actions.map((action) => mapRecoveryAction(action, invoiceByAction.get(action.id) ?? ''))
+}
+
+export async function proposeInvoiceReminder(
+  session: SupabaseSession,
+  organizationId: string,
+  invoiceId: string,
+  message: string,
+): Promise<RecoveryAction> {
+  const row = await apiRequest<{
+    id: string; opportunity_id: string; status: RecoveryActionStatus; message: string;
+    recipient_customer_id: string; proposed_at: string; approved_at: string | null;
+    approved_by: string | null; executed_at: string | null; executed_by: string | null;
+    invoice_id: string; duplicate?: boolean
+  }>(session, 'rpc/propose_invoice_reminder', {
+    method: 'POST',
+    body: JSON.stringify({ p_org_id: organizationId, p_invoice_id: invoiceId, p_message: message }),
+  })
+  return mapRecoveryAction({
+    id: row.id, opportunity_id: row.opportunity_id, status: row.status, message: row.message,
+    recipient_customer_id: row.recipient_customer_id, proposed_at: row.proposed_at,
+    approved_at: row.approved_at, approved_by: row.approved_by, executed_at: row.executed_at,
+    executed_by: row.executed_by,
+  }, row.invoice_id)
+}
+
+export async function transitionRecoveryAction(
+  session: SupabaseSession,
+  organizationId: string,
+  actionId: string,
+  transition: 'approve' | 'mark_sent' | 'cancel',
+): Promise<RecoveryAction> {
+  const row = await apiRequest<{
+    id: string; opportunity_id: string; status: RecoveryActionStatus; message: string;
+    recipient_customer_id: string; proposed_at: string; approved_at: string | null;
+    approved_by: string | null; executed_at: string | null; executed_by: string | null
+  }>(session, 'rpc/transition_revenue_action', {
+    method: 'POST',
+    body: JSON.stringify({ p_org_id: organizationId, p_action_id: actionId, p_transition: transition }),
+  })
+  const current = (await loadRecoveryActions(session, organizationId)).find((action) => action.id === actionId)
+  return mapRecoveryAction({
+    id: row.id, opportunity_id: row.opportunity_id, status: row.status, message: row.message,
+    recipient_customer_id: row.recipient_customer_id, proposed_at: row.proposed_at,
+    approved_at: row.approved_at, approved_by: row.approved_by, executed_at: row.executed_at,
+    executed_by: row.executed_by,
+  }, current?.invoiceId ?? '')
+}

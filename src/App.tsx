@@ -171,9 +171,22 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
     try {
       const text = await file.text()
       const parsed = parsePaymentCsv(text)
-      setPaymentIssues(parsed.issues)
-      if (!parsed.payments.length) {
-        setPaymentNotice('No valid payment rows were saved. Correct the row issues and try again.')
+      const matchingIssues: CsvIssue[] = []
+      const validPayments = parsed.payments.filter((payment) => {
+        const matches = invoices.filter((invoice) => invoice.invoiceNumber === payment.invoiceNumber && invoice.currency === payment.currency)
+        if (matches.length === 1) return true
+        matchingIssues.push({
+          row: payment.rowNumber,
+          message: matches.length === 0
+            ? 'Invoice number and currency do not match a saved invoice.'
+            : 'Invoice number and currency match multiple saved invoices; make invoice numbers unique before importing.',
+        })
+        return false
+      })
+      const allIssues = [...parsed.issues, ...matchingIssues]
+      setPaymentIssues(allIssues)
+      if (!validPayments.length) {
+        setPaymentNotice('No matching payment rows were saved. Correct the listed issues and try again.')
         setPaymentNoticeIsError(true)
         return
       }
@@ -181,8 +194,8 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
         sourceId: 'payments:' + file.name.trim().slice(0, 180),
         sourceName: file.name,
         contentHash: await sha256Hex(text),
-        payments: parsed.payments,
-        rejectedRows: parsed.issues.length,
+        payments: validPayments,
+        rejectedRows: allIssues.length,
       })
       setPaymentNotice(result.duplicate ? 'This exact payment file was already imported.' : result.acceptedRows + ' payment record(s) saved as evidence.' + (result.rejectedRows ? ' ' + result.rejectedRows + ' invalid row(s) were skipped.' : ''))
       setVerifiedOutcomes(await loadVerifiedOutcomes(session, organization.id))

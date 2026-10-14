@@ -6,8 +6,9 @@ HTTP layers were NOT exercised (the sandbox cannot reach the project API, and no
 Data: synthetic only, approved by the project owner. Users `zz-synthetic-{a,b,c}@example.test`,
 workspaces named `ZZ-SYNTHETIC-TEST Workspace A/B/C`.
 
-Result: 49 valid checks, all passed (an earlier first batch had 14 invalid checks caused by a test
-harness mistake; they were discarded and re-run correctly, plus 17 valid checks in that batch passed).
+Result: in the second (corrected) batch every check passed. In the first batch the checks that were
+valid also passed, but its data-modifying checks and everything after the missing recovery-rate
+assumption were invalid (test harness mistakes) and were discarded and re-run in the second batch.
 
 Covered: invoice import (4 rows, duplicate no-op, invalid row rejected), tenant isolation (reads,
 writes, RPCs), action state machine (invalid transitions rejected), payment rules (currency mismatch,

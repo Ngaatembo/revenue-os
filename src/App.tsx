@@ -201,7 +201,7 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
         </div>
       </main>
 
-      <nav className="mobile-nav" aria-label="Mobile navigation">{sections.map((section) => <button key={section} className={activeSection === section ? 'active' : ''} onClick={() => setActiveSection(section)} aria-label={section}><Icon name={section === 'Overview' ? 'grid' : section === 'Opportunities' ? 'spark' : section === 'Actions' ? 'check' : section === 'Outcomes' ? 'chart' : 'brain'} /><span>{section}</span></button>)}</nav>
+      <nav className="mobile-nav" aria-label="Mobile navigation">{sections.map((section) => <button key={section} className={activeSection === section ? 'active' : ''} onClick={() => setActiveSection(section)} aria-label={section}><Icon name={section === 'Overview' ? 'grid' : section === 'Opportunities' ? 'spark' : section === 'Lead Recovery' ? 'check' : section === 'Actions' ? 'check' : section === 'Outcomes' ? 'chart' : 'brain'} /><span>{section}</span></button>)}</nav>
     </div>
   )
 }
@@ -275,8 +275,6 @@ function LeadRecovery({ leads, setLeads, session, organization, loading, loadErr
   }
 
   const active = leads.filter((lead) => lead.status !== 'converted' && lead.status !== 'closed')
-  const openValue = active.reduce((sum, lead) => sum + Number(lead.value || 0), 0)
-  const convertedValue = leads.filter((lead) => lead.status === 'converted').reduce((sum, lead) => sum + Number(lead.value || 0), 0)
   const visible = leads.filter((lead) => filter === 'all' || lead.status === filter).sort((a, b) => a.nextFollowUp.localeCompare(b.nextFollowUp))
   const statusLabel: Record<LeadStatus, string> = { new: 'New', follow_up: 'Follow-up due', contacted: 'Contacted', converted: 'Converted', closed: 'Closed' }
 

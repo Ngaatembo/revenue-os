@@ -295,7 +295,7 @@ function BusinessBrain({ sourceName, invoiceCount, issueCount, recoveryRate, set
       <div className="brain-detail-grid">
         <article><span>Imported source</span><strong>{sourceName || 'No CSV imported'}</strong><small>{invoiceCount} invoice record(s) loaded</small></article>
         <article><span>Rows needing attention</span><strong>{issueCount}</strong><small>Skipped during the most recent import</small></article>
-        <article><span>Recovery assumption</span><strong>{assumptionBps === null ? 'Not set' : (assumptionBps / 100).toFixed(2).replace(/\\.00$/, '') + '%'}</strong><small>Used for estimates only</small></article>
+        <article><span>Recovery assumption</span><strong>{assumptionBps === null ? 'Not set' : (assumptionBps / 100).toFixed(2).replace(/\.00$/, '') + '%'}</strong><small>Used for estimates only</small></article>
       </div>
       <div className="functional-settings">
         <h3>Recovery-rate assumption</h3>

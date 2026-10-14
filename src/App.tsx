@@ -363,7 +363,7 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
 
               {issues.length > 0 && <section className="panel issues-panel"><div className="panel-heading"><div><h2>Rows needing attention</h2><p>These rows were skipped; correct the source file and re-import.</p></div><span className="issue-count">{issues.length}</span></div><ul>{issues.slice(0, 8).map((issue) => <li key={`${issue.row}-${issue.message}`}><strong>Row {issue.row}</strong><span>{issue.message}</span></li>)}</ul>{issues.length > 8 && <p className="more-issues">And {issues.length - 8} more row issues.</p>}</section>}
             </>
-          ) : activeSection === 'Lead Recovery' ? <LeadRecovery leads={leads} setLeads={setLeads} session={session} organization={organization} loading={leadLoading} loadError={leadError} /> : activeSection === 'Actions' ? <RecoveryActions actions={recoveryActions} invoices={invoices} loading={actionsLoading} busyId={actionBusy} notice={actionNotice} onTransition={(action, transition) => void handleActionTransition(action, transition)} /> : activeSection === 'Outcomes' ? <RecoveryOutcomes actions={recoveryActions} invoices={invoices} outcomes={verifiedOutcomes} loading={outcomesLoading} busyId={actionBusy} notice={paymentNotice} issues={paymentIssues} fileRef={paymentFileRef} onImport={(file) => void handleImportPayments(file)} onVerify={(action) => void handleVerifyOutcome(action)} /> : (
+          ) : activeSection === 'Lead Recovery' ? <LeadRecovery leads={leads} setLeads={setLeads} session={session} organization={organization} loading={leadLoading} loadError={leadError} /> : activeSection === 'Actions' ? <RecoveryActions actions={recoveryActions} invoices={invoices} loading={actionsLoading} busyId={actionBusy} notice={actionNotice} noticeIsError={actionNoticeIsError} onTransition={(action, transition) => void handleActionTransition(action, transition)} /> : activeSection === 'Outcomes' ? <RecoveryOutcomes actions={recoveryActions} invoices={invoices} outcomes={verifiedOutcomes} loading={outcomesLoading} busyId={actionBusy} notice={paymentNotice} noticeIsError={paymentNoticeIsError} issues={paymentIssues} fileRef={paymentFileRef} onImport={(file) => void handleImportPayments(file)} onVerify={(action) => void handleVerifyOutcome(action)} /> : (
             <section className="panel section-placeholder"><span className="empty-icon"><Icon name="brain" /></span><h2>Business Brain</h2><p>The Business Brain holds sourced facts, explicit assumptions, and import history. Current invoice estimates are derived from saved invoice records and the recovery-rate assumption.</p><div id="csv-format" className="format-box"><strong>Invoice CSV columns</strong><code>customer_id, customer_name, invoice_number, currency, total_amount, paid_amount, issued_at, due_at</code><small>Amounts use a decimal point and up to two decimal places. Currency must be a three-letter ISO code such as USD.</small></div></section>
           )}
 
@@ -381,11 +381,11 @@ function OpportunityRow({ opportunity, onPropose, proposing }: { opportunity: Re
   return <article className="opportunity-row"><span className="opportunity-indicator" /><div className="opportunity-main"><div className="opportunity-title"><strong>{invoice.customerName}</strong><span className="overdue-pill">Overdue</span></div><p>Invoice {invoice.invoiceNumber} <span>·</span> Due {new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(invoice.dueAt))}</p><small>Source record: {invoice.source.recordId}</small><button className="button button-secondary recovery-draft-button" type="button" onClick={onPropose} disabled={proposing}>{proposing ? 'Saving draft…' : 'Draft reminder'}</button></div><div className="opportunity-values"><strong>{formatMoney(opportunity.outstanding)}</strong><small>outstanding</small><span>Est. {formatMoney(opportunity.estimate.low)}</span></div></article>
 }
 
-function RecoveryActions({ actions, invoices, loading, busyId, notice, onTransition }: { actions: RecoveryAction[]; invoices: InvoiceEvidence[]; loading: boolean; busyId: string; notice: string; onTransition: (action: RecoveryAction, transition: 'approve' | 'mark_sent' | 'cancel') => void }) {
+function RecoveryActions({ actions, invoices, loading, busyId, notice, noticeIsError, onTransition }: { actions: RecoveryAction[]; invoices: InvoiceEvidence[]; loading: boolean; busyId: string; notice: string; noticeIsError: boolean; onTransition: (action: RecoveryAction, transition: 'approve' | 'mark_sent' | 'cancel') => void }) {
   const invoiceById = new Map(invoices.map((invoice) => [invoice.id, invoice]))
   return <section className="panel recovery-actions-panel">
     <div className="panel-heading"><div><h2>Recovery action queue</h2><p>Review the draft, approve it, then send it yourself outside Revenue OS.</p></div><span className="status-pill">{actions.filter((action) => action.status === 'proposed' || action.status === 'approved').length} pending</span></div>
-    {notice && <div className={'alert ' + (actionNoticeIsError ? 'alert-error' : 'alert-success')} role={actionNoticeIsError ? 'alert' : 'status'}>{notice}</div>}
+    {notice && <div className={'alert ' + (noticeIsError ? 'alert-error' : 'alert-success')} role={noticeIsError ? 'alert' : 'status'}>{notice}</div>}
     {loading ? <div className="empty-state compact"><h3>Loading actions…</h3><p>Retrieving saved recovery drafts.</p></div> : actions.length === 0 ? <div className="empty-state compact"><span className="empty-icon"><Icon name="check" /></span><h3>No recovery drafts yet</h3><p>Go to Opportunities and choose Draft reminder for an overdue invoice.</p></div> : <div className="recovery-action-list">{actions.map((action) => {
       const invoice = invoiceById.get(action.invoiceId)
       const busy = busyId === action.id
@@ -514,13 +514,14 @@ function currencyTotals(records: LeadRecord[]) {
 }
 
 
-function RecoveryOutcomes({ actions, invoices, outcomes, loading, busyId, notice, issues, fileRef, onImport, onVerify }: {
+function RecoveryOutcomes({ actions, invoices, outcomes, loading, busyId, notice, noticeIsError, issues, fileRef, onImport, onVerify }: {
   actions: RecoveryAction[]
   invoices: InvoiceEvidence[]
   outcomes: VerifiedOutcome[]
   loading: boolean
   busyId: string
   notice: string
+  noticeIsError: boolean
   issues: CsvIssue[]
   fileRef: { current: HTMLInputElement | null }
   onImport: (file?: File) => void
@@ -536,7 +537,7 @@ function RecoveryOutcomes({ actions, invoices, outcomes, loading, busyId, notice
         <p className="payment-csv-format"><strong>Required CSV columns</strong><code>invoice_number,payment_reference,currency,amount,received_at</code><small>Each payment reference should be unique within its source. Invoice number and currency must match one saved invoice. Amounts use decimal notation, for example 125.50.</small></p>
         <input ref={fileRef} className="visually-hidden" type="file" accept=".csv,text/csv" onChange={(event) => onImport(event.target.files?.[0])} />
         <div className="recovery-action-controls"><button className="button button-primary" type="button" onClick={() => fileRef.current?.click()}>Import payment CSV</button><button className="button button-secondary" type="button" onClick={downloadPaymentTemplate}>Download template</button></div>
-        {notice && <div className={'alert ' + (paymentNoticeIsError ? 'alert-error' : 'alert-success')} role={paymentNoticeIsError ? 'alert' : 'status'}>{notice}</div>}
+        {notice && <div className={'alert ' + (noticeIsError ? 'alert-error' : 'alert-success')} role={noticeIsError ? 'alert' : 'status'}>{notice}</div>}
         {issues.length > 0 && <div className="payment-issues"><strong>Rows needing review ({issues.length})</strong><ul>{issues.slice(0, 12).map((issue) => <li key={issue.row}>Row {issue.row}: {issue.message}</li>)}</ul>{issues.length > 12 && <small>Showing first 12 issues.</small>}</div>}
       </div>
     </section>

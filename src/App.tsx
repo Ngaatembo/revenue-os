@@ -3,7 +3,7 @@ import { buildOverdueOpportunities } from './domain/overdueInvoices'
 import { parseInvoiceCsv, type CsvIssue } from './domain/invoiceCsv'
 import { addMoney, formatMoney, money } from './domain/money'
 import type { InvoiceEvidence, RevenueOpportunity } from './domain/types'
-import { createSalesLead, deleteSalesLead, loadSalesLeads, updateSalesLead, type RevenueOrganization, type SalesLead, type SupabaseSession } from './lib/supabaseRest'
+import { createSalesLead, deleteSalesLead, loadInvoices, loadRecoveryRate, loadSalesLeads, persistInvoiceImport, saveRecoveryRate, sha256Hex, updateSalesLead, type RevenueOrganization, type SalesLead, type SupabaseSession } from './lib/supabaseRest'
 import './App.css'
 
 type Section = 'Overview' | 'Opportunities' | 'Lead Recovery' | 'Actions' | 'Outcomes' | 'Business Brain'
@@ -65,6 +65,33 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
     return () => { cancelled = true }
   }, [session, organization.id])
 
+  useEffect(() => {
+    let cancelled = false
+    Promise.all([loadInvoices(session, organization.id), loadRecoveryRate(session, organization.id)])
+      .then(([records, savedRate]) => {
+        if (cancelled) return
+        setInvoices(records)
+        setSourceName(records.length ? 'Saved Supabase invoice records' : '')
+        if (savedRate !== null) setRecoveryRate((savedRate / 100).toString())
+      })
+      .catch((cause) => {
+        if (!cancelled) setError(cause instanceof Error ? cause.message : 'Could not load saved invoice records.')
+      })
+    return () => { cancelled = true }
+  }, [session, organization.id])
+
+  async function persistRecoveryRate() {
+    const bps = parseRecoveryRate(recoveryRate)
+    if (bps === null) return
+    try {
+      await saveRecoveryRate(session, organization, bps)
+      setError('')
+      setImportNote('Recovery-rate assumption saved to your workspace.')
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not save the recovery-rate assumption.')
+    }
+  }
+
   const assumptionBps = parseRecoveryRate(recoveryRate)
   const opportunities = useMemo<RevenueOpportunity[]>(() => {
     if (!invoices.length || assumptionBps === null) return []
@@ -75,7 +102,7 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
         key: 'recovery_rate',
         valueBps: assumptionBps,
         updatedAt: new Date().toISOString(),
-        updatedBy: 'local-session',
+        updatedBy: session.user.id,
       },
       asOf: new Date().toISOString(),
     })
@@ -99,12 +126,25 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
     setImportNote('')
     try {
       const text = await file.text()
-      const result = parseInvoiceCsv(text, `browser:${file.name}`, new Date().toISOString())
-      setInvoices(result.invoices)
+      const importedAt = new Date().toISOString()
+      const sourceId = 'csv:' + file.name.trim().slice(0, 180)
+      const result = parseInvoiceCsv(text, sourceId, importedAt)
       setIssues(result.issues)
       setSourceName(file.name)
       setActiveSection('Overview')
-      setImportNote(`${result.invoices.length} invoice record${result.invoices.length === 1 ? '' : 's'} loaded for this browser session.`)
+      if (result.invoices.length === 0) {
+        setImportNote('No valid invoice rows were saved. Review the row issues below and correct the source file.')
+        return
+      }
+      const outcome = await persistInvoiceImport(session, organization, {
+        sourceId, sourceName: file.name, contentHash: await sha256Hex(text),
+        invoices: result.invoices, rejectedRows: result.issues.length,
+      })
+      const savedInvoices = await loadInvoices(session, organization.id)
+      setInvoices(savedInvoices)
+      setImportNote(outcome.duplicate
+        ? 'This exact file was already imported. No duplicate invoice records were created.'
+        : outcome.acceptedRows + ' invoice record' + (outcome.acceptedRows === 1 ? '' : 's') + ' saved to Supabase.' + (outcome.rejectedRows ? ' ' + outcome.rejectedRows + ' invalid row(s) were skipped.' : ''))
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'This file could not be imported.')
     } finally {
@@ -157,8 +197,8 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
 
           <div className="preview-banner"><span className="preview-dot" />Workspace connected <span className="preview-divider">·</span> Lead records sync to Supabase; invoice imports remain local to this tab for now.</div>
 
-          {error && <div className="alert alert-error" role="alert"><strong>Import failed.</strong> {error}</div>}
-          {importNote && <div className="alert alert-success" role="status"><strong>Import complete.</strong> {importNote}</div>}
+          {error && <div className="alert alert-error" role="alert"><strong>Could not complete the operation.</strong> {error}</div>}
+          {importNote && <div className="alert alert-success" role="status"><strong>Saved.</strong> {importNote}</div>}
 
           {activeSection === 'Overview' || activeSection === 'Opportunities' ? (
             <>
@@ -174,7 +214,7 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
                   {invoices.length === 0 ? (
                     <div className="empty-state"><span className="empty-icon"><Icon name="upload" /></span><h3>Start with your invoice data</h3><p>Import a CSV to identify overdue invoices. Every opportunity will link back to its source record.</p><button className="button button-secondary" onClick={() => fileRef.current?.click()}>Choose invoice CSV</button><button className="template-link" onClick={downloadCsvTemplate}>Download blank CSV template</button><a className="text-link" href="#csv-format" onClick={(event) => { event.preventDefault(); setActiveSection('Business Brain') }}>View required columns</a></div>
                   ) : assumptionBps === null ? (
-                    <div className="assumption-prompt"><div className="assumption-icon"><Icon name="brain" /></div><div><h3>Set a recovery-rate assumption</h3><p>Estimates are calculated from outstanding invoice balances and this assumption. Choose a rate your team can support with evidence.</p><label htmlFor="recovery-rate">Expected recovery rate</label><div className="rate-input-wrap"><input id="recovery-rate" inputMode="decimal" placeholder="e.g. 25" value={recoveryRate} onChange={(event) => setRecoveryRate(event.target.value)} aria-describedby="rate-help"/><span>%</span></div><small id="rate-help">Enter a percentage from 0 to 100. This will be labelled as an estimate.</small>{recoveryRate && parseRecoveryRate(recoveryRate) === null && <small className="field-error">Enter a valid percentage, such as 25 or 12.5.</small>}</div></div>
+                    <div className="assumption-prompt"><div className="assumption-icon"><Icon name="brain" /></div><div><h3>Set a recovery-rate assumption</h3><p>Estimates are calculated from outstanding invoice balances and this assumption. Choose a rate your team can support with evidence.</p><label htmlFor="recovery-rate">Expected recovery rate</label><div className="rate-input-wrap"><input id="recovery-rate" inputMode="decimal" placeholder="e.g. 25" value={recoveryRate} onChange={(event) => setRecoveryRate(event.target.value)} onBlur={() => void persistRecoveryRate()} aria-describedby="rate-help"/><span>%</span></div><small id="rate-help">Enter a percentage from 0 to 100. This will be labelled as an estimate.</small>{recoveryRate && parseRecoveryRate(recoveryRate) === null && <small className="field-error">Enter a valid percentage, such as 25 or 12.5.</small>}</div></div>
                   ) : opportunities.length === 0 ? (
                     <div className="empty-state compact"><span className="empty-icon"><Icon name="check" /></span><h3>No overdue balances matched</h3><p>{outstandingInvoiceCount ? 'There are outstanding invoices, but none meet the overdue rule as of today.' : 'Imported invoices show no unpaid balances.'}</p></div>
                   ) : (
@@ -184,7 +224,7 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
 
                 <aside className="panel brain-panel">
                   <div className="panel-heading"><div><h2>Business Brain</h2><p>Facts and assumptions behind recommendations.</p></div><span className="brain-status">{invoices.length ? 'IN SESSION' : 'NOT CONNECTED'}</span></div>
-                  <div className="brain-source"><span className="source-icon"><Icon name="brain" /></span><div><strong>{sourceName || 'No source data yet'}</strong><small>{invoices.length ? `${invoices.length} invoice records · imported for this tab` : 'Import a CSV to add evidence'}</small></div></div>
+                  <div className="brain-source"><span className="source-icon"><Icon name="brain" /></span><div><strong>{sourceName || 'No source data yet'}</strong><small>{invoices.length ? `${invoices.length} invoice records · saved in Supabase` : 'Import a CSV to add evidence'}</small></div></div>
                   <div className="brain-divider" />
                   <div className="assumption-row"><span><i className="assumption-dot" />Recovery rate</span><strong>{assumptionBps === null ? 'Not set' : `${(assumptionBps / 100).toFixed(2).replace(/\.00$/, '')}%`}</strong></div>
                   <p className="brain-note">Recommendations will show the records and assumptions used to calculate them.</p>

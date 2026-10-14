@@ -1,13 +1,13 @@
-import { useMemo, useRef, useState } from 'react'
+import { useMemo, useRef, useState, type FormEvent } from 'react'
 import { buildOverdueOpportunities } from './domain/overdueInvoices'
 import { parseInvoiceCsv, type CsvIssue } from './domain/invoiceCsv'
 import { addMoney, formatMoney, money } from './domain/money'
 import type { InvoiceEvidence, RevenueOpportunity } from './domain/types'
 import './App.css'
 
-type Section = 'Overview' | 'Opportunities' | 'Actions' | 'Outcomes' | 'Business Brain'
+type Section = 'Overview' | 'Opportunities' | 'Lead Recovery' | 'Actions' | 'Outcomes' | 'Business Brain'
 
-const sections: Section[] = ['Overview', 'Opportunities', 'Actions', 'Outcomes', 'Business Brain']
+const sections: Section[] = ['Overview', 'Opportunities', 'Lead Recovery', 'Actions', 'Outcomes', 'Business Brain']
 const invoiceCsvHeader = 'customer_id,customer_name,invoice_number,currency,total_amount,paid_amount,issued_at,due_at\n'
 
 function downloadCsvTemplate() {
@@ -37,6 +37,9 @@ function parseRecoveryRate(value: string): number | null {
   return Math.round(percentage * 100)
 }
 
+type LeadStatus = 'new' | 'follow_up' | 'contacted' | 'converted' | 'closed'
+type LeadRecord = { id: string; name: string; business: string; contact: string; source: string; value: string; currency: string; nextFollowUp: string; notes: string; status: LeadStatus; createdAt: string }
+
 function App() {
   const fileRef = useRef<HTMLInputElement>(null)
   const [activeSection, setActiveSection] = useState<Section>('Overview')
@@ -46,6 +49,7 @@ function App() {
   const [recoveryRate, setRecoveryRate] = useState('')
   const [error, setError] = useState('')
   const [importNote, setImportNote] = useState('')
+  const [leads, setLeads] = useState<LeadRecord[]>([])
 
   const assumptionBps = parseRecoveryRate(recoveryRate)
   const opportunities = useMemo<RevenueOpportunity[]>(() => {
@@ -111,7 +115,7 @@ function App() {
         <p className="nav-label">WORKSPACE</p>
         <nav className="primary-nav">
           {sections.map((section) => {
-            const icon = section === 'Overview' ? 'grid' : section === 'Opportunities' ? 'spark' : section === 'Actions' ? 'check' : section === 'Outcomes' ? 'chart' : 'brain'
+            const icon = section === 'Overview' ? 'grid' : section === 'Opportunities' ? 'spark' : section === 'Lead Recovery' ? 'check' : section === 'Actions' ? 'check' : section === 'Outcomes' ? 'chart' : 'brain'
             return <button key={section} className={`nav-item ${activeSection === section ? 'active' : ''}`} onClick={() => setActiveSection(section)}>
               <Icon name={icon} /><span>{section}</span>
               {section === 'Opportunities' && opportunities.length > 0 && <span className="nav-count">{opportunities.length}</span>}
@@ -175,7 +179,7 @@ function App() {
 
               {issues.length > 0 && <section className="panel issues-panel"><div className="panel-heading"><div><h2>Rows needing attention</h2><p>These rows were skipped; correct the source file and re-import.</p></div><span className="issue-count">{issues.length}</span></div><ul>{issues.slice(0, 8).map((issue) => <li key={`${issue.row}-${issue.message}`}><strong>Row {issue.row}</strong><span>{issue.message}</span></li>)}</ul>{issues.length > 8 && <p className="more-issues">And {issues.length - 8} more row issues.</p>}</section>}
             </>
-          ) : (
+          ) : activeSection === 'Lead Recovery' ? <LeadRecovery leads={leads} setLeads={setLeads} /> : (
             <section className="panel section-placeholder"><span className="empty-icon"><Icon name={activeSection === 'Actions' ? 'check' : activeSection === 'Outcomes' ? 'chart' : 'brain'} /></span><h2>{activeSection} will follow your source data</h2><p>{activeSection === 'Actions' ? 'Actions will only be proposed from a real opportunity and will require human approval before execution.' : activeSection === 'Outcomes' ? 'Verified outcomes will be recorded separately from estimates and linked to payment evidence.' : 'The Business Brain will hold sourced facts, explicit assumptions, and import history.'}</p>{activeSection === 'Business Brain' && <div id="csv-format" className="format-box"><strong>Invoice CSV columns</strong><code>customer_id, customer_name, invoice_number, currency, total_amount, paid_amount, issued_at, due_at</code><small>Amounts use a decimal point and up to two decimal places. Currency must be a three-letter code such as USD.</small></div>}</section>
           )}
 
@@ -194,3 +198,78 @@ function OpportunityRow({ opportunity }: { opportunity: RevenueOpportunity }) {
 }
 
 export default App
+
+
+function LeadRecovery({ leads, setLeads }: { leads: LeadRecord[]; setLeads: (updater: (current: LeadRecord[]) => LeadRecord[]) => void }) {
+  const [name, setName] = useState('')
+  const [business, setBusiness] = useState('')
+  const [contact, setContact] = useState('')
+  const [source, setSource] = useState('WhatsApp')
+  const [value, setValue] = useState('')
+  const [currency, setCurrency] = useState('USD')
+  const [nextFollowUp, setNextFollowUp] = useState(new Date().toISOString().slice(0, 10))
+  const [notes, setNotes] = useState('')
+  const [notice, setNotice] = useState('')
+  const [filter, setFilter] = useState<'all' | LeadStatus>('all')
+
+  function addLead(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const amount = value.trim() ? Number(value) : 0
+    if (!name.trim() || !business.trim() || (value.trim() && (!Number.isFinite(amount) || amount < 0))) {
+      setNotice('Enter a contact name, business, and a valid non-negative opportunity value.')
+      return
+    }
+    setLeads((current) => [{ id: `lead-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, name: name.trim(), business: business.trim(), contact: contact.trim(), source, value: amount.toFixed(2), currency, nextFollowUp, notes: notes.trim(), status: 'new', createdAt: new Date().toISOString() }, ...current])
+    setName(''); setBusiness(''); setContact(''); setValue(''); setNotes('')
+    setNotice('Lead added to this browser session. No message has been sent.')
+  }
+
+  function updateStatus(id: string, status: LeadStatus) {
+    setLeads((current) => current.map((lead) => lead.id === id ? { ...lead, status } : lead))
+  }
+
+  const active = leads.filter((lead) => lead.status !== 'converted' && lead.status !== 'closed')
+  const openValue = active.reduce((sum, lead) => sum + Number(lead.value || 0), 0)
+  const convertedValue = leads.filter((lead) => lead.status === 'converted').reduce((sum, lead) => sum + Number(lead.value || 0), 0)
+  const visible = leads.filter((lead) => filter === 'all' || lead.status === filter).sort((a, b) => a.nextFollowUp.localeCompare(b.nextFollowUp))
+  const statusLabel: Record<LeadStatus, string> = { new: 'New', follow_up: 'Follow-up due', contacted: 'Contacted', converted: 'Converted', closed: 'Closed' }
+
+  return <div className="lead-workspace">
+    <section className="lead-intro panel"><div><p className="eyebrow">REVENUE RECOVERY</p><h2>Lead Recovery</h2><p>Capture enquiries, schedule follow-ups, and track which opportunities turn into revenue.</p></div><span className="lead-local-pill">LOCAL SESSION</span></section>
+    <section className="lead-metrics" aria-label="Lead recovery metrics">
+      <article className="lead-metric"><span>Total leads</span><strong>{leads.length}</strong><small>Captured in this session</small></article>
+      <article className="lead-metric"><span>Active pipeline</span><strong>{currencyTotals(leads.filter((lead) => lead.status !== 'converted' && lead.status !== 'closed'))}</strong><small>Potential value, not revenue</small></article>
+      <article className="lead-metric"><span>Converted value</span><strong>{currencyTotals(leads.filter((lead) => lead.status === 'converted'))}</strong><small>Marked converted by you</small></article>
+      <article className="lead-metric"><span>Follow-ups today / overdue</span><strong>{active.filter((lead) => lead.nextFollowUp <= new Date().toISOString().slice(0, 10)).length}</strong><small>Due-date check</small></article>
+    </section>
+    <section className="panel lead-form-panel"><div className="panel-heading"><div><h2>Add an opportunity</h2><p>Record a lead and its next action. Messages are not sent automatically.</p></div></div>
+      <form className="lead-form" onSubmit={addLead}>
+        <label>Contact name<input value={name} onChange={(e) => setName(e.target.value)} required maxLength={120} placeholder="e.g. Tendai M." /></label>
+        <label>Business name<input value={business} onChange={(e) => setBusiness(e.target.value)} required maxLength={160} placeholder="e.g. ABC Guest House" /></label>
+        <label>Phone / email<input value={contact} onChange={(e) => setContact(e.target.value)} maxLength={160} placeholder="Optional contact details" /></label>
+        <label>Lead source<select value={source} onChange={(e) => setSource(e.target.value)}><option>WhatsApp</option><option>Phone call</option><option>Referral</option><option>Website</option><option>Email</option><option>Social media</option><option>Other</option></select></label>
+        <label>Potential value<input value={value} onChange={(e) => setValue(e.target.value)} inputMode="decimal" placeholder="e.g. 250" /></label>
+        <label>Currency<select value={currency} onChange={(e) => setCurrency(e.target.value)}><option>USD</option><option>ZIG</option><option>ZAR</option><option>GBP</option><option>EUR</option></select></label>
+        <label>Next follow-up date<input type="date" value={nextFollowUp} onChange={(e) => setNextFollowUp(e.target.value)} required /></label>
+        <label className="lead-wide">Notes / next action<input value={notes} onChange={(e) => setNotes(e.target.value)} maxLength={500} placeholder="e.g. Call to confirm website feedback" /></label>
+        <div className="lead-form-actions"><button className="button button-primary" type="submit">Add lead</button><span>Store only the contact information needed to follow up.</span></div>
+      </form>
+      {notice && <p className="lead-notice" role="status">{notice}</p>}
+    </section>
+    <section className="panel lead-list-panel"><div className="panel-heading"><div><h2>Follow-up queue</h2><p>Sort by next follow-up date and update the status after each real interaction.</p></div><span className="status-pill">{active.length} active</span></div>
+      <div className="lead-filter-row"><label htmlFor="lead-filter">Show</label><select id="lead-filter" value={filter} onChange={(e) => setFilter(e.target.value as 'all' | LeadStatus)}><option value="all">All leads</option><option value="new">New</option><option value="follow_up">Follow-up due</option><option value="contacted">Contacted</option><option value="converted">Converted</option><option value="closed">Closed</option></select></div>
+      {visible.length === 0 ? <div className="empty-state compact"><span className="empty-icon"><Icon name="check" /></span><h3>No leads in this view</h3><p>Add a prospect above. Follow-up records stay in this browser tab for now.</p></div> : <div className="lead-list">{visible.map((lead) => {
+        const due = lead.status !== 'converted' && lead.status !== 'closed' && lead.nextFollowUp <= new Date().toISOString().slice(0, 10)
+        return <article className="lead-row" key={lead.id}><div className="lead-row-main"><div className="lead-row-title"><strong>{lead.business}</strong><span className={`lead-status lead-status-${lead.status}`}>{statusLabel[lead.status]}</span>{due && <span className="lead-due">Due</span>}</div><p>{lead.name}{lead.contact ? ` · ${lead.contact}` : ''} · Source: {lead.source}</p><small>Next follow-up: {lead.nextFollowUp}{lead.notes ? ` · ${lead.notes}` : ''}</small></div><div className="lead-row-side"><strong>{lead.currency} {Number(lead.value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong><label>Status<select aria-label={`Status for ${lead.business}`} value={lead.status} onChange={(e) => updateStatus(lead.id, e.target.value as LeadStatus)}><option value="new">New</option><option value="follow_up">Follow-up due</option><option value="contacted">Contacted</option><option value="converted">Converted</option><option value="closed">Closed</option></select></label><button type="button" className="template-link" onClick={() => setLeads((current) => current.filter((item) => item.id !== lead.id))}>Remove</button></div></article>
+      })}</div>}
+      <p className="lead-disclaimer">Pipeline value is an estimate. Converted value is a user-marked outcome, not independently verified cash. This prototype does not send messages, connect to WhatsApp, or persist records to a database.</p>
+    </section>
+  </div>
+}
+
+function currencyTotals(records: LeadRecord[]) {
+  const totals = new Map<string, number>()
+  for (const record of records) totals.set(record.currency, (totals.get(record.currency) ?? 0) + Number(record.value || 0))
+  if (!totals.size) return '—'
+  return [...totals.entries()].map(([currency, amount]) => `${currency} ${amount.toLocaleString(undefined, { maximumFractionDigits: 2 })}`).join(' · ')
+}

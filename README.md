@@ -24,7 +24,7 @@ VITE_SUPABASE_ANON_KEY=YOUR_PUBLISHABLE_OR_ANON_KEY
 
 The publishable/anon key is intended for browser use. Never put a Supabase service-role key in a browser build or commit one to Git.
 
-The migration `supabase/migrations/20261014120000_sales_leads_and_org_bootstrap.sql` creates the `sales_leads` table, organization-scoped RLS policies, and an authenticated onboarding RPC. The RPC creates a user's first organization and owner membership, and returns an existing membership if the user already has one. It does not accept an arbitrary user ID.
+The migration `supabase/migrations/20261014094640_sales_leads_and_org_bootstrap.sql` creates the `sales_leads` table, organization-scoped RLS policies, and an authenticated onboarding RPC. The RPC creates a user's first organization and owner membership, and returns an existing membership if the user already has one. It does not accept an arbitrary user ID.
 
 ## Security boundaries
 

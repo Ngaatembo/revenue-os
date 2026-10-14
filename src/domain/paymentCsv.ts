@@ -6,6 +6,7 @@ export type PaymentCsvRow = {
   currency: string
   amountMinor: number
   receivedAt: string
+  rowNumber: number
 }
 export type PaymentCsvResult = { payments: PaymentCsvRow[]; issues: CsvIssue[] }
 
@@ -78,10 +79,11 @@ export function parsePaymentCsv(text: string): PaymentCsvResult {
       if (externalRecordId.length > 240) throw new Error('Payment reference exceeds 240 characters.')
       if (!/^[A-Z]{3}$/.test(currency)) throw new Error('Currency must be a three-letter ISO code.')
       if (seen.has(externalRecordId)) throw new Error('Duplicate payment reference in this file.')
-      seen.add(externalRecordId)
       const received = Date.parse(value('received_at'))
       if (!value('received_at') || !Number.isFinite(received)) throw new Error('received_at must be a valid date.')
-      payments.push({ invoiceNumber, externalRecordId, currency, amountMinor: parseAmount(value('amount')), receivedAt: new Date(received).toISOString() })
+      const amountMinor = parseAmount(value('amount'))
+      seen.add(externalRecordId)
+      payments.push({ invoiceNumber, externalRecordId, currency, amountMinor, receivedAt: new Date(received).toISOString(), rowNumber })
     } catch (error) {
       issues.push({ row: rowNumber, message: error instanceof Error ? error.message : 'Invalid payment row.' })
     }

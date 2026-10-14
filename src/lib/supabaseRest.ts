@@ -36,8 +36,9 @@ type DbLead = {
 }
 
 const SESSION_KEY = 'revenue-os.auth-session'
-const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL as string | undefined)?.replace(/\/$/, '')
-const publishableKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined
+const supabaseUrl = ((import.meta.env.VITE_SUPABASE_URL as string | undefined) || 'https://zivgfvcmposnbwqsudas.supabase.co').replace(/\/$/, '')
+// Publishable/anon keys are designed for browser use; database access is restricted by RLS.
+const publishableKey = (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined) || 'sb_publishable_twQnXi5Mwmy5_dWIcay0OQ_8-xjyP3h'
 
 export function isSupabaseConfigured() {
   return Boolean(supabaseUrl && publishableKey)

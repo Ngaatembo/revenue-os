@@ -277,8 +277,12 @@ function OutcomeRegister({ opportunities, records, setRecords }: OutcomeRegister
       setFormError('Enter a payment reference, a valid past or current date, a positive amount with up to two decimal places, and an evidence note.')
       return
     }
-    if (amountMinor > selectedOpportunity.outstanding.amount) {
-      setFormError('The reported payment cannot exceed the current outstanding balance for this invoice.')
+    const previouslyReportedMinor = records
+      .filter((record) => record.opportunityId === selectedOpportunity.id)
+      .reduce((total, record) => total + Math.round(Number(record.amount) * 100), 0)
+    const remainingReportableMinor = selectedOpportunity.outstanding.amount - previouslyReportedMinor
+    if (amountMinor > remainingReportableMinor) {
+      setFormError('This amount exceeds the invoice balance remaining after other outcomes already recorded in this session.')
       return
     }
 

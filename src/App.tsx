@@ -195,7 +195,7 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
             <input ref={fileRef} className="visually-hidden" type="file" accept=".csv,text/csv" onChange={(event) => void importFile(event.target.files?.[0])} />
           </div>
 
-          <div className="preview-banner"><span className="preview-dot" />Workspace connected <span className="preview-divider">·</span> Lead records sync to Supabase; invoice imports remain local to this tab for now.</div>
+          <div className="preview-banner"><span className="preview-dot" />Workspace connected <span className="preview-divider">·</span> Leads, invoice imports and recovery assumptions sync to Supabase. Actions still require manual approval.</div>
 
           {error && <div className="alert alert-error" role="alert"><strong>Could not complete the operation.</strong> {error}</div>}
           {importNote && <div className="alert alert-success" role="status"><strong>Saved.</strong> {importNote}</div>}

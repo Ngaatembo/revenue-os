@@ -6,7 +6,7 @@ Revenue OS helps a business identify, prioritize, execute, and measure revenue o
 
 The current build has two connected work areas:
 
-- **Invoice recovery prototype:** import an invoice CSV, set an explicit recovery-rate assumption, and deterministically identify overdue balances. Invoice records and estimates currently stay in browser memory and disappear when the tab is closed.
+- **Invoice recovery:** import an invoice CSV, set an explicit recovery-rate assumption, and deterministically identify overdue balances. Invoice rows and recovery-rate assumptions are stored in Supabase. Opportunity estimates are recalculated from those source records when the workspace loads.
 - **Lead Recovery:** sign in, create a workspace, record enquiries and follow-ups, and track pipeline status. Lead records are stored in Supabase Postgres and scoped to the authenticated organization by row-level security.
 
 Lead Recovery does not send WhatsApp messages or email, and a user-marked conversion is not independently verified revenue. Actions remain human-controlled.
@@ -29,7 +29,7 @@ The migration `supabase/migrations/20261014120000_sales_leads_and_org_bootstrap.
 - All client requests use the publishable key and the signed-in user's access token; no service-role key is used by the frontend.
 - RLS policies scope lead reads to organization membership and writes to owner/admin/operator roles.
 - The browser never chooses the authenticated user ID or grants itself a role.
-- Keep real customer financial data out of the invoice CSV prototype until invoice imports are persisted through authenticated operations and the complete access-control flow has been tested.
+- Before importing real customer financial data, test authentication and organization isolation with separate accounts, confirm import idempotency and partial-payment behavior, and review access logs. Payment evidence and the complete approval/action workflow are still outstanding.
 - The current lightweight auth wrapper uses Supabase Auth endpoints and keeps the session in `sessionStorage`. For a production release, review session handling, recovery flows, rate limits, and security headers before onboarding customers.
 
 ## Invoice CSV format

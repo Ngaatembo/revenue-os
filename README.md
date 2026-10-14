@@ -8,6 +8,8 @@ The current build has two connected work areas:
 
 - **Invoice recovery:** import an invoice CSV, set an explicit recovery-rate assumption, and deterministically identify overdue balances. Invoice rows and recovery-rate assumptions are stored in Supabase. Opportunity estimates are recalculated from those source records when the workspace loads.
 - **Lead Recovery:** sign in, create a workspace, record enquiries and follow-ups, and track pipeline status. Lead records are stored in Supabase Postgres and scoped to the authenticated organization by row-level security.
+- **Approval-gated recovery actions:** create an invoice-linked reminder draft from an overdue invoice, approve it, copy it to send manually, and only then mark it as sent. Revenue OS never sends customer messages automatically.
+- **Payment evidence and outcomes:** import a payment CSV, match records to unique invoice numbers and currencies, and verify payments received within 30 days after a manually sent action. Outcomes are labelled as observed after the action, not caused by it.
 
 Lead Recovery does not send WhatsApp messages or email, and a user-marked conversion is not independently verified revenue. Actions remain human-controlled.
 
@@ -41,6 +43,16 @@ customer_id,customer_name,invoice_number,currency,total_amount,paid_amount,issue
 ```
 
 Amounts must be non-negative decimal values with at most two decimal places. Currency must be a three-letter code. Invalid rows are skipped with a row-specific explanation; values are not silently coerced.
+
+## Payment CSV format
+
+Required columns:
+
+\`\`\`text
+invoice_number,payment_reference,currency,amount,received_at
+\`\`\`
+
+Payment references should be unique within a source. Invoice number and currency must match exactly one saved invoice. Amounts must be positive decimal values with at most two decimal places. Verified outcomes require an executed reminder and matching payment records inside the measurement window; matched payments may not exceed the imported outstanding balance.
 
 ## Domain modules
 

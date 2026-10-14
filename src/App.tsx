@@ -69,9 +69,11 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
   const [actionsLoading, setActionsLoading] = useState(true)
   const [actionBusy, setActionBusy] = useState('')
   const [actionNotice, setActionNotice] = useState('')
+  const [actionNoticeIsError, setActionNoticeIsError] = useState(false)
   const [verifiedOutcomes, setVerifiedOutcomes] = useState<VerifiedOutcome[]>([])
   const [outcomesLoading, setOutcomesLoading] = useState(true)
   const [paymentNotice, setPaymentNotice] = useState('')
+  const [paymentNoticeIsError, setPaymentNoticeIsError] = useState(false)
   const [paymentIssues, setPaymentIssues] = useState<CsvIssue[]>([])
 
   useEffect(() => {
@@ -114,7 +116,7 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
     let cancelled = false
     loadRecoveryActions(session, organization.id)
       .then((records) => { if (!cancelled) setRecoveryActions(records) })
-      .catch((cause) => { if (!cancelled) setActionNotice(cause instanceof Error ? cause.message : 'Could not load recovery actions.') })
+      .catch((cause) => { if (!cancelled) { setActionNotice(cause instanceof Error ? cause.message : 'Could not load recovery actions.'); setActionNoticeIsError(true) } })
       .finally(() => { if (!cancelled) setActionsLoading(false) })
     return () => { cancelled = true }
   }, [session, organization.id])
@@ -124,6 +126,7 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
     if (!invoice) return
     setActionBusy(invoice.id)
     setActionNotice('')
+    setActionNoticeIsError(false)
     const dueDate = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(invoice.dueAt))
     const message = 'Hello ' + invoice.customerName + ', our records show that invoice ' + invoice.invoiceNumber + ' for ' + formatMoney(opportunity.outstanding) + ' was due on ' + dueDate + '. Could you please let us know when we can expect payment? If payment has already been made, please share the confirmation so we can update our records. Thank you.'
     try {
@@ -133,6 +136,7 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
       setActionNotice('Reminder draft saved. Review and approve it before sending manually.')
     } catch (cause) {
       setActionNotice(cause instanceof Error ? cause.message : 'Could not create the reminder draft.')
+      setActionNoticeIsError(true)
     } finally { setActionBusy('') }
   }
 
@@ -145,6 +149,7 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
       setActionNotice(transition === 'approve' ? 'Reminder approved. It has not been sent.' : transition === 'mark_sent' ? 'Marked as manually sent. No message was sent by Revenue OS.' : 'Reminder draft cancelled.')
     } catch (cause) {
       setActionNotice(cause instanceof Error ? cause.message : 'Could not update this action.')
+      setActionNoticeIsError(true)
     } finally { setActionBusy('') }
   }
 
@@ -152,7 +157,7 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
     let cancelled = false
     loadVerifiedOutcomes(session, organization.id)
       .then((records) => { if (!cancelled) setVerifiedOutcomes(records) })
-      .catch((cause) => { if (!cancelled) setPaymentNotice(cause instanceof Error ? cause.message : 'Could not load verified outcomes.') })
+      .catch((cause) => { if (!cancelled) { setPaymentNotice(cause instanceof Error ? cause.message : 'Could not load verified outcomes.'); setPaymentNoticeIsError(true) } })
       .finally(() => { if (!cancelled) setOutcomesLoading(false) })
     return () => { cancelled = true }
   }, [session, organization.id])
@@ -160,6 +165,7 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
   async function handleImportPayments(file?: File) {
     if (!file) return
     setPaymentNotice('')
+    setPaymentNoticeIsError(false)
     setPaymentIssues([])
     try {
       const text = await file.text()
@@ -167,6 +173,7 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
       setPaymentIssues(parsed.issues)
       if (!parsed.payments.length) {
         setPaymentNotice('No valid payment rows were saved. Correct the row issues and try again.')
+        setPaymentNoticeIsError(true)
         return
       }
       const result = await persistPaymentImport(session, organization, {
@@ -180,6 +187,7 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
       setVerifiedOutcomes(await loadVerifiedOutcomes(session, organization.id))
     } catch (cause) {
       setPaymentNotice(cause instanceof Error ? cause.message : 'Could not import payment evidence.')
+      setPaymentNoticeIsError(true)
     } finally {
       if (paymentFileRef.current) paymentFileRef.current.value = ''
     }
@@ -192,8 +200,10 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
       const result = await verifyRecoveryOutcome(session, organization.id, action.id, 30)
       setVerifiedOutcomes(await loadVerifiedOutcomes(session, organization.id))
       setPaymentNotice(result.verified ? 'Matched ' + (result.paymentCount ?? 0) + ' payment record(s). The verified outcome is saved; timing does not prove the reminder caused payment.' : result.reason || 'No matching payment evidence was found.')
+      setPaymentNoticeIsError(!result.verified)
     } catch (cause) {
       setPaymentNotice(cause instanceof Error ? cause.message : 'Could not verify payment evidence.')
+      setPaymentNoticeIsError(true)
     } finally { setActionBusy('') }
   }
 
@@ -360,7 +370,7 @@ function RecoveryActions({ actions, invoices, loading, busyId, notice, onTransit
   const invoiceById = new Map(invoices.map((invoice) => [invoice.id, invoice]))
   return <section className="panel recovery-actions-panel">
     <div className="panel-heading"><div><h2>Recovery action queue</h2><p>Review the draft, approve it, then send it yourself outside Revenue OS.</p></div><span className="status-pill">{actions.filter((action) => action.status === 'proposed' || action.status === 'approved').length} pending</span></div>
-    {notice && <div className="alert alert-success" role="status">{notice}</div>}
+    {notice && <div className={'alert ' + (actionNoticeIsError ? 'alert-error' : 'alert-success')} role={actionNoticeIsError ? 'alert' : 'status'}>{notice}</div>}
     {loading ? <div className="empty-state compact"><h3>Loading actions…</h3><p>Retrieving saved recovery drafts.</p></div> : actions.length === 0 ? <div className="empty-state compact"><span className="empty-icon"><Icon name="check" /></span><h3>No recovery drafts yet</h3><p>Go to Opportunities and choose Draft reminder for an overdue invoice.</p></div> : <div className="recovery-action-list">{actions.map((action) => {
       const invoice = invoiceById.get(action.invoiceId)
       const busy = busyId === action.id
@@ -511,7 +521,7 @@ function RecoveryOutcomes({ actions, invoices, outcomes, loading, busyId, notice
         <p className="payment-csv-format"><strong>Required CSV columns</strong><code>invoice_number,payment_reference,currency,amount,received_at</code><small>Each payment reference should be unique within its source. Invoice number and currency must match one saved invoice. Amounts use decimal notation, for example 125.50.</small></p>
         <input ref={fileRef} className="visually-hidden" type="file" accept=".csv,text/csv" onChange={(event) => onImport(event.target.files?.[0])} />
         <div className="recovery-action-controls"><button className="button button-primary" type="button" onClick={() => fileRef.current?.click()}>Import payment CSV</button><button className="button button-secondary" type="button" onClick={downloadPaymentTemplate}>Download template</button></div>
-        {notice && <div className="alert alert-success" role="status">{notice}</div>}
+        {notice && <div className={'alert ' + (paymentNoticeIsError ? 'alert-error' : 'alert-success')} role={paymentNoticeIsError ? 'alert' : 'status'}>{notice}</div>}
         {issues.length > 0 && <div className="payment-issues"><strong>Rows needing review ({issues.length})</strong><ul>{issues.slice(0, 12).map((issue) => <li key={issue.row}>Row {issue.row}: {issue.message}</li>)}</ul>{issues.length > 12 && <small>Showing first 12 issues.</small>}</div>}
       </div>
     </section>

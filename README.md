@@ -1,66 +1,83 @@
 # Revenue OS
 
-Revenue OS helps a business identify, prioritize, execute, and measure revenue opportunities. The north-star metric is **verified incremental or recovered revenue**. Estimates and verified revenue are separate throughout the domain model.
+Revenue OS helps a business identify, prioritize, execute, and measure revenue opportunities. The north-star metric is **verified incremental or recovered revenue**. Estimates and verified revenue stay separate throughout the domain model.
 
-## Current build
+## Current MVP
 
-The first vertical slice starts with overdue invoice recovery:
+The current build has two connected work areas:
 
-1. Import invoices with source identifiers and explicit payment balances.
-2. Set an explicit recovery-rate assumption.
-3. Detect overdue invoices deterministically and calculate an estimate from the outstanding amount.
-4. Keep action transitions approval-gated in the domain layer. External execution is manual by design.
-5. Match later payment records to executed actions and label the result as verified evidence observed after the action, without claiming causality.
+- **Invoice recovery:** import an invoice CSV, set an explicit recovery-rate assumption, and deterministically identify overdue balances. Invoice rows and recovery-rate assumptions are stored in Supabase. Opportunity estimates are recalculated from those source records when the workspace loads.
+- **Lead Recovery:** sign in, create a workspace, record enquiries and follow-ups, and track pipeline status. Lead records are stored in Supabase Postgres and scoped to the authenticated organization by row-level security.
+- **Approval-gated recovery actions:** create an invoice-linked reminder draft from an overdue invoice, approve it, copy it to send manually, and only then mark it as sent. Revenue OS never sends customer messages automatically.
+- **Payment evidence and outcomes:** import a payment CSV, match records to unique invoice numbers and currencies, and verify payments received within 30 days after a manually sent action. Outcomes are labelled as observed after the action, not caused by it.
 
-The current screen implements steps 1–3 in a local browser session. The action and attribution rules are domain foundations; their persistence and user workflows await the server and database layer.
+Lead Recovery does not send WhatsApp messages or email, and a user-marked conversion is not independently verified revenue. Actions remain human-controlled.
 
-The current screen and import parser run in the browser. Imported records remain in React memory for the current tab only; no business-data persistence, authentication, or external actions are wired yet. The Worker only checks D1 connectivity. The screen states the local-only behavior clearly. Do not use it with sensitive production data.
+## Supabase configuration
 
-## Cloudflare direction
+The active Supabase project is named `revenue-os`. The frontend is configured with its **public publishable key** as a safe default, so the preview can start without local setup. You may override the defaults at Vite build time with:
 
-The app is being prepared for Cloudflare Workers and Workers Static Assets. The Worker serves the SPA and exposes a small `/api/health` route that checks D1 connectivity. It does not expose tenant or financial APIs yet.
+```env
+VITE_SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
+VITE_SUPABASE_ANON_KEY=YOUR_PUBLISHABLE_OR_ANON_KEY
+```
 
-Selected direction: Cloudflare Workers + D1. All database access must go through authenticated Worker routes. D1 is SQLite-based and has no PostgreSQL-style row-level security, so every business table carries an `organization_id`, cross-table relationships use composite organization-scoped foreign keys, and each query must derive its organization from the authenticated membership—not a request parameter. The browser must never receive a database binding.
+The publishable/anon key is intended for browser use. Never put a Supabase service-role key in a browser build or commit one to Git.
 
-D1's global read replication is currently marked beta, and writes are handled by a primary location. Cloudflare currently offers no Africa location hint, so global app delivery does not mean low-latency writes from every region. We will measure this against the intended launch markets before committing financial workloads at scale. The initial migration creates only the data model; authentication and tenant-aware APIs are deliberately not wired until the identity provider and authorization flow are implemented.
+The migration `supabase/migrations/20261014094640_sales_leads_and_org_bootstrap.sql` creates the `sales_leads` table, organization-scoped RLS policies, and an authenticated onboarding RPC. The RPC creates a user's first organization and owner membership, and returns an existing membership if the user already has one. It does not accept an arbitrary user ID.
 
-Wrangler scripts are pinned to version `4.149.0` via `npx` because network access prevented installing and locking it in this environment. For local Cloudflare preview, run `npm run cf:migrate:local`, `npm run build`, then `npm run cf:dev`. `npm run cf:deploy` deploys to Cloudflare and must only be run after account configuration and explicit deployment approval.
+## Security boundaries
 
-The initial D1 schema is in `migrations/0001_revenue_os_core.sql`. Apply it to the local D1 state with the command above before starting the Worker. The configured database ID is a local placeholder; no remote database has been created, and deployment must wait until a real D1 database is intentionally provisioned.
+- All client requests use the publishable key and the signed-in user's access token; no service-role key is used by the frontend.
+- RLS policies scope lead reads to organization membership and writes to owner/admin/operator roles.
+- The browser never chooses the authenticated user ID or grants itself a role.
+- Before importing real customer financial data, test authentication and organization isolation with separate accounts, confirm import idempotency and partial-payment behavior, and review access logs. Payment evidence and the complete approval/action workflow are still outstanding.
+- The current lightweight auth wrapper uses Supabase Auth endpoints and keeps the session in `sessionStorage`. For a production release, review session handling, recovery flows, rate limits, and security headers before onboarding customers.
 
-## Invoice CSV
+## Invoice CSV format
 
 Required columns:
 
 ```text
-customer_id, customer_name, invoice_number, currency, total_amount, paid_amount, issued_at, due_at
+customer_id,customer_name,invoice_number,currency,total_amount,paid_amount,issued_at,due_at
 ```
 
-Amounts must be non-negative decimal values with at most two decimal places. `currency` must be a three-letter code. Invoice numbers must be unique within an import. Invalid rows are skipped with a row-specific explanation; the parser does not silently coerce values.
+Amounts must be non-negative decimal values with at most two decimal places. Currency must be a three-letter code. Invalid rows are skipped with a row-specific explanation; values are not silently coerced.
+
+## Payment CSV format
+
+Required columns:
+
+\`\`\`text
+invoice_number,payment_reference,currency,amount,received_at
+\`\`\`
+
+Payment references should be unique within a source. Invoice number and currency must match exactly one saved invoice. Amounts must be positive decimal values with at most two decimal places. Verified outcomes require an executed reminder and matching payment records inside the measurement window; matched payments may not exceed the imported outstanding balance.
 
 ## Domain modules
 
-- `src/domain/types.ts`: sourced invoices, explicit assumptions, opportunities, actions, payment evidence, and attribution types.
+- `src/domain/types.ts`: sourced invoices, assumptions, opportunities, actions, payment evidence, and attribution types.
 - `src/domain/money.ts`: integer minor-unit arithmetic and currency checks.
 - `src/domain/invoiceCsv.ts`: bounded CSV parsing and validation.
 - `src/domain/overdueInvoices.ts`: deterministic overdue opportunity detection and estimate calculation.
 - `src/domain/actions.ts`: approval-gated action state transitions.
 - `src/domain/attribution.ts`: payment-record matching within a measurement window.
+- `src/lib/supabaseRest.ts`: Supabase Auth and organization-scoped lead data access.
 
 ## Run locally
 
 ```sh
 npm install
+cp .env.example .env.local
 npm run dev
 ```
 
-## Next engineering steps
+On Windows PowerShell, use `Copy-Item .env.example .env.local` instead of `cp`. The example file contains placeholders; the built-in public project defaults are used unless you replace them with valid environment variables.
 
-1. Select an authentication provider and implement server-verified sessions and organization membership resolution.
-2. Add tenant-isolation tests for every D1 query and negative cross-organization access cases.
-3. Persist source imports and evidence through authenticated Worker routes; make import idempotent.
-4. Add server-side opportunity/action APIs and enforce the human approval gate.
-5. Add outcome imports and verified payment attribution.
-6. Add the Revenue Analyst only after the deterministic slice works; recommendations must reference stored evidence and assumptions.
+## Next engineering milestones
 
-The current project is an early frontend, edge-runtime, and database-schema foundation, not a production revenue system. No production D1 database has been created or migrated.
+1. Persist invoice imports and recovery assumptions through authenticated Supabase operations.
+2. Build the approval-gated action workflow and payment-evidence import.
+3. Verify payment attribution against source records and distinguish observed outcomes from causal claims.
+4. Add integration tests for authentication, tenant isolation, duplicate imports, partial payments, and failed requests.
+5. Run a supervised pilot with synthetic data first, then a consenting WebAura client once the full financial-data workflow is secure.

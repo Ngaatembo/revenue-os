@@ -56,8 +56,6 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
 
   useEffect(() => {
     let cancelled = false
-    setLeadLoading(true)
-    setLeadError('')
     loadSalesLeads(session, organization.id)
       .then((records) => { if (!cancelled) setLeads(records) })
       .catch((cause) => { if (!cancelled) setLeadError(cause instanceof Error ? cause.message : 'Could not load saved leads.') })
@@ -102,11 +100,11 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
         key: 'recovery_rate',
         valueBps: assumptionBps,
         updatedAt: new Date().toISOString(),
-        updatedBy: session.user.id,
+        updatedBy: organization.userId,
       },
       asOf: new Date().toISOString(),
     })
-  }, [invoices, assumptionBps])
+  }, [invoices, assumptionBps, organization.userId])
 
   const outstandingInvoiceCount = invoices.filter((invoice) => invoice.total.amount > invoice.paid.amount).length
   const estimatedByCurrency = useMemo(() => {

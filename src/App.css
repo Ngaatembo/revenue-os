@@ -56,6 +56,12 @@ h1 { margin-bottom: 7px; color: var(--ink); font-size: clamp(25px, 3vw, 31px); l
 .alert { padding: 11px 13px; margin-bottom: 16px; border: 1px solid; border-radius: 6px; font-size: 12px; }
 .alert-error { color: #843f38; border-color: #efcfcb; background: #fff7f6; }
 .alert-success { color: #245b46; border-color: #c8e1d3; background: #f2f9f4; }
+.alert-info { color: #34505c; border-color: #cfdde3; background: #f4f8fa; }
+.recommendation { margin: 8px 0 4px; padding: 10px 12px; border-radius: 6px; background: #f6f8f6; }
+.recommendation ol { margin: 4px 0 6px; padding-left: 18px; }
+.recommendation dl { display: grid; grid-template-columns: max-content 1fr; gap: 2px 10px; margin: 6px 0; }
+.recommendation dt { color: #66736d; }
+.recommendation dd { margin: 0; }
 .metric-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 13px; margin-bottom: 17px; }
 .metric-card,.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; }
 .metric-card { min-height: 129px; padding: 15px 16px 14px; box-sizing: border-box; }

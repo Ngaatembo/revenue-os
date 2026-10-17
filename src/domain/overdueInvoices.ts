@@ -1,5 +1,5 @@
-import { addMoney, money, multiplyByBps, subtractMoney } from './money'
-import type { InvoiceEvidence, OpportunityInput, RevenueOpportunity } from './types'
+import { addMoney, money, multiplyByBps, subtractMoney } from './money.ts'
+import type { InvoiceEvidence, OpportunityInput, RevenueOpportunity } from './types.ts'
 
 function isoTime(value: string, field: string): number {
   const timestamp = Date.parse(value)

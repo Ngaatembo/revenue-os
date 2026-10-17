@@ -1,5 +1,8 @@
 import { money } from '../domain/money'
 import type { CurrencyCode, InvoiceEvidence } from '../domain/types'
+import { toRevenueOpportunities, type DbEvidenceRow, type DbOpportunityRow } from '../domain/persistedOpportunities'
+import type { RevenueOpportunity } from '../domain/types'
+import { openOpportunitiesParams, opportunityEvidenceParams, syncRpcBody } from './opportunityQueries'
 
 export type SupabaseUser = { id: string; email?: string }
 export type SupabaseSession = {
@@ -569,4 +572,30 @@ export async function loadVerifiedOutcomes(session: SupabaseSession, organizatio
     measurementStartsAt: row.measurement_starts_at, measurementEndsAt: row.measurement_ends_at,
     recordedAt: row.recorded_at, causalClaim: row.causal_claim,
   }))
+}
+
+
+export type OpportunitySyncResult = { created: number; refreshed: number; closed: number; open: number; recoveryRateBps: number }
+
+/** Runs the server-side overdue detection for this workspace (idempotent). Runs as the signed-in user. */
+export async function syncOverdueOpportunities(session: SupabaseSession, organizationId: string): Promise<OpportunitySyncResult> {
+  const result = await apiRequest<{ created: number; refreshed: number; closed: number; open: number; recovery_rate_bps: number }>(
+    session,
+    'rpc/sync_overdue_opportunities',
+    { method: 'POST', body: syncRpcBody(organizationId) },
+  )
+  return { created: result.created, refreshed: result.refreshed, closed: result.closed, open: result.open, recoveryRateBps: result.recovery_rate_bps }
+}
+
+/** Saved open opportunities joined to their saved source invoices. Nothing is computed or invented here. */
+export async function loadOpenOpportunities(
+  session: SupabaseSession,
+  organizationId: string,
+  invoices: InvoiceEvidence[],
+): Promise<{ opportunities: RevenueOpportunity[]; unresolvedIds: string[] }> {
+  const [rows, evidence] = await Promise.all([
+    apiRequest<DbOpportunityRow[]>(session, `opportunities?${openOpportunitiesParams(organizationId).toString()}`),
+    apiRequest<DbEvidenceRow[]>(session, `opportunity_evidence?${opportunityEvidenceParams(organizationId).toString()}`),
+  ])
+  return toRevenueOpportunities(rows, evidence, invoices)
 }

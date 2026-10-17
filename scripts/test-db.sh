@@ -21,6 +21,8 @@ for f in supabase/migrations/*.sql; do psql_db -v ON_ERROR_STOP=1 -f "$f" >/dev/
 psql_db -v ON_ERROR_STOP=1 -f supabase/tests/01_harness.sql
 OUT=$(psql_db -f supabase/tests/02_journey.sql 2>&1)
 echo "$OUT" | sed -n '/===== RESULTS =====/,$p'
+OUT3=$(psql_db -f supabase/tests/03_sync_opportunities.sql 2>&1)
+echo "$OUT3" | sed -n '/===== SYNC RESULTS =====/,$p'
 FAILED=$(psql_db -tAc "select count(*) from t.results where not ok")
 if [ "$FAILED" != "0" ]; then echo "DB TESTS FAILED: $FAILED" >&2; exit 1; fi
 echo "DB TESTS PASSED"

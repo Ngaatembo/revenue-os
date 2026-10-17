@@ -1,8 +1,13 @@
-import { money } from './money'
-import type { CurrencyCode, InvoiceEvidence } from './types'
+import { money } from './money.ts'
+import type { CurrencyCode, InvoiceEvidence } from './types.ts'
 
 export type CsvIssue = { row: number; field?: string; message: string }
-export type InvoiceCsvResult = { invoices: InvoiceEvidence[]; issues: CsvIssue[] }
+export type InvoiceCsvResult = {
+  invoices: InvoiceEvidence[]
+  /** CSV row number (header is row 1) of each accepted invoice, parallel to `invoices`. */
+  rowNumbers: number[]
+  issues: CsvIssue[]
+}
 
 const REQUIRED_HEADERS = [
   'customer_id',
@@ -107,6 +112,7 @@ export function parseInvoiceCsv(
   if (new Set(headers).size !== headers.length) throw new Error('CSV header names must be unique.')
   const indexes = new Map(headers.map((header, index) => [header, index]))
   const invoices: InvoiceEvidence[] = []
+  const rowNumbers: number[] = []
   const issues: CsvIssue[] = []
   const seenInvoiceIds = new Set<string>()
 
@@ -148,6 +154,7 @@ export function parseInvoiceCsv(
           importedAt: new Date(importedTimestamp).toISOString(),
         },
       })
+      rowNumbers.push(rowNumber)
     } catch (error) {
       issues.push({
         row: rowNumber,
@@ -156,5 +163,5 @@ export function parseInvoiceCsv(
     }
   })
 
-  return { invoices, issues }
+  return { invoices, rowNumbers, issues }
 }

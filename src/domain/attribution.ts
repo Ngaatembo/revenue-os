@@ -1,5 +1,5 @@
-import { addMoney, money } from './money'
-import type { PaymentEvidence, RevenueAction, RevenueAttribution, RevenueOpportunity } from './types'
+import { addMoney, money } from './money.ts'
+import type { PaymentEvidence, RevenueAction, RevenueAttribution, RevenueOpportunity } from './types.ts'
 
 export function verifyPaymentOutcome(input: {
   action: RevenueAction

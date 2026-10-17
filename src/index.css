@@ -60,6 +60,8 @@ button { -webkit-tap-highlight-color: transparent; }
   .preview-banner { color: #b2d0bc; background: #1c2d23; border-color: #2f4837; }
   .alert-error { color: #efb4ac; background: #351f1d; border-color: #5a302b; }
   .alert-success { color: #a8d8b8; background: #1c3023; border-color: #2f5038; }
+  .alert-info { color: #b3cdd8; background: #1b2a30; border-color: #2d434c; }
+  .recommendation { background: #1c2921; }
   .mobile-nav { background: rgba(20,30,24,.96); border-color: #29372f; }
   .mobile-nav button.active { color: #96d6b2; }
   .user-avatar,.topbar-avatar { color: #d4dfd7; background: #2a3930; }

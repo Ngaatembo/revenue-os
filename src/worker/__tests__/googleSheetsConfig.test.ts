@@ -5,18 +5,18 @@ import { googleSheetsOAuthReady, oauthNotConfiguredResponse } from '../googleShe
 const completeEnv = {
   GOOGLE_CLIENT_ID: 'client-id',
   GOOGLE_CLIENT_SECRET: 'client-secret',
-  GOOGLE_TOKEN_ENCRYPTION_KEY: 'test-encryption-key',
-  GOOGLE_OAUTH_STATE: { async get() { return null }, async put() {}, async delete() {} },
+  GOOGLE_TOKEN_ENCRYPTION_KEY: '0123456789abcdef'.repeat(4),
+  APP_ORIGIN: 'https://revenue-os.example.com',
   SUPABASE_URL: 'https://example.supabase.co',
   SUPABASE_ANON_KEY: 'public-key',
   SUPABASE_SERVICE_ROLE_KEY: 'server-only-key',
 }
 
-test('Google Sheets OAuth is disabled unless every server-side dependency is configured', () => {
+test('Google Sheets OAuth requires every server-side secret and a 256-bit encryption key', () => {
   assert.equal(googleSheetsOAuthReady(completeEnv), true)
   assert.equal(googleSheetsOAuthReady({ ...completeEnv, GOOGLE_CLIENT_SECRET: '' }), false)
-  assert.equal(googleSheetsOAuthReady({ ...completeEnv, GOOGLE_TOKEN_ENCRYPTION_KEY: undefined }), false)
-  assert.equal(googleSheetsOAuthReady({ ...completeEnv, GOOGLE_OAUTH_STATE: undefined }), false)
+  assert.equal(googleSheetsOAuthReady({ ...completeEnv, GOOGLE_TOKEN_ENCRYPTION_KEY: 'short' }), false)
+  assert.equal(googleSheetsOAuthReady({ ...completeEnv, APP_ORIGIN: '' }), false)
   assert.equal(googleSheetsOAuthReady({ ...completeEnv, SUPABASE_SERVICE_ROLE_KEY: undefined }), false)
 })
 

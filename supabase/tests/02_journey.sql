@@ -101,6 +101,9 @@ select t.eq('no-response activity updates lead status', :'activity_status', 'con
 select (current_date + 3)::text as activity_follow_up \gset
 select t.eq('activity schedules the next follow-up atomically', $q$select next_follow_up::text from public.sales_leads where organization_id=t.o('orga') and id='lead-activity-1'$q$, :'activity_follow_up');
 select t.eq('activity is saved in the audit history', $q$select count(*)::text from public.lead_activities where organization_id=t.o('orga') and lead_id='lead-activity-1'$q$, '1');
+reset role;
+select set_config('request.jwt.claim.sub', :'V', false) \gset
+set role authenticated;
 select t.err('viewer cannot record lead activity', $q$select public.record_lead_activity(t.o('orga'),'lead-activity-1','activity-viewer','note','Attempted unauthorized activity',current_date + 3)$q$, '42501');
 reset role;
 select set_config('request.jwt.claim.sub', :'B', false) \gset

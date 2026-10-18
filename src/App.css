@@ -220,3 +220,124 @@ h1 { margin: 0; color: #17233d; font-size: clamp(27px,2.6vw,35px); line-height: 
   .brain-detail-grid { grid-template-columns: minmax(0,1fr); }
   .functional-inline-field { grid-template-columns: minmax(0,1fr); }
 }
+
+
+/* Revenue OS command-centre design refinement
+   Inspired by the clarity of Linear, Stripe and Vercel; original implementation. */
+:root {
+  --ink: #172238;
+  --muted: #69768c;
+  --subtle: #8b96a8;
+  --line: #e4e8ef;
+  --surface: #ffffff;
+  --canvas: #f7f8fa;
+  --navy: #151f33;
+  --indigo: #5267d9;
+  --indigo-dark: #4054c2;
+  --indigo-soft: #edf1ff;
+  --green: #13856d;
+  --amber: #a96718;
+  --shadow: 0 1px 2px rgba(16, 24, 40, .035), 0 7px 22px rgba(16, 24, 40, .035);
+}
+html, body { background: var(--canvas); }
+.app-shell { background: var(--canvas); }
+.sidebar { width: 248px; padding: 25px 15px 17px; background: #151f33; }
+.main-area { margin-left: 248px; }
+.brand { margin-bottom: 30px; letter-spacing: -.65px; }
+.brand-mark span { background: #aebaff; }
+.brand-mark span:nth-child(3) { background: #8d9dff; }
+.workspace-switcher { border-radius: 10px; background: rgba(255,255,255,.035); }
+.nav-item { min-height: 43px; border-radius: 8px; font-size: 13px; }
+.nav-item.active { background: rgba(100,121,235,.17); box-shadow: inset 3px 0 #91a1ff; }
+.topbar { height: 64px; padding-right: clamp(22px, 3.2vw, 48px); padding-left: clamp(22px, 3.2vw, 48px); border-bottom-color: #e7eaf0; background: rgba(255,255,255,.94); }
+.breadcrumbs { font-size: 12px; }
+.connection-state { font-size: 11px; }
+.page-content { max-width: 1450px; padding: 34px clamp(22px, 3.2vw, 48px) 26px; }
+.page-heading { margin-bottom: 25px; }
+.eyebrow { margin-bottom: 9px; color: #596bd1; font-size: 10px; letter-spacing: 1.35px; }
+h1 { font-size: clamp(29px, 2.35vw, 36px); letter-spacing: -1.15px; }
+.page-subtitle { max-width: 650px; color: #69768c; font-size: 13px; }
+.button { min-height: 42px; padding: 0 16px; border-radius: 9px; font-size: 12px; }
+.button-primary { background: #5267d9; box-shadow: 0 2px 5px rgba(63,82,190,.16); }
+.button-primary:hover { background: #4054c2; }
+.button-secondary { border-color: #dce2eb; color: #34425a; }
+.preview-banner { min-height: 42px; padding: 10px 13px; border-color: #e0e6fa; border-radius: 9px; color: #66738b; background: #f0f3ff; font-size: 11px; }
+.metric-grid { gap: 16px; margin-bottom: 18px; }
+.metric-card { min-height: 148px; padding: 20px; border-color: #e3e7ee; border-radius: 13px; box-shadow: var(--shadow); transition: border-color .18s ease, transform .18s ease, box-shadow .18s ease; }
+.metric-card:hover { transform: translateY(-2px); border-color: #d4dbee; box-shadow: 0 4px 18px rgba(16,24,40,.055); }
+.metric-top { margin-bottom: 16px; color: #647189; font-size: 12px; }
+.metric-icon { width: 35px; height: 35px; border-radius: 10px; }
+.metric-icon.teal { color: #5267d9; background: #edf1ff; }
+.metric-icon.amber { color: #a96718; background: #fff4e5; }
+.metric-icon.green { color: #13856d; background: #e8f7f1; }
+.metric-value { color: #172238; font-size: clamp(28px, 2.15vw, 34px); letter-spacing: -1.1px; }
+.metric-money { font-size: clamp(22px, 1.8vw, 28px); }
+.metric-card p { margin-top: 9px; color: #7b879a; font-size: 11px; }
+.work-grid { gap: 18px; }
+.panel { border-color: #e3e7ee; border-radius: 13px; box-shadow: var(--shadow); }
+.opportunity-panel { min-height: 350px; }
+.panel-heading { padding: 21px 22px 18px; border-bottom-color: #edf0f4; }
+.panel-heading h2 { color: #202d43; font-size: 15px; letter-spacing: -.25px; }
+.panel-heading p { color: #7a8699; font-size: 11px; }
+.status-pill { border-radius: 7px; color: #17775f; background: #eff9f5; }
+.empty-state { padding: 34px 26px; }
+.empty-icon { width: 46px; height: 46px; border-radius: 14px; color: #5267d9; background: #edf1ff; }
+.empty-state h3, .assumption-prompt h3 { color: #202d43; font-size: 14px; }
+.empty-state p, .assumption-prompt p { color: #69768c; font-size: 12px; line-height: 1.7; }
+.template-link { color: #5267d9; font-size: 11px; }
+.text-link { font-size: 11px; }
+.opportunity-list { padding: 0 22px; }
+.opportunity-row { gap: 14px; padding: 19px 1px; border-bottom-color: #edf0f4; }
+.opportunity-title strong { color: #26344b; font-size: 12px; }
+.overdue-pill { border-radius: 5px; color: #995d13; background: #fff4e5; font-size: 9px; }
+.opportunity-main p { color: #69768c; font-size: 11px; }
+.opportunity-main small, .opportunity-values small { color: #8792a4; font-size: 10px; }
+.opportunity-values strong { color: #202d43; font-size: 13px; }
+.opportunity-values span { color: #5267d9; font-size: 10px; }
+.brain-status { border-radius: 6px; font-size: 8px; letter-spacing: .6px; }
+.brain-source strong { color: #26344b; font-size: 11px; }
+.brain-source small, .assumption-row { font-size: 10.5px; }
+.brain-note, .functional-note { border-color: #e3e8fb; border-radius: 9px; color: #5869b5; background: #f4f6ff; font-size: 10.5px; }
+.issues-panel li { color: #69768c; font-size: 11px; }
+.section-placeholder h2 { color: #202d43; }
+.section-placeholder > p { color: #69768c; font-size: 13px; }
+.format-box { border-color: #e3e7ee; border-radius: 11px; background: #fafbfc; }
+.format-box strong { font-size: 12px; }
+.format-box code { color: #4d5fc4; }
+.page-footer { color: #8b96a8; font-size: 10px; }
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline-color: rgba(82,103,217,.45); }
+.nav-item, .button, .metric-card { -webkit-tap-highlight-color: transparent; }
+@media (max-width: 1240px) {
+  .sidebar { width: 226px; }
+  .main-area { margin-left: 226px; }
+  .page-content { padding-right: 24px; padding-left: 24px; }
+  .topbar { padding-right: 24px; padding-left: 24px; }
+  .metric-card { padding: 16px; }
+}
+@media (max-width: 900px) {
+  .sidebar { width: 72px; }
+  .main-area { margin-left: 72px; }
+  .page-content { padding-right: 20px; padding-left: 20px; }
+  .topbar { padding-right: 20px; padding-left: 20px; }
+  .metric-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
+}
+@media (max-width: 620px) {
+  .topbar { padding-right: 14px; padding-left: 14px; }
+  .page-content { padding: 22px 14px 18px; }
+  .page-heading { gap: 13px; }
+  h1 { font-size: 28px; }
+  .page-subtitle { font-size: 12px; }
+  .metric-grid { gap: 10px; }
+  .metric-card { min-height: 132px; padding: 14px 12px; }
+  .metric-top { font-size: 10px; }
+  .metric-card p { font-size: 10px; }
+  .panel-heading { padding: 17px 15px; }
+  .panel-heading h2 { font-size: 14px; }
+  .panel-heading p { font-size: 10px; }
+  .opportunity-list { padding: 0 14px; }
+  .opportunity-row { gap: 9px; padding: 15px 0; }
+  .opportunity-title strong { font-size: 11px; }
+  .opportunity-main p { font-size: 10px; }
+  .opportunity-values strong { font-size: 11px; }
+  .functional-list { padding-right: 15px; padding-left: 15px; }
+}

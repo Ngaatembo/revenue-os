@@ -1,4 +1,4 @@
-import { googleSheetsOAuthReady, oauthNotConfiguredResponse, type GoogleSheetsOAuthEnv } from './googleSheetsConfig'
+import { googleSheetsOAuthReady, oauthNotConfiguredResponse, type GoogleSheetsOAuthEnv } from './googleSheetsConfig.ts'
 
 interface AssetBinding { fetch(request: Request): Promise<Response> }
 interface Env extends GoogleSheetsOAuthEnv {

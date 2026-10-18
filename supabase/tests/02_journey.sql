@@ -97,7 +97,7 @@ select (public.record_lead_activity(
   :'orga', 'lead-activity-1', 'activity-1', 'no_response',
   'Sent a follow-up and no reply has arrived yet', current_date + 3
 ))->>'lead_status' as activity_status \gset
-select t.eq('no-response activity updates lead status', :'activity_status', 'contacted');
+select t.eq('no-response activity updates lead status', $q$select status from public.sales_leads where organization_id=t.o('orga') and id='lead-activity-1'$q$, 'contacted');
 select (current_date + 3)::text as activity_follow_up \gset
 select t.eq('activity schedules the next follow-up atomically', $q$select next_follow_up::text from public.sales_leads where organization_id=t.o('orga') and id='lead-activity-1'$q$, :'activity_follow_up');
 select t.eq('activity is saved in the audit history', $q$select count(*)::text from public.lead_activities where organization_id=t.o('orga') and lead_id='lead-activity-1'$q$, '1');

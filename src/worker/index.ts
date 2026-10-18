@@ -1,5 +1,7 @@
+import { googleSheetsOAuthReady, oauthNotConfiguredResponse, type GoogleSheetsOAuthEnv } from './googleSheetsConfig'
+
 interface AssetBinding { fetch(request: Request): Promise<Response> }
-interface Env {
+interface Env extends GoogleSheetsOAuthEnv {
   ASSETS: AssetBinding
   /** Public project URL, e.g. https://<ref>.supabase.co (non-secret, set in wrangler.jsonc `vars`). */
   SUPABASE_URL?: string
@@ -38,6 +40,16 @@ async function checkSupabase(env: Env): Promise<Response> {
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url)
+
+    if (url.pathname.startsWith('/api/integrations/google/')) {
+      if (!['GET', 'POST'].includes(request.method)) return json({ error: 'Method not allowed' }, 405)
+      // Fail closed until the OAuth client, encryption key, one-time state KV, and
+      // server-only database credential are configured. Never fake a connected status.
+      if (!googleSheetsOAuthReady(env)) return oauthNotConfiguredResponse()
+      // The secure OAuth handlers are enabled only in a subsequent change after the
+      // deployment's secrets/bindings and integration tests are in place.
+      return json({ error: 'google_sheets_handler_not_enabled' }, 503)
+    }
 
     if (url.pathname === '/api/health') {
       if (request.method !== 'GET') return json({ error: 'Method not allowed' }, 405)

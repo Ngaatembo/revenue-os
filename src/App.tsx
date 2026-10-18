@@ -16,9 +16,9 @@ import { createSalesLead, deleteSalesLead, loadInvoices, loadRecoveryRate, loadS
 import './App.css'
 import './design.css'
 
-type Section = 'Overview' | 'Opportunities' | 'Lead Recovery' | 'Actions' | 'Outcomes' | 'Business Brain'
+type Section = 'Overview' | 'Opportunities' | 'Lead Recovery' | 'Actions' | 'Outcomes' | 'Business Brain' | 'Connections'
 
-const sections: Section[] = ['Overview', 'Opportunities', 'Lead Recovery', 'Actions', 'Outcomes', 'Business Brain']
+const sections: Section[] = ['Overview', 'Opportunities', 'Lead Recovery', 'Actions', 'Outcomes', 'Business Brain', 'Connections']
 const invoiceCsvHeader = 'customer_id,customer_name,invoice_number,currency,total_amount,paid_amount,issued_at,due_at\n'
 
 function downloadCsvTemplate() {
@@ -48,6 +48,7 @@ function Icon({ name }: { name: string }) {
   if (name === 'chart') return <svg {...common}><path d="M4 19V5M4 19h17"/><path d="m7 15 4-4 3 2 6-7"/></svg>
   if (name === 'brain') return <svg {...common}><path d="M9 4a3 3 0 0 0-5 2 3 3 0 0 0-1 5 3.5 3.5 0 0 0 2 6 3 3 0 0 0 5 2V4Zm6 0a3 3 0 0 1 5 2 3 3 0 0 1 1 5 3.5 3.5 0 0 1-2 6 3 3 0 0 1-5 2V4Z"/><path d="M9 8H7m2 5H6m9-5h2m-2 5h3M12 4v16"/></svg>
   if (name === 'upload') return <svg {...common}><path d="M12 16V4m0 0L7 9m5-5 5 5"/><path d="M4 15v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4"/></svg>
+  if (name === 'plug') return <svg {...common}><path d="M9 7V3m6 4V3M7 7h10v4a5 5 0 0 1-10 0V7Z"/><path d="M12 16v5"/></svg>
   return <svg {...common}><circle cx="12" cy="12" r="9"/><path d="M12 8v4l3 2"/></svg>
 }
 
@@ -403,7 +404,7 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
         <p className="nav-label">WORKSPACE</p>
         <nav className="primary-nav">
           {sections.map((section) => {
-            const icon = section === 'Overview' ? 'grid' : section === 'Opportunities' ? 'spark' : section === 'Lead Recovery' ? 'check' : section === 'Actions' ? 'check' : section === 'Outcomes' ? 'chart' : 'brain'
+            const icon = section === 'Overview' ? 'grid' : section === 'Opportunities' ? 'spark' : section === 'Lead Recovery' ? 'check' : section === 'Actions' ? 'check' : section === 'Outcomes' ? 'chart' : section === 'Connections' ? 'plug' : 'brain'
             return <button key={section} className={`nav-item ${activeSection === section ? 'active' : ''}`} onClick={() => setActiveSection(section)}>
               <Icon name={icon} /><span>{section}</span>
               {section === 'Opportunities' && opportunities.length > 0 && <span className="nav-count">{opportunities.length}</span>}
@@ -475,7 +476,18 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
 
               {issues.length > 0 && <section className="panel issues-panel"><div className="panel-heading"><div><h2>Rows needing attention</h2><p>These rows were skipped; correct the source file and re-import.</p></div><span className="issue-count">{issues.length}</span></div><ul>{issues.slice(0, 8).map((issue) => <li key={`${issue.row}-${issue.message}`}><strong>Row {issue.row}</strong><span>{issue.message}</span></li>)}</ul>{issues.length > 8 && <p className="more-issues">And {issues.length - 8} more row issues.</p>}</section>}
             </>
-          ) : activeSection === 'Lead Recovery' ? <LeadRecovery leadCapacity={checkLeadCapacity(plan, leads.filter((lead) => lead.status !== 'converted' && lead.status !== 'closed').length)} leads={leads} setLeads={setLeads} session={session} organization={organization} loading={leadLoading} loadError={leadError} /> : activeSection === 'Actions' ? <RecoveryActions actions={recoveryActions} invoices={invoices} loading={actionsLoading} busyId={actionBusy} notice={actionNotice} noticeIsError={actionNoticeIsError} onTransition={(action, transition) => void handleActionTransition(action, transition)} /> : activeSection === 'Outcomes' ? <RecoveryOutcomes actions={recoveryActions} invoices={invoices} outcomes={verifiedOutcomes} loading={outcomesLoading} busyId={actionBusy} notice={paymentNotice} noticeIsError={paymentNoticeIsError} issues={paymentIssues} fileRef={paymentFileRef} onImport={(file) => void handleImportPayments(file)} onVerify={(action) => void handleVerifyOutcome(action)} /> : (
+          ) : activeSection === 'Lead Recovery' ? <LeadRecovery leadCapacity={checkLeadCapacity(plan, leads.filter((lead) => lead.status !== 'converted' && lead.status !== 'closed').length)} leads={leads} setLeads={setLeads} session={session} organization={organization} loading={leadLoading} loadError={leadError} /> : activeSection === 'Actions' ? <RecoveryActions actions={recoveryActions} invoices={invoices} loading={actionsLoading} busyId={actionBusy} notice={actionNotice} noticeIsError={actionNoticeIsError} onTransition={(action, transition) => void handleActionTransition(action, transition)} /> : activeSection === 'Outcomes' ? <RecoveryOutcomes actions={recoveryActions} invoices={invoices} outcomes={verifiedOutcomes} loading={outcomesLoading} busyId={actionBusy} notice={paymentNotice} noticeIsError={paymentNoticeIsError} issues={paymentIssues} fileRef={paymentFileRef} onImport={(file) => void handleImportPayments(file)} onVerify={(action) => void handleVerifyOutcome(action)} /> : activeSection === 'Connections' ? (
+            <div className="connections-workspace">
+              <section className="panel"><div className="panel-heading"><div><h2>Connect your business once</h2><p>Choose the systems Revenue OS should read. A connection is only active after authorization and a successful sync.</p></div><span className="status-pill">Connection centre</span></div>
+                <div className="connection-source-grid">
+                  <article className="connection-source-card"><div className="connection-source-top"><span className="source-icon"><Icon name="upload" /></span><span className={invoices.length ? 'connection-pill connection-pill-ready' : 'connection-pill'}>{invoices.length ? 'Data available' : 'No data yet'}</span></div><h3>Invoice CSV</h3><p>Current supported source. Import records to detect overdue balances and estimate possible recovery.</p><small>{invoices.length} invoice record(s) currently loaded · saved records are used where available.</small><button className="button button-secondary" type="button" onClick={() => fileRef.current?.click()}>Import invoices</button></article>
+                  <article className="connection-source-card"><div className="connection-source-top"><span className="source-icon"><Icon name="grid" /></span><span className="connection-pill">Not connected</span></div><h3>Google Sheets / Drive</h3><p>Planned first live connector for business spreadsheets and selected files.</p><small>Requires a dedicated Google OAuth integration and approved scopes. Google sign-in alone does not grant data access.</small><button className="button button-secondary" type="button" disabled>Connect Google data · coming next</button></article>
+                  <article className="connection-source-card"><div className="connection-source-top"><span className="source-icon"><Icon name="check" /></span><span className="connection-pill">Not connected</span></div><h3>Email and enquiries</h3><p>Future source for detecting unanswered enquiries and commitments that need follow-up.</p><small>No mailbox is currently being read and no messages are sent automatically.</small><button className="button button-secondary" type="button" disabled>Connect email · planned</button></article>
+                </div>
+              </section>
+              <section className="panel"><div className="panel-heading"><div><h2>Monitoring status</h2><p>Clear visibility into what Revenue OS can currently see.</p></div></div><div className="connection-status-list"><div><span><i className="connection-dot" />Workspace database</span><strong>Connected</strong></div><div><span><i className={invoices.length ? 'connection-dot' : 'connection-dot connection-dot-muted'} />Invoice data</span><strong>{invoices.length ? 'Available' : 'Waiting for import'}</strong></div><div><span><i className={leads.length ? 'connection-dot' : 'connection-dot connection-dot-muted'} />Lead data</span><strong>{leads.length ? `${leads.length} saved lead(s)` : 'No saved leads yet'}</strong></div><div><span><i className="connection-dot connection-dot-muted" />Background synchronization</span><strong>Not configured</strong></div><div><span><i className="connection-dot connection-dot-muted" />Daily business brief</span><strong>Not yet automated</strong></div></div><p className="brain-note">Important: Revenue OS does not yet monitor external services in the background. This page reports current capabilities honestly; the next engineering step is to implement a real Google data connection, secure token storage, and scheduled synchronization before marking a source connected.</p></section>
+            </div>
+          ) : (
             <section className="panel section-placeholder"><span className="empty-icon"><Icon name="brain" /></span><h2>Business Brain</h2><p>The Business Brain holds sourced facts, explicit assumptions, and import history. Current invoice estimates are derived from saved invoice records and the recovery-rate assumption.</p><p><strong>Status:</strong> {brain.title}. {brain.detail}. {brain.note}</p><div id="csv-format" className="format-box"><strong>Invoice CSV columns</strong><code>customer_id, customer_name, invoice_number, currency, total_amount, paid_amount, issued_at, due_at</code><small>Amounts use a decimal point and up to two decimal places. Currency must be a three-letter ISO code such as USD.</small></div></section>
           )}
 
@@ -483,7 +495,7 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
         </div>
       </main>
 
-      <nav className="mobile-nav" aria-label="Mobile navigation">{sections.map((section) => <button key={section} className={activeSection === section ? 'active' : ''} onClick={() => setActiveSection(section)} aria-label={section}><Icon name={section === 'Overview' ? 'grid' : section === 'Opportunities' ? 'spark' : section === 'Lead Recovery' ? 'check' : section === 'Actions' ? 'check' : section === 'Outcomes' ? 'chart' : 'brain'} /><span>{section}</span></button>)}</nav>
+      <nav className="mobile-nav" aria-label="Mobile navigation">{sections.map((section) => <button key={section} className={activeSection === section ? 'active' : ''} onClick={() => setActiveSection(section)} aria-label={section}><Icon name={section === 'Overview' ? 'grid' : section === 'Opportunities' ? 'spark' : section === 'Lead Recovery' ? 'check' : section === 'Actions' ? 'check' : section === 'Outcomes' ? 'chart' : section === 'Connections' ? 'plug' : 'brain'} /><span>{section}</span></button>)}</nav>
     </div>
   )
 }

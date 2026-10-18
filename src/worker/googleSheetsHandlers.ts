@@ -99,7 +99,7 @@ export async function handleGoogleSheets(request: Request, env: Env): Promise<Re
     google.searchParams.set('prompt', 'consent')
     google.searchParams.set('include_granted_scopes', 'true')
     google.searchParams.set('state', state)
-    return redirect(google.toString())
+    return response({ authorization_url: google.toString() })
   }
 
   if (url.pathname === '/api/integrations/google/callback') {

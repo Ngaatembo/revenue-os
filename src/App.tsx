@@ -642,6 +642,10 @@ function LeadRecovery({ leadCapacity, leads, setLeads, session, organization, lo
   }
 
   async function removeLead(id: string) {
+    if (activities.some((activity) => activity.leadId === id)) {
+      setNotice('This lead has a saved interaction history. Close it instead of deleting it so the audit trail is preserved.')
+      return
+    }
     try {
       await deleteSalesLead(session, organization.id, id)
       setLeads((current) => current.filter((lead) => lead.id !== id))

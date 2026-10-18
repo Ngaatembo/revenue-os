@@ -46,9 +46,9 @@ export async function hashOAuthState(state: string): Promise<string> {
 /** Encrypts a provider refresh token using AES-256-GCM with a fresh random nonce. */
 export async function encryptRefreshToken(token: string, keyHex: string): Promise<string> {
   if (!token || token.length > 16_384) throw new Error('invalid_refresh_token')
-  const key = await crypto.subtle.importKey('raw', decodeKey(keyHex), 'AES-GCM', false, ['encrypt'])
+  const key = await crypto.subtle.importKey('raw', decodeKey(keyHex).buffer as ArrayBuffer, 'AES-GCM', false, ['encrypt'])
   const nonce = crypto.getRandomValues(new Uint8Array(12))
-  const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv: nonce }, key, encoder.encode(token))
+  const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv: nonce.buffer as ArrayBuffer }, key, encoder.encode(token).buffer as ArrayBuffer)
   return `v1.${toBase64Url(nonce)}.${toBase64Url(new Uint8Array(ciphertext))}`
 }
 
@@ -61,7 +61,7 @@ export async function decryptRefreshToken(encrypted: string, keyHex: string): Pr
   if (nonce.length !== 12 || ciphertext.length < 16 || ciphertext.length > 16_512) {
     throw new Error('invalid_ciphertext')
   }
-  const key = await crypto.subtle.importKey('raw', decodeKey(keyHex), 'AES-GCM', false, ['decrypt'])
-  const plaintext = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: nonce }, key, ciphertext)
+  const key = await crypto.subtle.importKey('raw', decodeKey(keyHex).buffer as ArrayBuffer, 'AES-GCM', false, ['decrypt'])
+  const plaintext = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: nonce.buffer as ArrayBuffer }, key, ciphertext.buffer as ArrayBuffer)
   return new TextDecoder().decode(plaintext)
 }

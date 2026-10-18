@@ -120,3 +120,61 @@ h1, .panel-heading h2, .aging-head h2 { letter-spacing: -.01em; }
   .breadcrumbs { gap: 6px; white-space: nowrap; }
   .topbar .topbar-right .button { font-size: 13px; min-height: 36px; }
 }
+
+
+/* Lead recovery: visible, compact activity logging that stays aligned with the queue. */
+.lead-activity-form {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+.lead-activity-form > strong { color: var(--ink); font-size: 13px; }
+.lead-activity-form label {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+.lead-activity-form input,
+.lead-activity-form select,
+.lead-activity-form textarea {
+  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  color: var(--ink);
+  background: var(--surface);
+  font: inherit;
+  font-size: 13px;
+}
+.lead-activity-form textarea { resize: vertical; line-height: 1.5; }
+.lead-activity-form input:focus-visible,
+.lead-activity-form select:focus-visible,
+.lead-activity-form textarea:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--action) 20%, transparent);
+  border-color: var(--action);
+}
+.lead-activity-form .lead-form-actions { gap: 8px; }
+.lead-activity-form .button { width: auto; min-height: 38px; padding-inline: 12px; font-size: 12px; }
+.lead-log-button { min-height: 36px; padding: 0 10px; font-size: 12px; }
+.lead-activity-history { padding: 18px 21px; border-top: 1px solid var(--line); }
+.lead-activity-history-heading { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+.lead-activity-history-heading strong { color: var(--ink); font-size: 13px; }
+.lead-activity-history-heading span,
+.lead-activity-event small { color: var(--muted); font-size: 12px; }
+.lead-activity-event { padding: 12px 0; border-top: 1px solid var(--line); }
+.lead-activity-event > div { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.lead-activity-event > div strong { color: var(--ink); font-size: 13px; }
+.lead-activity-event > div span { color: var(--verified); font-size: 12px; font-weight: 700; }
+.lead-activity-event p { margin: 6px 0; color: var(--muted); font-size: 13px; line-height: 1.55; overflow-wrap: anywhere; }
+@media (max-width: 620px) {
+  .lead-activity-history { padding-inline: 14px; }
+  .lead-activity-form .lead-form-actions .button { width: auto; }
+}

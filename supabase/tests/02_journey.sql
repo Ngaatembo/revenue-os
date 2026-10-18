@@ -87,6 +87,38 @@ select t.err('org B cannot write a lead into org A', $q$insert into public.sales
 select t.err('org B cannot add itself to org A', $q$insert into public.memberships(organization_id,user_id,role) values (t.o('orga'),(select id from public.users where auth_subject=auth.uid()),'owner')$q$);
 reset role;
 
+-- ---------- Lead recovery activity loop ----------
+select set_config('request.jwt.claim.sub', :'A', false) \gset
+set role authenticated;
+insert into public.sales_leads (
+  organization_id, id, contact_name, business_name, next_follow_up, created_by
+) values (t.o('orga'), 'lead-activity-1', 'Synthetic Contact', 'Synthetic Lead Business', current_date, :'A');
+select (public.record_lead_activity(
+  :'orga', 'lead-activity-1', 'activity-1', 'no_response',
+  'Sent a follow-up and no reply has arrived yet', current_date + 3
+))->>'lead_status' as activity_status \gset
+select t.eq('no-response activity updates lead status', $q$select status from public.sales_leads where organization_id=t.o('orga') and id='lead-activity-1'$q$, 'contacted');
+select (current_date + 3)::text as activity_follow_up \gset
+select t.eq('activity schedules the next follow-up atomically', $q$select next_follow_up::text from public.sales_leads where organization_id=t.o('orga') and id='lead-activity-1'$q$, :'activity_follow_up');
+select t.eq('activity is saved in the audit history', $q$select count(*)::text from public.lead_activities where organization_id=t.o('orga') and lead_id='lead-activity-1'$q$, '1');
+select t.err('activity rejects a past next-follow-up date', $q$select public.record_lead_activity(t.o('orga'),'lead-activity-1','activity-past-date','note','Invalid follow-up date',current_date - 1)$q$, '22023');
+reset role;
+select set_config('request.jwt.claim.sub', :'V', false) \gset
+set role authenticated;
+select t.err('viewer cannot record lead activity', $q$select public.record_lead_activity(t.o('orga'),'lead-activity-1','activity-viewer','note','Attempted unauthorized activity',current_date + 3)$q$, '42501');
+reset role;
+select set_config('request.jwt.claim.sub', :'B', false) \gset
+set role authenticated;
+select t.eq('other workspace cannot read lead activity', $q$select count(*)::text from public.lead_activities where organization_id=t.o('orga')$q$, '0');
+select t.err('other workspace cannot write lead activity', $q$select public.record_lead_activity(t.o('orga'),'lead-activity-1','activity-cross-tenant','note','Attempted cross-workspace write',current_date + 3)$q$, '42501');
+reset role;
+select set_config('request.jwt.claim.sub', :'A', false) \gset
+set role authenticated;
+select t.ok('mark lead not interested', $q$select public.record_lead_activity(t.o('orga'),'lead-activity-1','activity-close','not_interested','Customer declined the offer',NULL)$q$);
+select t.eq('not-interested activity closes lead', $q$select status from public.sales_leads where organization_id=t.o('orga') and id='lead-activity-1'$q$, 'closed');
+select t.err('closed lead cannot receive more recovery activity', $q$select public.record_lead_activity(t.o('orga'),'lead-activity-1','activity-after-close','note','Attempted activity after closure',current_date + 3)$q$, '22023');
+reset role;
+
 -- ---------- Propose / approve / execute ----------
 select set_config('request.jwt.claim.sub', :'O', false) \gset
 set role authenticated;

@@ -98,7 +98,7 @@ BEGIN
     WHEN 'not_interested' THEN 'closed'
     ELSE v_current_status
   END;
-  v_next_follow_up := CASE WHEN p_activity_type = 'not_interested' THEN p_next_follow_up ELSE p_next_follow_up END;
+  v_next_follow_up := p_next_follow_up;
 
   INSERT INTO public.lead_activities (
     organization_id, id, lead_id, activity_type, summary, next_follow_up, created_by

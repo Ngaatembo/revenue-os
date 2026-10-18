@@ -115,6 +115,61 @@ export function clearStoredSession() {
   sessionStorage.removeItem(SESSION_KEY)
 }
 
+export function signInWithGoogle() {
+  requireConfig()
+  const redirectTo = window.location.origin
+  const authorizeUrl = new URL(`${supabaseUrl}/auth/v1/authorize`)
+  authorizeUrl.searchParams.set('provider', 'google')
+  authorizeUrl.searchParams.set('redirect_to', redirectTo)
+  // Supabase publishable/anon keys are public browser credentials; RLS protects data access.
+  authorizeUrl.searchParams.set('apikey', publishableKey)
+  window.location.assign(authorizeUrl.toString())
+}
+
+/**
+ * Completes Supabase's implicit OAuth callback after Google redirects back to the app.
+ * The access token is exchanged for the canonical user record before the session is stored.
+ */
+export async function consumeOAuthCallback(): Promise<SupabaseSession | null> {
+  const params = new URLSearchParams(window.location.hash.replace(/^#/, ''))
+  const accessToken = params.get('access_token')
+  const refreshToken = params.get('refresh_token')
+  const expiresIn = Number(params.get('expires_in') ?? 3600)
+  const oauthError = params.get('error_description') ?? params.get('error')
+
+  if (!accessToken && !oauthError) return null
+
+  // Remove credentials and provider errors from the visible URL immediately.
+  window.history.replaceState(null, document.title, window.location.pathname + window.location.search)
+
+  if (oauthError) {
+    throw new Error(oauthError.replace(/\+/g, ' '))
+  }
+  if (!accessToken || !refreshToken) {
+    throw new Error('Google sign-in did not return a complete session. Please try again.')
+  }
+
+  const response = await fetch(`${supabaseUrl}/auth/v1/user`, {
+    headers: {
+      apikey: publishableKey,
+      Authorization: `Bearer ${accessToken}`,
+    },
+  })
+  const payload = await response.json().catch(() => null) as Record<string, unknown> | null
+  if (!response.ok || !payload || typeof payload.id !== 'string') {
+    throw new Error(readError(payload, 'Google sign-in succeeded, but Revenue OS could not verify the session. Please try again.'))
+  }
+
+  const session: SupabaseSession = {
+    access_token: accessToken,
+    refresh_token: refreshToken,
+    expires_at: Math.floor(Date.now() / 1000) + (Number.isFinite(expiresIn) ? expiresIn : 3600),
+    user: { id: payload.id, email: typeof payload.email === 'string' ? payload.email : undefined },
+  }
+  storeSession(session)
+  return session
+}
+
 export async function signIn(email: string, password: string) {
   const payload = await authRequest('token?grant_type=password', { email: email.trim(), password })
   const session = normalizeSession(payload)

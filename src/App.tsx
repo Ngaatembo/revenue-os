@@ -551,14 +551,6 @@ function LeadRecovery({ leadCapacity, leads, setLeads, session, organization, lo
   const [activityNextFollowUp, setActivityNextFollowUp] = useState(() => new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10))
   const [activitySaving, setActivitySaving] = useState(false)
 
-  useEffect(() => {
-    let cancelled = false
-    loadLeadActivities(session, organization.id)
-      .then((records) => { if (!cancelled) setActivities(records) })
-      .catch((cause) => { if (!cancelled) setNotice(cause instanceof Error ? cause.message : 'Could not load lead activity history.') })
-    return () => { cancelled = true }
-  }, [session, organization.id])
-
   const [name, setName] = useState('')
   const [business, setBusiness] = useState('')
   const [contact, setContact] = useState('')
@@ -570,6 +562,14 @@ function LeadRecovery({ leadCapacity, leads, setLeads, session, organization, lo
   const [notice, setNotice] = useState('')
   const [saving, setSaving] = useState(false)
   const [filter, setFilter] = useState<'all' | LeadStatus>('all')
+
+  useEffect(() => {
+    let cancelled = false
+    loadLeadActivities(session, organization.id)
+      .then((records) => { if (!cancelled) setActivities(records) })
+      .catch((cause) => { if (!cancelled) setNotice(cause instanceof Error ? cause.message : 'Could not load lead activity history.') })
+    return () => { cancelled = true }
+  }, [session, organization.id])
 
   async function addLead(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()

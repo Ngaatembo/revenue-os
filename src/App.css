@@ -300,3 +300,25 @@ h1 { margin-bottom: 7px; color: var(--ink); font-size: clamp(25px, 3vw, 31px); l
 .next-step { margin: 8px 0 6px; font-size: 13px; color: #24433a; }
 .action-context { margin: 8px 0 0; font-size: 13px; line-height: 1.5; color: #4b5b55; }
 @media (max-width: 1100px) { .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+
+/* Connection centre: expose the actual integration state without implying unavailable automation. */
+.connections-workspace { display: grid; gap: 22px; }
+.connection-source-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-top: 18px; }
+.connection-source-card { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; padding: 18px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); min-width: 0; }
+.connection-source-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; }
+.connection-source-card h3 { margin: 2px 0 0; font-size: 16px; color: var(--ink); }
+.connection-source-card p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.6; }
+.connection-source-card small { display: block; color: var(--muted); font-size: 11px; line-height: 1.55; margin-top: auto; }
+.connection-source-card .button { margin-top: 4px; width: 100%; }
+.connection-source-card .button:disabled { opacity: .65; cursor: not-allowed; }
+.connection-pill { display: inline-flex; align-items: center; padding: 5px 8px; border-radius: 999px; background: var(--page); border: 1px solid var(--line); color: var(--muted); font-size: 10px; font-weight: 700; white-space: nowrap; }
+.connection-pill-ready { color: var(--teal); }
+.connection-status-list { display: grid; gap: 0; margin: 8px 0 18px; }
+.connection-status-list > div { display: flex; justify-content: space-between; align-items: center; gap: 14px; padding: 13px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+.connection-status-list > div:last-child { border-bottom: 0; }
+.connection-status-list > div > span { display: flex; align-items: center; gap: 9px; color: var(--muted); }
+.connection-status-list strong { color: var(--ink); text-align: right; font-size: 12px; }
+.connection-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #32956f; flex: 0 0 auto; }
+.connection-dot-muted { background: #a0aaa4; }
+@media (max-width: 900px) { .connection-source-grid { grid-template-columns: 1fr; } .connection-source-card { padding: 16px; } }

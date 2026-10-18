@@ -12,7 +12,7 @@ import { buildRecommendation } from './domain/recommendation'
 import { classifySyncFailure } from './lib/opportunityQueries'
 import { BILLING_STATUS, checkInvoiceImportSize, checkLeadCapacity, getPlan } from './domain/plans'
 import type { InvoiceEvidence, RevenueOpportunity } from './domain/types'
-import { createSalesLead, deleteSalesLead, loadInvoices, loadRecoveryRate, loadSalesLeads, persistInvoiceImport, saveRecoveryRate, sha256Hex, updateSalesLead, type RevenueOrganization, type SalesLead, type SupabaseSession, type RecoveryAction, type VerifiedOutcome, loadRecoveryActions, loadVerifiedOutcomes, persistPaymentImport, proposeInvoiceReminder, transitionRecoveryAction, verifyRecoveryOutcome, loadOpenOpportunities, syncOverdueOpportunities, type OpportunitySyncResult } from './lib/supabaseRest'
+import { createSalesLead, deleteSalesLead, loadInvoices, loadRecoveryRate, loadSalesLeads, persistInvoiceImport, saveRecoveryRate, sha256Hex, updateSalesLead, type RevenueOrganization, type SalesLead, type SupabaseSession, type RecoveryAction, type VerifiedOutcome, loadRecoveryActions, loadVerifiedOutcomes, persistPaymentImport, proposeInvoiceReminder, transitionRecoveryAction, verifyRecoveryOutcome, loadOpenOpportunities, syncOverdueOpportunities, type OpportunitySyncResult, loadLeadActivities, recordLeadActivity, type LeadActivity, type LeadActivityType } from './lib/supabaseRest'
 import './App.css'
 import './design.css'
 
@@ -544,6 +544,21 @@ export default App
 
 
 function LeadRecovery({ leadCapacity, leads, setLeads, session, organization, loading, loadError }: { leadCapacity: ReturnType<typeof checkLeadCapacity>; leads: LeadRecord[]; setLeads: (updater: (current: LeadRecord[]) => LeadRecord[]) => void; session: SupabaseSession; organization: RevenueOrganization; loading: boolean; loadError: string }) {
+  const [activities, setActivities] = useState<LeadActivity[]>([])
+  const [activityLeadId, setActivityLeadId] = useState<string | null>(null)
+  const [activityType, setActivityType] = useState<LeadActivityType>('follow_up_sent')
+  const [activitySummary, setActivitySummary] = useState('')
+  const [activityNextFollowUp, setActivityNextFollowUp] = useState(() => new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10))
+  const [activitySaving, setActivitySaving] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    loadLeadActivities(session, organization.id)
+      .then((records) => { if (!cancelled) setActivities(records) })
+      .catch((cause) => { if (!cancelled) setNotice(cause instanceof Error ? cause.message : 'Could not load lead activity history.') })
+    return () => { cancelled = true }
+  }, [session, organization.id])
+
   const [name, setName] = useState('')
   const [business, setBusiness] = useState('')
   const [contact, setContact] = useState('')
@@ -594,6 +609,38 @@ function LeadRecovery({ leadCapacity, leads, setLeads, session, organization, lo
     }
   }
 
+  async function saveActivity(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!activityLeadId) return
+    if (activitySummary.trim().length < 3) {
+      setNotice('Describe what happened in at least 3 characters.')
+      return
+    }
+    setActivitySaving(true)
+    setNotice('')
+    try {
+      await recordLeadActivity(session, organization.id, {
+        leadId: activityLeadId,
+        type: activityType,
+        summary: activitySummary.trim(),
+        nextFollowUp: activityType === 'not_interested' ? null : activityNextFollowUp,
+      })
+      const [freshLeads, freshActivities] = await Promise.all([
+        loadSalesLeads(session, organization.id),
+        loadLeadActivities(session, organization.id),
+      ])
+      setLeads(() => freshLeads)
+      setActivities(freshActivities)
+      setActivityLeadId(null)
+      setActivitySummary('')
+      setNotice('Interaction saved. Lead status and next follow-up were updated together.')
+    } catch (cause) {
+      setNotice(cause instanceof Error ? cause.message : 'The interaction could not be saved.')
+    } finally {
+      setActivitySaving(false)
+    }
+  }
+
   async function removeLead(id: string) {
     try {
       await deleteSalesLead(session, organization.id, id)
@@ -637,9 +684,35 @@ function LeadRecovery({ leadCapacity, leads, setLeads, session, organization, lo
       <div className="lead-filter-row"><label htmlFor="lead-filter">Show</label><select id="lead-filter" value={filter} onChange={(e) => setFilter(e.target.value as 'all' | LeadStatus)}><option value="all">All leads</option><option value="new">New</option><option value="follow_up">Follow-up due</option><option value="contacted">Contacted</option><option value="converted">Converted</option><option value="closed">Closed</option></select></div>
       {loading ? <div className="empty-state compact"><h3>Loading saved leads…</h3><p>Retrieving records for this workspace.</p></div> : visible.length === 0 ? <div className="empty-state compact"><span className="empty-icon"><Icon name="check" /></span><h3>No leads in this view</h3><p>Add a prospect above. Saved leads will be available when you sign in again.</p></div> : <div className="lead-list">{visible.map((lead) => {
         const due = lead.status !== 'converted' && lead.status !== 'closed' && lead.nextFollowUp <= new Date().toISOString().slice(0, 10)
-        return <article className="lead-row" key={lead.id}><div className="lead-row-main"><div className="lead-row-title"><strong>{lead.business}</strong><span className={`lead-status lead-status-${lead.status}`}>{statusLabel[lead.status]}</span>{due && <span className="lead-due">Due</span>}{stalledById.has(lead.id) && <span className="lead-due" title={stalledById.get(lead.id)?.reason}>Stalled {stalledById.get(lead.id)?.daysStalled}d</span>}</div><p>{lead.name}{lead.contact ? ` · ${lead.contact}` : ''} · Source: {lead.source}</p><small>Next follow-up: {lead.nextFollowUp}{lead.notes ? ` · ${lead.notes}` : ''}</small></div><div className="lead-row-side"><strong>{lead.currency} {Number(lead.value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong><label>Status<select aria-label={`Status for ${lead.business}`} value={lead.status} onChange={(e) => void updateStatus(lead.id, e.target.value as LeadStatus)}><option value="new">New</option><option value="follow_up">Follow-up due</option><option value="contacted">Contacted</option><option value="converted">Converted</option><option value="closed">Closed</option></select></label><button type="button" className="template-link" onClick={() => void removeLead(lead.id)}>Remove</button></div></article>
+        return <article className="lead-row" key={lead.id}><div className="lead-row-main"><div className="lead-row-title"><strong>{lead.business}</strong><span className={`lead-status lead-status-${lead.status}`}>{statusLabel[lead.status]}</span>{due && <span className="lead-due">Due</span>}{stalledById.has(lead.id) && <span className="lead-due" title={stalledById.get(lead.id)?.reason}>Stalled {stalledById.get(lead.id)?.daysStalled}d</span>}</div><p>{lead.name}{lead.contact ? ` · ${lead.contact}` : ''} · Source: {lead.source}</p><small>Next follow-up: {lead.nextFollowUp}{lead.notes ? ` · ${lead.notes}` : ''}</small></div>{activityLeadId === lead.id && <form className="lead-activity-form" onSubmit={(event) => void saveActivity(event)}>
+          <strong>Record interaction</strong>
+          <label>What happened<select value={activityType} onChange={(event) => setActivityType(event.target.value as LeadActivityType)}>
+            <option value="follow_up_sent">Follow-up sent</option><option value="no_response">No response</option><option value="interested">Interested</option><option value="meeting_booked">Meeting booked</option><option value="not_interested">Not interested / close lead</option><option value="note">Add note only</option>
+          </select></label>
+          <label>Interaction notes<textarea value={activitySummary} onChange={(event) => setActivitySummary(event.target.value)} required minLength={3} maxLength={1000} rows={3} placeholder="e.g. Spoke with the owner; asked for a revised quote by Friday." /></label>
+          {activityType !== 'not_interested' && <label>Next follow-up date<input type="date" min={new Date().toISOString().slice(0, 10)} value={activityNextFollowUp} onChange={(event) => setActivityNextFollowUp(event.target.value)} required /></label>}
+          <div className="lead-form-actions"><button className="button button-primary" type="submit" disabled={activitySaving}>{activitySaving ? 'Saving…' : 'Save interaction'}</button><button className="button button-secondary" type="button" disabled={activitySaving} onClick={() => setActivityLeadId(null)}>Cancel</button></div>
+        </form>}
+        <div className="lead-row-side"><strong>{lead.currency} {Number(lead.value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+          {lead.status !== 'converted' && lead.status !== 'closed' && <button type="button" className="button button-secondary lead-log-button" onClick={() => { setActivityLeadId(activityLeadId === lead.id ? null : lead.id); setActivityType('follow_up_sent'); setActivitySummary(''); setActivityNextFollowUp(new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10)) }}>{activityLeadId === lead.id ? 'Close form' : stalledById.has(lead.id) ? 'Recover lead' : 'Log interaction'}</button>}
+          <label>Status<select aria-label={`Status for ${lead.business}`} value={lead.status} onChange={(e) => void updateStatus(lead.id, e.target.value as LeadStatus)}><option value="new">New</option><option value="follow_up">Follow-up due</option><option value="contacted">Contacted</option><option value="converted">Converted</option><option value="closed">Closed</option></select></label><button type="button" className="template-link" onClick={() => void removeLead(lead.id)}>Remove</button></div></article>
       })}</div>}
-      <p className="lead-disclaimer">Pipeline value is an estimate. Converted value is user-marked, not independently verified cash. Leads are stored in your Supabase workspace; this prototype does not send messages or connect to WhatsApp.</p>
+      {activities.length > 0 && <section className="lead-activity-history" aria-label="Recent lead interactions">
+        <div className="lead-activity-history-heading"><strong>Recent interactions</strong><span>Latest 12 recorded events</span></div>
+        {activities.slice(0, 12).map((activity) => {
+          const lead = leads.find((item) => item.id === activity.leadId)
+          const labels: Record<LeadActivityType, string> = {
+            follow_up_sent: 'Follow-up sent', no_response: 'No response', interested: 'Interested',
+            meeting_booked: 'Meeting booked', not_interested: 'Not interested', note: 'Note',
+          }
+          return <article className="lead-activity-event" key={activity.id}>
+            <div><strong>{lead?.business ?? 'Lead'}</strong><span>{labels[activity.type]}</span></div>
+            <p>{activity.summary}</p>
+            <small>{new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(activity.createdAt))}{activity.nextFollowUp ? ' · Next follow-up ' + activity.nextFollowUp : ''}</small>
+          </article>
+        })}
+      </section>}
+      <p className="lead-disclaimer">Pipeline value is an estimate. Converted value is user-marked, not independently verified cash. Interactions are recorded in your workspace; Revenue OS does not send messages or connect to WhatsApp automatically.</p>
     </section>
   </div>
 }

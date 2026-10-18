@@ -302,6 +302,76 @@ export async function deleteSalesLead(session: SupabaseSession, organizationId: 
   await apiRequest<unknown>(session, `sales_leads?${params.toString()}`, { method: 'DELETE' })
 }
 
+export type LeadActivityType = 'follow_up_sent' | 'no_response' | 'interested' | 'meeting_booked' | 'not_interested' | 'note'
+export type LeadActivity = {
+  id: string
+  leadId: string
+  type: LeadActivityType
+  summary: string
+  nextFollowUp: string | null
+  createdAt: string
+}
+
+type DbLeadActivity = {
+  id: string
+  lead_id: string
+  activity_type: LeadActivityType
+  summary: string
+  next_follow_up: string | null
+  created_at: string
+}
+
+export async function loadLeadActivities(session: SupabaseSession, organizationId: string): Promise<LeadActivity[]> {
+  const params = new URLSearchParams({
+    select: 'id,lead_id,activity_type,summary,next_follow_up,created_at',
+    organization_id: `eq.${organizationId}`,
+    order: 'created_at.desc',
+    limit: '500',
+  })
+  const rows = await apiRequest<DbLeadActivity[]>(session, `lead_activities?${params.toString()}`)
+  return rows.map((row) => ({
+    id: row.id,
+    leadId: row.lead_id,
+    type: row.activity_type,
+    summary: row.summary,
+    nextFollowUp: row.next_follow_up,
+    createdAt: row.created_at,
+  }))
+}
+
+export async function recordLeadActivity(
+  session: SupabaseSession,
+  organizationId: string,
+  input: { leadId: string; type: LeadActivityType; summary: string; nextFollowUp: string | null },
+): Promise<LeadActivity> {
+  const result = await apiRequest<{
+    id: string
+    lead_id: string
+    activity_type: LeadActivityType
+    summary: string
+    next_follow_up: string | null
+    created_at: string
+  }>(session, 'rpc/record_lead_activity', {
+    method: 'POST',
+    body: JSON.stringify({
+      p_org_id: organizationId,
+      p_lead_id: input.leadId,
+      p_activity_id: 'activity-' + crypto.randomUUID(),
+      p_activity_type: input.type,
+      p_summary: input.summary.trim(),
+      p_next_follow_up: input.nextFollowUp,
+    }),
+  })
+  return {
+    id: result.id,
+    leadId: result.lead_id,
+    type: result.activity_type,
+    summary: result.summary,
+    nextFollowUp: result.next_follow_up,
+    createdAt: result.created_at,
+  }
+}
+
 export async function signOut(session: SupabaseSession) {
   try {
     await authRequest('logout', {}, session.access_token)

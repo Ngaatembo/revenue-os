@@ -155,12 +155,14 @@ select t.eq('duplicate payment reference (new file) is skipped', $q$select (publ
  jsonb_build_array(jsonb_build_object('externalRecordId','PAY-1','invoiceNumber','INV-1','currency','USD','amountMinor',40000,'receivedAt',now()+interval '1 hour')),0))->>'accepted_rows'$q$, '0');
 select t.eq('still one payment after duplicate reference', $q$select count(*)::text from public.payment_evidence where organization_id=t.o('orga')$q$, '1');
 select t.eq('same payment file re-imported is duplicate', $q$select (public.persist_payment_import(t.o('orga'),'src-pay1','pay1.csv',repeat('6',64),'[]'::jsonb,0))->>'duplicate'$q$, 'true');
-select t.err('missing invoice match rejects whole file', $q$select public.persist_payment_import(t.o('orga'),'src-pay2','pay2.csv',repeat('8',64),
+select t.eq('unmatched payment is queued, matched one is kept', $q$select concat_ws('/', r->>'accepted_rows', r->>'review_rows') from (select public.persist_payment_import(t.o('orga'),'src-pay2','pay2.csv',repeat('8',64),
  jsonb_build_array(jsonb_build_object('externalRecordId','PAY-2','invoiceNumber','INV-2','currency','USD','amountMinor',1000,'receivedAt',now()),
-                   jsonb_build_object('externalRecordId','PAY-3','invoiceNumber','NOPE-9','currency','USD','amountMinor',1000,'receivedAt',now())),0)$q$, '22023');
-select t.eq('no partial payments after failed file', $q$select count(*)::text from public.payment_evidence where organization_id=t.o('orga')$q$, '1');
-select t.err('currency mismatch is not matched to the invoice', $q$select public.persist_payment_import(t.o('orga'),'src-pay3','pay3.csv',repeat('9',64),
- jsonb_build_array(jsonb_build_object('externalRecordId','PAY-4','invoiceNumber','INV-1','currency','EUR','amountMinor',1000,'receivedAt',now())),0)$q$, '22023');
+                   jsonb_build_object('externalRecordId','PAY-3','invoiceNumber','NOPE-9','currency','USD','amountMinor',1000,'receivedAt',now())),0) r) x$q$, '1/1');
+select t.eq('valid payment in a mixed file is not lost', $q$select count(*)::text from public.payment_evidence where organization_id=t.o('orga')$q$, '2');
+select t.eq('unmatched payment waits for review with its reason', $q$select reason||'|'||status from public.payment_review_items where organization_id=t.o('orga') and external_record_id='PAY-3'$q$, 'invoice_not_found|pending');
+select t.ok('currency mismatch is queued, not matched', $q$select public.persist_payment_import(t.o('orga'),'src-pay3','pay3.csv',repeat('9',64),
+ jsonb_build_array(jsonb_build_object('externalRecordId','PAY-4','invoiceNumber','INV-1','currency','EUR','amountMinor',1000,'receivedAt',now())),0)$q$);
+select t.eq('currency-mismatch payment is in the review queue', $q$select reason||'|'||currency from public.payment_review_items where organization_id=t.o('orga') and external_record_id='PAY-4'$q$, 'invoice_not_found|EUR');
 select t.err('non-positive amount rejected', $q$select public.persist_payment_import(t.o('orga'),'src-pay4','pay4.csv',repeat('a',64),
  jsonb_build_array(jsonb_build_object('externalRecordId','PAY-5','invoiceNumber','INV-1','currency','USD','amountMinor',0,'receivedAt',now())),0)$q$, '22023');
 select t.err('fractional amount rejected', $q$select public.persist_payment_import(t.o('orga'),'src-pay5','pay5.csv',repeat('b',64),
@@ -168,8 +170,9 @@ select t.err('fractional amount rejected', $q$select public.persist_payment_impo
 -- ambiguous invoice number across two sources
 select t.ok('second source with same invoice number', $q$select public.persist_invoice_import(t.o('orga'),'src-inv-b','invoices-b.csv',repeat('c',64),
  jsonb_build_array(jsonb_build_object('id','inv-9b','invoiceNumber','INV-2','customerId','c2','customerName','Cust Two','currency','USD','totalMinor',50000,'paidMinor',0,'issuedAt',now()-interval '40 days','dueAt',now()-interval '10 days','importedAt',now())),0)$q$);
-select t.err('ambiguous invoice number is rejected', $q$select public.persist_payment_import(t.o('orga'),'src-pay6','pay6.csv',repeat('d',64),
- jsonb_build_array(jsonb_build_object('externalRecordId','PAY-7','invoiceNumber','INV-2','currency','USD','amountMinor',1000,'receivedAt',now())),0)$q$, '22023');
+select t.ok('ambiguous invoice number is queued', $q$select public.persist_payment_import(t.o('orga'),'src-pay6','pay6.csv',repeat('d',64),
+ jsonb_build_array(jsonb_build_object('externalRecordId','PAY-7','invoiceNumber','INV-2','currency','USD','amountMinor',1000,'receivedAt',now())),0)$q$);
+select t.eq('ambiguous payment lists both candidate invoices', $q$select reason||'|'||cardinality(candidate_invoice_ids) from public.payment_review_items where organization_id=t.o('orga') and external_record_id='PAY-7'$q$, 'invoice_ambiguous|2');
 
 -- ---------- Outcome verification ----------
 select t.eq('verified outcome for single partial payment', $q$select (public.verify_recovery_outcome(t.o('orga'),t.o('act1'),30))->>'amount_minor'$q$, '40000');

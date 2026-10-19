@@ -31,3 +31,17 @@ export function transitionAction(action: RevenueAction, event: ActionEvent): Rev
   }
   return { ...action, status: 'cancelled' }
 }
+
+/**
+ * Plain-language status for a reminder. "Executed" is never shown as if the business problem were solved:
+ * it only means the owner says they sent the message. Money is confirmed separately by payment evidence.
+ */
+export function actionStatusLabel(status: 'proposed' | 'approved' | 'executed' | 'failed' | 'cancelled'): string {
+  switch (status) {
+    case 'proposed': return 'Draft, needs your review'
+    case 'approved': return 'Approved, not sent yet'
+    case 'executed': return 'Marked sent by you, outcome not confirmed'
+    case 'failed': return 'Could not be sent'
+    case 'cancelled': return 'Cancelled, nothing sent'
+  }
+}

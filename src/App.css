@@ -393,3 +393,39 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 .promise-status-broken { color: #9b4038; background: #fff1ee; }
 .promise-status-partly_kept { color: #946325; background: #fbf4e8; }
 @media (min-width: 640px) { .issue-form-row { grid-template-columns: 1fr 1fr; } }
+
+/* Business Brain */
+.brain-page { display: grid; gap: 16px; }
+.brain-settings, .brain-derived { display: grid; gap: 12px; padding: 4px 22px 18px; }
+.brain-setting, .brain-derived-item, .brain-conflict { display: grid; gap: 8px; padding: 14px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+.brain-setting-top { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.brain-setting-top small, .brain-derived-item small { display: block; color: #78847c; font-size: 11px; line-height: 1.5; }
+.brain-setting-value { display: grid; justify-items: end; gap: 4px; }
+.brain-derived-item { grid-template-columns: 1fr auto; }
+.brain-derived-item > small, .brain-derived-item > form { grid-column: 1 / -1; }
+.brain-derived-item > div:last-of-type { display: grid; justify-items: end; gap: 4px; }
+.brain-tag { display: inline-block; padding: 2px 7px; border-radius: 5px; background: #eef3ff; color: #4a5db3; font-size: 10px; font-weight: 600; }
+.brain-tag-muted { background: #f1f3f2; color: #6b7770; }
+.brain-facts { list-style: none; margin: 0; padding: 0 22px 12px; display: grid; gap: 8px; }
+.brain-facts ul { list-style: none; padding-left: 0; margin: 6px 0 0; display: grid; gap: 6px; }
+.brain-fact-superseded, .brain-fact-retracted { opacity: .7; }
+.brain-fact small { color: #78847c; }
+.brain-conflicts { border-color: #e8c27a; }
+@media (max-width: 640px) { .brain-derived-item { grid-template-columns: 1fr; } .brain-setting-value, .brain-derived-item > div:last-of-type { justify-items: start; } }
+.attention-queue { display: grid; gap: 12px; padding: 0 22px 18px; }
+.attention-card { display: grid; gap: 6px; padding: 14px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+.attention-card header { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; align-items: center; }
+.attention-card p { margin: 0; font-size: 12px; line-height: 1.6; }
+.attention-queue, .attention-card { min-width: 0; }
+.attention-card, .attention-card p, .attention-card li, .attention-card header { overflow-wrap: anywhere; }
+@media (max-width: 640px) { .attention-queue { padding-left: 12px; padding-right: 12px; } }
+
+/* Follow-ups: quotations, deposits, tasks, payment review */
+.work-records { display: grid; gap: 14px; padding: 0 22px 20px; }
+.work-tabs { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 22px 12px; }
+.work-tabs .button { min-height: 44px; }
+.record-compact { display: grid; gap: 8px; margin-top: 8px; }
+.inline-select { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
+.inline-select select { min-height: 44px; max-width: 100%; padding: 6px 8px; border: 1px solid #cfd6df; border-radius: 8px; background: #fff; font: inherit; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+@media (max-width: 620px) { .work-records { padding: 0 14px 16px; } .work-tabs { padding: 0 14px 10px; } }

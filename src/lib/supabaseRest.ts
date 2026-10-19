@@ -212,7 +212,7 @@ export async function signUp(email: string, password: string, fullName: string) 
   return { session: null, confirmationRequired: true }
 }
 
-async function freshSession(session: SupabaseSession): Promise<SupabaseSession> {
+export async function getFreshSession(session: SupabaseSession): Promise<SupabaseSession> {
   if (session.expires_at > Math.floor(Date.now() / 1000) + 60) return session
   const payload = await authRequest('token?grant_type=refresh_token', { refresh_token: session.refresh_token })
   const refreshed = normalizeSession(payload)
@@ -223,7 +223,7 @@ async function freshSession(session: SupabaseSession): Promise<SupabaseSession> 
 
 async function apiRequest<T>(session: SupabaseSession, path: string, init: RequestInit = {}): Promise<T> {
   requireConfig()
-  const current = await freshSession(session)
+  const current = await getFreshSession(session)
   const response = await fetch(`${supabaseUrl}/rest/v1/${path}`, {
     ...init,
     headers: {

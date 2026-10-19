@@ -1,5 +1,6 @@
 import type { GoogleSheetsOAuthEnv } from './googleSheetsConfig.ts'
-import { createOAuthState, encryptRefreshToken, hashOAuthState } from './googleSheetsCrypto.ts'
+import { createOAuthState, decryptRefreshToken, encryptRefreshToken, hashOAuthState } from './googleSheetsCrypto.ts'
+import { parseSheetInvoiceValues } from './googleSheetsSync.ts'
 
 interface Env extends GoogleSheetsOAuthEnv {
   APP_ORIGIN?: string
@@ -145,6 +146,82 @@ export async function handleGoogleSheets(request: Request, env: Env): Promise<Re
       return redirect(appRedirect(origin, 'connected'))
     } catch {
       return redirect(appRedirect(origin, 'failed'))
+    }
+  }
+
+  if (url.pathname === '/api/integrations/google/sync') {
+    if (request.method !== 'POST') return response({ error: 'method_not_allowed' }, 405)
+    const user = await authenticate(request, env)
+    if (!user) return response({ error: 'unauthorized' }, 401)
+    const body = await request.json().catch(() => null) as Json | null
+    const organizationId = typeof body?.organization_id === 'string' ? body.organization_id.trim() : ''
+    const spreadsheetId = typeof body?.spreadsheet_id === 'string' ? body.spreadsheet_id.trim() : ''
+    const range = typeof body?.range === 'string' ? body.range.trim() : 'A:H'
+    if (!organizationId || organizationId.length > 160) return response({ error: 'organization_required' }, 400)
+    if (!/^[A-Za-z0-9_-]{10,200}$/.test(spreadsheetId)) return response({ error: 'invalid_spreadsheet_id' }, 400)
+    if (!range || range.length > 200 || /[\r\n]/.test(range)) return response({ error: 'invalid_range' }, 400)
+    const member = await membership(env, user.authId, organizationId)
+    if (!member || !['owner', 'admin', 'operator'].includes(member.role)) return response({ error: 'workspace_permission_denied' }, 403)
+    try {
+      const connections = await db(env, `provider_connections?select=status,encrypted_refresh_token&organization_id=eq.${encodeURIComponent(organizationId)}&provider=eq.google_sheets&limit=1`) as Array<{ status: string; encrypted_refresh_token: string | null }>
+      const connection = connections[0]
+      if (!connection || connection.status !== 'connected' || !connection.encrypted_refresh_token) {
+        return response({ error: 'google_sheets_not_connected', message: 'Connect Google Sheets before syncing.' }, 409)
+      }
+      const refreshToken = await decryptRefreshToken(connection.encrypted_refresh_token, env.GOOGLE_TOKEN_ENCRYPTION_KEY!)
+      const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
+        method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ client_id: env.GOOGLE_CLIENT_ID!, client_secret: env.GOOGLE_CLIENT_SECRET!, refresh_token: refreshToken, grant_type: 'refresh_token' }),
+        signal: AbortSignal.timeout(10000),
+      })
+      const tokenPayload = await tokenResponse.json().catch(() => null) as Json | null
+      const accessToken = tokenPayload && typeof tokenPayload.access_token === 'string' ? tokenPayload.access_token : null
+      if (!tokenResponse.ok || !accessToken) throw new Error('google_token_refresh_failed')
+      const sheetUrl = new URL(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}`)
+      sheetUrl.searchParams.set('majorDimension', 'ROWS')
+      sheetUrl.searchParams.set('valueRenderOption', 'UNFORMATTED_VALUE')
+      const sheetResponse = await fetch(sheetUrl, { headers: { Authorization: `Bearer ${accessToken}` }, signal: AbortSignal.timeout(15000) })
+      const sheetPayload = await sheetResponse.json().catch(() => null) as Json | null
+      if (!sheetResponse.ok || !sheetPayload || !Array.isArray(sheetPayload.values)) {
+        const reason = sheetResponse.status === 403 ? 'google_sheet_access_denied' : sheetResponse.status === 404 ? 'google_sheet_not_found' : 'google_sheet_read_failed'
+        throw new Error(reason)
+      }
+      const importedAt = new Date().toISOString()
+      const sourceId = `google_sheets:${spreadsheetId}`
+      const parsed = parseSheetInvoiceValues(sheetPayload.values as unknown[][], sourceId, importedAt)
+      const canonical = JSON.stringify({ spreadsheetId, range, rows: parsed.rows.map((row) => ({ id: row.id, invoiceNumber: row.invoiceNumber, customerId: row.customerId, customerName: row.customerName, currency: row.currency, totalMinor: row.totalMinor, paidMinor: row.paidMinor, issuedAt: row.issuedAt, dueAt: row.dueAt })) })
+      const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonical))
+      const contentHash = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('')
+      const savedResponse = await fetch(`${base(env)}/rest/v1/rpc/persist_invoice_import`, {
+        method: 'POST',
+        headers: { apikey: env.SUPABASE_ANON_KEY!, Authorization: `Bearer ${bearer(request)}`, 'content-type': 'application/json' },
+        body: JSON.stringify({
+          org_id: organizationId, source_id: sourceId, source_name: `Google Sheets ${spreadsheetId}`,
+          content_hash: contentHash, rows: parsed.rows, rejected_rows: parsed.rejectedRows,
+        }),
+        signal: AbortSignal.timeout(15000),
+      })
+      const saved = await savedResponse.json().catch(() => null) as Json | null
+      if (!savedResponse.ok || !saved) throw new Error('invoice_import_persist_failed')
+      await db(env, `provider_connections?organization_id=eq.${encodeURIComponent(organizationId)}&provider=eq.google_sheets`, {
+        method: 'PATCH', headers: { Prefer: 'return=minimal' },
+        body: JSON.stringify({ last_successful_sync_at: importedAt, last_error_code: null, updated_at: importedAt }),
+      })
+      return response({
+        status: 'synced', accepted_rows: Number(saved.accepted_rows ?? 0),
+        rejected_rows: parsed.rejectedRows, duplicate: Boolean(saved.duplicate),
+        import_id: typeof saved.import_id === 'string' ? saved.import_id : '',
+      })
+    } catch (cause) {
+      const code = cause instanceof Error ? cause.message : 'google_sheet_sync_failed'
+      const safeCode = /^[a-z0-9_:-]{1,80}$/.test(code) ? code : 'google_sheet_sync_failed'
+      await db(env, `provider_connections?organization_id=eq.${encodeURIComponent(organizationId)}&provider=eq.google_sheets`, {
+        method: 'PATCH', headers: { Prefer: 'return=minimal' },
+        body: JSON.stringify({ last_error_code: safeCode, updated_at: new Date().toISOString() }),
+      }).catch(() => undefined)
+      const status = safeCode === 'google_sheet_access_denied' ? 403 : safeCode === 'google_sheet_not_found' ? 404 : safeCode.startsWith('missing_columns:') || safeCode === 'no_valid_invoice_rows' || safeCode === 'sheet_needs_header_and_rows' ? 422 : 502
+      return response({ error: safeCode, message: safeCode.startsWith('missing_columns:') ? 'The sheet is missing required invoice columns.' : 'Google Sheets sync failed. Check the spreadsheet ID, range, access, and required invoice columns.' }, status)
     }
   }
 

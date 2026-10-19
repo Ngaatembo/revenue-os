@@ -12,7 +12,9 @@ import { buildRecommendation } from './domain/recommendation'
 import { classifySyncFailure } from './lib/opportunityQueries'
 import { BILLING_STATUS, checkInvoiceImportSize, checkLeadCapacity, getPlan } from './domain/plans'
 import type { InvoiceEvidence, RevenueOpportunity } from './domain/types'
-import { getFreshSession, createSalesLead, deleteSalesLead, loadInvoices, loadRecoveryRate, loadSalesLeads, persistInvoiceImport, saveRecoveryRate, sha256Hex, updateSalesLead, type RevenueOrganization, type SalesLead, type SupabaseSession, type RecoveryAction, type VerifiedOutcome, loadRecoveryActions, loadVerifiedOutcomes, persistPaymentImport, proposeInvoiceReminder, transitionRecoveryAction, verifyRecoveryOutcome, loadOpenOpportunities, syncOverdueOpportunities, type OpportunitySyncResult, loadLeadActivities, recordLeadActivity, type LeadActivity, type LeadActivityType, loadInvoiceInteractions, loadPaymentEvidence, recordInvoiceResponse, setOpportunityState, type InvoiceInteraction } from './lib/supabaseRest'
+import { getFreshSession, createSalesLead, deleteSalesLead, loadInvoices, loadRecoveryRate, loadSalesLeads, persistInvoiceImport, saveRecoveryRate, sha256Hex, updateSalesLead, type RevenueOrganization, type SalesLead, type SupabaseSession, type RecoveryAction, type VerifiedOutcome, loadRecoveryActions, loadVerifiedOutcomes, persistPaymentImport, proposeInvoiceReminder, transitionRecoveryAction, verifyRecoveryOutcome, loadOpenOpportunities, syncOverdueOpportunities, type OpportunitySyncResult, loadLeadActivities, recordLeadActivity, type LeadActivity, type LeadActivityType, loadInvoiceInteractions, loadPaymentEvidence, recordInvoiceResponse, setOpportunityState, type InvoiceInteraction, loadBrainFacts, loadAssumptionHistory, recordBrainFact, retractBrainFact, resolveBrainConflict, type AssumptionChange } from './lib/supabaseRest'
+import { BusinessBrain } from './BusinessBrain'
+import { deriveRecordFacts, findRecordMismatches, type BrainFact, type StoredFactKind } from './domain/businessBrain'
 import { IssueControls, type ResponseFormValues } from './IssueControls'
 import { summarizeWorkflow } from './domain/issueWorkflow'
 import { assessPromise, type PaymentRecord, type PromiseAssessment } from './domain/promises'
@@ -241,6 +243,12 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
   const [interactions, setInteractions] = useState<InvoiceInteraction[]>([])
   const [payments, setPayments] = useState<PaymentRecord[]>([])
   const [issueBusy, setIssueBusy] = useState('')
+  const [brainFacts, setBrainFacts] = useState<BrainFact[]>([])
+  const [assumptionHistory, setAssumptionHistory] = useState<AssumptionChange[]>([])
+  const [brainLoading, setBrainLoading] = useState(true)
+  const [brainError, setBrainError] = useState('')
+  const [brainBusy, setBrainBusy] = useState(false)
+  const [brainNotice, setBrainNotice] = useState('')
   const [issueNotice, setIssueNotice] = useState('')
   const [invoicesLoading, setInvoicesLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
@@ -350,6 +358,56 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
       .catch((cause) => { if (!cancelled) setIssueNotice(cause instanceof Error ? 'Could not load customer responses or payment evidence: ' + cause.message : 'Could not load customer responses or payment evidence.') })
     return () => { cancelled = true }
   }, [session, organization.id, invoices])
+
+  const reloadBrain = useCallback(async () => {
+    const [facts, history] = await Promise.all([loadBrainFacts(session, organization.id), loadAssumptionHistory(session, organization.id)])
+    setBrainFacts(facts)
+    setAssumptionHistory(history)
+    setBrainError('')
+  }, [session, organization.id])
+
+  useEffect(() => {
+    let cancelled = false
+    Promise.all([loadBrainFacts(session, organization.id), loadAssumptionHistory(session, organization.id)])
+      .then(([facts, history]) => { if (!cancelled) { setBrainFacts(facts); setAssumptionHistory(history); setBrainError('') } })
+      .catch((cause) => { if (!cancelled) setBrainError(cause instanceof Error ? 'The Business Brain could not be loaded: ' + cause.message + ' Settings fall back to built-in defaults, which are labelled as unconfirmed.' : 'The Business Brain could not be loaded.') })
+      .finally(() => { if (!cancelled) setBrainLoading(false) })
+    return () => { cancelled = true }
+  }, [session, organization.id])
+
+  async function brainAction(run: () => Promise<string>): Promise<string | null> {
+    setBrainBusy(true)
+    setBrainNotice('')
+    try {
+      const message = await run()
+      await reloadBrain()
+      setBrainNotice(message)
+      return null
+    } catch (cause) {
+      return cause instanceof Error ? cause.message : 'That could not be saved.'
+    } finally {
+      setBrainBusy(false)
+    }
+  }
+
+  const handleRecordFact = (input: { key: string; value: string; kind: StoredFactKind; sourceLabel: string; note?: string }) =>
+    brainAction(async () => {
+      const result = await recordBrainFact(session, { organizationId: organization.id, ...input })
+      return result.duplicate ? 'That fact was already saved.' : result.conflict ? 'Saved. It disagrees with another recorded value, so this is now a conflict for you to resolve.' : 'Saved with its source. Earlier values are kept in the history.'
+    })
+  const handleRetractFact = (fact: BrainFact, reason: string) =>
+    brainAction(async () => { await retractBrainFact(session, { organizationId: organization.id, factId: fact.id, reason }); return 'Retracted. The fact stays in the history.' })
+  const handleResolveConflict = (key: string, keep: BrainFact, reason: string) =>
+    brainAction(async () => { await resolveBrainConflict(session, { organizationId: organization.id, key, keepFactId: keep.id, reason }); return 'Conflict resolved. The other values are kept as history.' })
+  const handleSaveRecoveryRate = (percent: string) =>
+    brainAction(async () => {
+      const bps = parseRecoveryRate(percent)
+      if (bps === null) throw new Error('Enter a valid percentage from 0 to 100, such as 25 or 12.5.')
+      await saveRecoveryRate(session, organization, bps)
+      setRecoveryRate(String(bps / 100))
+      const synced = await refreshOpportunities(invoices, true)
+      return 'Assumption saved and logged.' + (synced ? ` ${synced.open} open issue${synced.open === 1 ? '' : 's'} re-estimated.` : '')
+    })
 
   async function reloadIssues() {
     const loaded = await loadOpenOpportunities(session, organization.id, invoices)
@@ -591,6 +649,9 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
     }
   }
 
+  const derivedFacts = useMemo(() => deriveRecordFacts({ invoices, payments, assumptionBps, asOf: new Date().toISOString() }), [invoices, payments, assumptionBps])
+  const recordMismatches = useMemo(() => findRecordMismatches(brainFacts, invoices), [brainFacts, invoices])
+
   const brain = (() => {
     if (invoicesLoading) return { status: 'LOADING', title: 'Loading workspace data…', detail: 'Checking for saved invoices', note: 'Figures appear once saved records have been read.' }
     if (loadError && invoices.length === 0) return { status: 'ERROR', title: 'Source data could not be loaded', detail: 'The read failed, so this does not mean there is no data', note: 'Reload the page to try again. Nothing was changed.' }
@@ -747,7 +808,9 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
               <section className="panel"><div className="panel-heading"><div><h2>Monitoring status</h2><p>Clear visibility into what Revenue OS can currently see.</p></div></div><div className="connection-status-list"><div><span><i className="connection-dot" />Workspace database</span><strong>Connected</strong></div><div><span><i className={invoices.length ? 'connection-dot' : 'connection-dot connection-dot-muted'} />Invoice data</span><strong>{invoices.length ? 'Available' : 'Waiting for import'}</strong></div><div><span><i className={leads.length ? 'connection-dot' : 'connection-dot connection-dot-muted'} />Lead data</span><strong>{leads.length ? `${leads.length} saved lead(s)` : 'No saved leads yet'}</strong></div><div><span><i className="connection-dot connection-dot-muted" />Background synchronization</span><strong>Not configured</strong></div><div><span><i className="connection-dot connection-dot-muted" />Daily business brief</span><strong>Not yet automated</strong></div></div><p className="brain-note">Important: Revenue OS does not yet monitor external services in the background. This page reports current capabilities honestly; the next engineering step is to implement a real Google data connection, secure token storage, and scheduled synchronization before marking a source connected.</p></section>
             </div>
           ) : (
-            <section className="panel section-placeholder"><span className="empty-icon"><Icon name="brain" /></span><h2>Business Brain</h2><p>The Business Brain holds sourced facts, explicit assumptions, and import history. Current invoice estimates are derived from saved invoice records and the recovery-rate assumption.</p><p><strong>Status:</strong> {brain.title}. {brain.detail}. {brain.note}</p><div id="csv-format" className="format-box"><strong>Invoice CSV columns</strong><code>customer_id, customer_name, invoice_number, currency, total_amount, paid_amount, issued_at, due_at</code><small>Amounts use a decimal point and up to two decimal places. Currency must be a three-letter ISO code such as USD.</small></div></section>
+            <BusinessBrain facts={brainFacts} derived={derivedFacts} mismatches={recordMismatches} assumptionBps={assumptionBps} assumptionHistory={assumptionHistory}
+              loading={brainLoading} loadError={brainError} busy={brainBusy} notice={brainNotice}
+              onRecord={handleRecordFact} onRetract={handleRetractFact} onResolve={handleResolveConflict} onSaveRecoveryRate={handleSaveRecoveryRate} />
           )}
 
           <footer className="page-footer"><span>Revenue OS</span><span>Estimates and verified revenue are kept separate.</span></footer>

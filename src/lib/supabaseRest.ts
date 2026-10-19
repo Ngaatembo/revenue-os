@@ -4,6 +4,8 @@ import { toRevenueOpportunities, type DbEvidenceRow, type DbOpportunityRow } fro
 import type { RevenueOpportunity } from '../domain/types'
 import { interactionsParams, issueStateBody, opportunityEvidenceParams, paymentEvidenceParams, recordResponseBody, syncRpcBody, trackedOpportunitiesParams, type InvoiceResponseType, type IssueTransition, type RecordResponseInput } from './opportunityQueries'
 import type { PaymentRecord } from '../domain/promises'
+import type { BrainFact } from '../domain/businessBrain'
+import { assumptionHistoryParams, brainFactsParams, recordFactBody, resolveConflictBody, retractFactBody } from './brainQueries'
 
 export type SupabaseUser = { id: string; email?: string }
 export type SupabaseSession = {
@@ -815,4 +817,44 @@ type DbPaymentEvidence = { id: string; invoice_id: string; amount_minor: number 
 export async function loadPaymentEvidence(session: SupabaseSession, organizationId: string): Promise<PaymentRecord[]> {
   const rows = await apiRequest<DbPaymentEvidence[]>(session, `payment_evidence?${paymentEvidenceParams(organizationId).toString()}`)
   return rows.map((row) => ({ invoiceId: row.invoice_id, amount: money(Number(row.amount_minor), row.currency), receivedAt: row.received_at }))
+}
+
+type DbBrainFact = {
+  id: string; fact_key: string; kind: BrainFact['kind']; value_text: string; source_label: string; source_ref: string | null; note: string | null
+  status: BrainFact['status']; superseded_by: string | null; status_reason: string | null; status_changed_at: string | null; recorded_by: string; recorded_at: string
+}
+
+export async function loadBrainFacts(session: SupabaseSession, organizationId: string): Promise<BrainFact[]> {
+  const rows = await apiRequest<DbBrainFact[]>(session, `brain_facts?${brainFactsParams(organizationId).toString()}`)
+  return rows.map((row) => ({
+    id: row.id, key: row.fact_key, kind: row.kind, value: row.value_text, sourceLabel: row.source_label, sourceRef: row.source_ref, note: row.note,
+    status: row.status, supersededBy: row.superseded_by, statusReason: row.status_reason, statusChangedAt: row.status_changed_at,
+    recordedBy: row.recorded_by, recordedAt: row.recorded_at,
+  }))
+}
+
+export type AssumptionChange = { id: string; oldBps: number | null; newBps: number; at: string }
+
+export async function loadAssumptionHistory(session: SupabaseSession, organizationId: string): Promise<AssumptionChange[]> {
+  const rows = await apiRequest<{ id: string; details: { old_bps: number | null; new_bps: number }; created_at: string }[]>(session, `audit_log?${assumptionHistoryParams(organizationId).toString()}`)
+  return rows.map((row) => ({ id: row.id, oldBps: row.details.old_bps ?? null, newBps: row.details.new_bps, at: row.created_at }))
+}
+
+export async function recordBrainFact(
+  session: SupabaseSession,
+  input: { organizationId: string; key: string; value: string; kind: BrainFact['kind']; sourceLabel: string; sourceRef?: string; note?: string; factId?: string },
+): Promise<{ id: string; duplicate: boolean; conflict: boolean }> {
+  const factId = input.factId ?? 'fact-' + crypto.randomUUID()
+  const result = await apiRequest<{ id: string; duplicate: boolean; conflict?: boolean }>(session, 'rpc/record_brain_fact', {
+    method: 'POST', body: recordFactBody({ ...input, factId }),
+  })
+  return { id: result.id, duplicate: result.duplicate, conflict: Boolean(result.conflict) }
+}
+
+export async function retractBrainFact(session: SupabaseSession, input: { organizationId: string; factId: string; reason: string }): Promise<void> {
+  await apiRequest<unknown>(session, 'rpc/retract_brain_fact', { method: 'POST', body: retractFactBody(input) })
+}
+
+export async function resolveBrainConflict(session: SupabaseSession, input: { organizationId: string; key: string; keepFactId: string; reason: string }): Promise<void> {
+  await apiRequest<unknown>(session, 'rpc/resolve_brain_conflict', { method: 'POST', body: resolveConflictBody(input) })
 }

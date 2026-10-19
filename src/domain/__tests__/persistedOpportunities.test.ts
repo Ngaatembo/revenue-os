@@ -45,3 +45,40 @@ test('the saved estimate stays separate from outstanding and carries no verified
   assert.equal(opportunity.estimate.high.amount, 9)
   assert.equal('verified' in opportunity, false)
 })
+
+test('dismissed issues are returned separately with their reason so unpaid invoices are never silently hidden', () => {
+  const { opportunities, dismissed } = toRevenueOpportunities(
+    [row('a'), row('b', { status: 'dismissed', dismissed_reason: 'Handled directly by the owner' })],
+    ['a', 'b'].map((id) => ({ opportunity_id: 'overdue_invoice:' + id, invoice_id: id })),
+    [inv('a'), inv('b')],
+  )
+  assert.equal(opportunities.length, 1)
+  assert.equal(dismissed.length, 1)
+  assert.equal(dismissed[0].status, 'dismissed')
+  assert.equal(dismissed[0].workflow?.dismissedReason, 'Handled directly by the owner')
+  assert.equal(dismissed[0].outstanding.amount, 100_000)
+})
+
+test('saved workflow state, follow-up and promise are rebuilt; a promise without both amount and date is ignored', () => {
+  const full = toRevenueOpportunities(
+    [row('a', { workflow_state: 'promised', next_follow_up: '2026-10-26', promised_amount_minor: '50000', promised_date: '2026-10-25', snoozed_until: '2026-10-22T00:00:00.000Z' })],
+    [{ opportunity_id: 'overdue_invoice:a', invoice_id: 'a' }], [inv('a')],
+  ).opportunities[0].workflow
+  assert.equal(full?.state, 'promised')
+  assert.equal(full?.promisedAmount?.amount, 50_000)
+  assert.equal(full?.promisedDate, '2026-10-25')
+  assert.equal(full?.nextFollowUp, '2026-10-26')
+  assert.equal(full?.snoozedUntil, '2026-10-22T00:00:00.000Z')
+
+  const partial = toRevenueOpportunities(
+    [row('b', { workflow_state: 'promised', promised_amount_minor: '50000', promised_date: null })],
+    [{ opportunity_id: 'overdue_invoice:b', invoice_id: 'b' }], [inv('b')],
+  ).opportunities[0].workflow
+  assert.equal(partial?.promisedAmount, null)
+  assert.equal(partial?.promisedDate, null)
+})
+
+test('an unknown or missing workflow state falls back to new rather than inventing a state', () => {
+  const o = toRevenueOpportunities([row('a', { workflow_state: 'celebrating' })], [{ opportunity_id: 'overdue_invoice:a', invoice_id: 'a' }], [inv('a')]).opportunities[0]
+  assert.equal(o.workflow?.state, 'new')
+})

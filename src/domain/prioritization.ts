@@ -1,4 +1,5 @@
 import { addMoney, formatMoney, money } from './money.ts'
+import { attentionReasons, isSnoozed, nextActionForWorkflow, type AttentionReason } from './issueWorkflow.ts'
 import type { Money, RevenueOpportunity } from './types.ts'
 
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -15,6 +16,12 @@ export type RankedOpportunity = {
   /** What we do not know; shown next to every estimate. */
   uncertainty: string
   nextAction: string
+  /** Rules that put this issue in the Urgent queue. Empty means it can wait. */
+  attention: AttentionReason[]
+  /** Snoozed issues are hidden from Urgent until the snooze ends; the unpaid balance is never hidden. */
+  snoozed: boolean
+  /** Higher sorts first: the strongest attention rule, or the lateness band when no rule fires. */
+  priority: number
 }
 
 /** Whole days past due, never negative. Deterministic for a given asOf. */
@@ -55,11 +62,13 @@ export function rankOpportunities(
     const days = daysOverdue(invoice.dueAt, asOf)
     const { band, label } = urgencyFor(days)
     const dueText = invoice.dueAt.slice(0, 10)
+    const attention = attentionReasons(opportunity, days, asOf)
     const reasons = [
       `Invoice ${invoice.invoiceNumber} was due on ${dueText} and is ${days} day${days === 1 ? '' : 's'} past due.`,
       invoice.paid.amount > 0
         ? `${formatMoney(invoice.paid)} of ${formatMoney(invoice.total)} has been recorded as paid, leaving ${formatMoney(opportunity.outstanding)}.`
         : `No payment is recorded against this ${formatMoney(invoice.total)} invoice.`,
+      ...attention.filter((reason) => reason.code !== 'severely_overdue').map((reason) => reason.label),
     ]
     return {
       opportunity,
@@ -68,11 +77,15 @@ export function rankOpportunities(
       urgencyLabel: label,
       reasons,
       uncertainty: 'The estimate is the outstanding balance times your stated recovery rate. It is an assumption, not a prediction or a payment.',
-      nextAction: nextActionFor(progressByInvoiceId.get(invoice.id) ?? 'none'),
+      nextAction: nextActionForWorkflow(opportunity.workflow, asOf) ?? nextActionFor(progressByInvoiceId.get(invoice.id) ?? 'none'),
+      attention,
+      snoozed: isSnoozed(opportunity.workflow, asOf),
+      priority: Math.max(band, ...attention.map((reason) => reason.rank)),
     }
   })
   return ranked.sort((a, b) =>
-    b.urgency - a.urgency
+    b.priority - a.priority
+    || b.urgency - a.urgency
     || a.opportunity.outstanding.currency.localeCompare(b.opportunity.outstanding.currency)
     || b.opportunity.outstanding.amount - a.opportunity.outstanding.amount
     || a.opportunity.id.localeCompare(b.opportunity.id))

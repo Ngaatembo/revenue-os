@@ -35,6 +35,8 @@ export type RevenueAssumption = {
   updatedBy: string
 }
 
+import type { OpportunityWorkflow } from './issueWorkflow.ts'
+
 export type RevenueOpportunity = {
   id: string
   kind: 'overdue_invoice'
@@ -48,6 +50,8 @@ export type RevenueOpportunity = {
     formula: 'outstanding_times_recovery_rate'
   }
   detectedAt: string
+  /** Where the issue stands with the customer. Absent for opportunities computed live without saved state. */
+  workflow?: OpportunityWorkflow
 }
 
 export type RevenueAction = {

@@ -1,8 +1,9 @@
 import type { ResolvedSetting, BrainSettingKey } from '../businessBrain.ts'
 import type { ActionProgress } from '../prioritization.ts'
 import type { Money, RevenueOpportunity } from '../types.ts'
+import type { Deposit, PaymentReviewItem, Quotation, Task } from '../records.ts'
 
-export type SubjectType = 'invoice' | 'lead'
+export type SubjectType = 'invoice' | 'lead' | 'quotation' | 'deposit' | 'task' | 'payment_review' | 'action'
 export type Subject = { type: SubjectType; id: string; label: string }
 
 /**
@@ -43,7 +44,19 @@ export type LeadForAttention = {
   createdAt: string
 }
 
+export type RecordsContext = {
+  quotations: Quotation[]
+  deposits: Deposit[]
+  tasks: Task[]
+  paymentReviews: PaymentReviewItem[]
+  /** Recovery actions still waiting on a person (draft or approved), with their owner if any. */
+  openActions: { id: string; label: string; status: 'proposed' | 'approved'; ownerId: string | null }[]
+  /** How many times each record's date was pushed back, keyed `quotation:<id>`, `deposit:<id>` or `task:<id>`. */
+  rescheduleCounts: ReadonlyMap<string, number>
+}
+
 export type AttentionContext = {
+  records?: RecordsContext
   asOf: string
   /** Open overdue-invoice issues, already carrying their workflow state. */
   opportunities: RevenueOpportunity[]

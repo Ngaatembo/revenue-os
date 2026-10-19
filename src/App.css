@@ -419,3 +419,13 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 .attention-queue, .attention-card { min-width: 0; }
 .attention-card, .attention-card p, .attention-card li, .attention-card header { overflow-wrap: anywhere; }
 @media (max-width: 640px) { .attention-queue { padding-left: 12px; padding-right: 12px; } }
+
+/* Follow-ups: quotations, deposits, tasks, payment review */
+.work-records { display: grid; gap: 14px; padding: 0 22px 20px; }
+.work-tabs { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 22px 12px; }
+.work-tabs .button { min-height: 44px; }
+.record-compact { display: grid; gap: 8px; margin-top: 8px; }
+.inline-select { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
+.inline-select select { min-height: 44px; max-width: 100%; padding: 6px 8px; border: 1px solid #cfd6df; border-radius: 8px; background: #fff; font: inherit; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+@media (max-width: 620px) { .work-records { padding: 0 14px 16px; } .work-tabs { padding: 0 14px 10px; } }

@@ -5,6 +5,8 @@ import type { RevenueOpportunity } from '../domain/types'
 import { interactionsParams, issueStateBody, opportunityEvidenceParams, paymentEvidenceParams, recordResponseBody, syncRpcBody, trackedOpportunitiesParams, type InvoiceResponseType, type IssueTransition, type RecordResponseInput } from './opportunityQueries'
 import type { PaymentRecord } from '../domain/promises'
 import type { BrainFact } from '../domain/businessBrain'
+import { actionOwnersParams, assignActionOwnerBody, assignQuotationBody, createDepositBody, createQuotationBody, createTaskBody, depositsParams, orgOnlyBody, paymentReviewParams, quotationEventBody, quotationsParams, rescheduleEventsParams, resolveReviewBody, tasksParams, updateDepositBody, updateTaskBody, type DepositAction, type QuotationEventType, type ReviewAction, type TaskAction } from './recordQueries'
+import type { Deposit, PaymentReviewItem, Quotation, Task, WorkspaceMember } from '../domain/records'
 import { assumptionHistoryParams, brainFactsParams, evaluationRunsParams, recordFactBody, resolveConflictBody, retractFactBody } from './brainQueries'
 
 export type SupabaseUser = { id: string; email?: string }
@@ -676,8 +678,8 @@ export async function persistPaymentImport(
   session: SupabaseSession,
   organization: RevenueOrganization,
   input: { sourceId: string; sourceName: string; contentHash: string; payments: PaymentImportRow[]; rejectedRows: number },
-): Promise<{ duplicate: boolean; importId: string; acceptedRows: number; rejectedRows: number }> {
-  const result = await apiRequest<{ duplicate: boolean; import_id: string; accepted_rows: number; rejected_rows: number }>(
+): Promise<{ duplicate: boolean; importId: string; acceptedRows: number; reviewRows: number; rejectedRows: number }> {
+  const result = await apiRequest<{ duplicate: boolean; import_id: string; accepted_rows: number; review_rows?: number; rejected_rows: number }>(
     session,
     'rpc/persist_payment_import',
     {
@@ -692,7 +694,7 @@ export async function persistPaymentImport(
       }),
     },
   )
-  return { duplicate: result.duplicate, importId: result.import_id, acceptedRows: result.accepted_rows, rejectedRows: result.rejected_rows }
+  return { duplicate: result.duplicate, importId: result.import_id, acceptedRows: result.accepted_rows, reviewRows: result.review_rows ?? 0, rejectedRows: result.rejected_rows }
 }
 
 export async function verifyRecoveryOutcome(
@@ -867,3 +869,55 @@ export async function loadEvaluationRuns(session: SupabaseSession, organizationI
   const rows = await apiRequest<{ id: string; trigger_kind: EvaluationRun['trigger']; status: EvaluationRun['status']; started_at: string; created_count: number; closed_count: number; open_count: number; message: string | null }[]>(session, `evaluation_runs?${params.toString()}`)
   return rows.map((row) => ({ id: row.id, trigger: row.trigger_kind, status: row.status, startedAt: row.started_at, created: row.created_count, closed: row.closed_count, open: row.open_count, message: row.message }))
 }
+
+
+// ---- Business records: quotations, deposits, tasks, payment review, owners ----
+const rpc = <T,>(session: SupabaseSession, name: string, body: string) => apiRequest<T>(session, `rpc/${name}`, { method: 'POST', body })
+export const newRecordId = (prefix: string) => `${prefix}-${crypto.randomUUID()}`
+
+export async function loadQuotations(session: SupabaseSession, organizationId: string): Promise<Quotation[]> {
+  const rows = await apiRequest<{ id: string; reference: string; customer_name: string; currency: string; amount_minor: number; status: Quotation['status']; sent_on: string; valid_until: string | null; follow_up_date: string | null; last_contact_on: string | null; owner_id: string | null; notes: string | null }[]>(session, `quotations?${quotationsParams(organizationId)}`)
+  return rows.map((r) => ({ id: r.id, reference: r.reference, customerName: r.customer_name, currency: r.currency, amountMinor: Number(r.amount_minor), status: r.status, sentOn: r.sent_on, validUntil: r.valid_until, followUpDate: r.follow_up_date, lastContactOn: r.last_contact_on, ownerId: r.owner_id, notes: r.notes }))
+}
+export async function loadDeposits(session: SupabaseSession, organizationId: string): Promise<Deposit[]> {
+  const rows = await apiRequest<{ id: string; quotation_id: string | null; customer_name: string; currency: string; amount_minor: number; status: Deposit['status']; promised_date: string; owner_confirmed_minor: number | null; owner_confirmed_on: string | null }[]>(session, `deposits?${depositsParams(organizationId)}`)
+  return rows.map((r) => ({ id: r.id, quotationId: r.quotation_id, customerName: r.customer_name, currency: r.currency, amountMinor: Number(r.amount_minor), status: r.status, promisedDate: r.promised_date, ownerConfirmedMinor: r.owner_confirmed_minor === null ? null : Number(r.owner_confirmed_minor), ownerConfirmedOn: r.owner_confirmed_on }))
+}
+export async function loadTasks(session: SupabaseSession, organizationId: string): Promise<Task[]> {
+  const rows = await apiRequest<{ id: string; title: string; detail: string | null; due_date: string; status: Task['status']; owner_id: string | null; related_type: Task['relatedType']; related_id: string | null }[]>(session, `tasks?${tasksParams(organizationId)}`)
+  return rows.map((r) => ({ id: r.id, title: r.title, detail: r.detail, dueDate: r.due_date, status: r.status, ownerId: r.owner_id, relatedType: r.related_type, relatedId: r.related_id }))
+}
+export async function loadPaymentReviewItems(session: SupabaseSession, organizationId: string): Promise<PaymentReviewItem[]> {
+  const rows = await apiRequest<{ id: string; external_record_id: string; invoice_number_raw: string; currency: string; amount_minor: number; received_at: string; reason: PaymentReviewItem['reason']; candidate_invoice_ids: string[]; status: PaymentReviewItem['status']; created_at: string }[]>(session, `payment_review_items?${paymentReviewParams(organizationId)}`)
+  return rows.map((r) => ({ id: r.id, externalRecordId: r.external_record_id, invoiceNumber: r.invoice_number_raw, currency: r.currency, amountMinor: Number(r.amount_minor), receivedAt: r.received_at, reason: r.reason, candidateInvoiceIds: r.candidate_invoice_ids ?? [], status: r.status, createdAt: r.created_at }))
+}
+/** How many times each record's date was pushed back, keyed `quotation:<id>`, `deposit:<id>`, `task:<id>`. */
+export async function loadRescheduleCounts(session: SupabaseSession, organizationId: string): Promise<Map<string, number>> {
+  const counts = new Map<string, number>()
+  const sources = [['quotation_events', 'quotation', 'quotation_id'], ['deposit_events', 'deposit', 'deposit_id'], ['task_events', 'task', 'task_id']] as const
+  const results = await Promise.all(sources.map(([table]) => apiRequest<Record<string, string>[]>(session, `${table}?${rescheduleEventsParams(organizationId, table)}`)))
+  results.forEach((rows, index) => { const [, kind, column] = sources[index]; for (const row of rows) { const key = `${kind}:${row[column]}`; counts.set(key, (counts.get(key) ?? 0) + 1) } })
+  return counts
+}
+export async function loadActionOwners(session: SupabaseSession, organizationId: string): Promise<Map<string, string | null>> {
+  const rows = await apiRequest<{ action_id: string; owner_id: string | null }[]>(session, `action_owners?${actionOwnersParams(organizationId)}`)
+  return new Map(rows.map((r) => [r.action_id, r.owner_id]))
+}
+export async function loadWorkspaceMembers(session: SupabaseSession, organizationId: string): Promise<WorkspaceMember[]> {
+  const rows = await rpc<{ user_id: string; email: string; role: string }[]>(session, 'list_workspace_members', orgOnlyBody(organizationId))
+  return rows.map((r) => ({ userId: r.user_id, email: r.email, role: r.role }))
+}
+
+export const createQuotation = (session: SupabaseSession, input: Parameters<typeof createQuotationBody>[0]) => rpc<{ duplicate?: boolean }>(session, 'create_quotation', createQuotationBody(input))
+export const recordQuotationEvent = (session: SupabaseSession, input: { organizationId: string; quotationId: string; type: QuotationEventType; summary: string; nextFollowUp?: string; eventId?: string }) =>
+  rpc<{ duplicate?: boolean }>(session, 'record_quotation_event', quotationEventBody({ ...input, eventId: input.eventId ?? newRecordId('qe') }))
+export const assignQuotation = (session: SupabaseSession, input: { organizationId: string; quotationId: string; ownerId: string | null }) => rpc<unknown>(session, 'assign_quotation', assignQuotationBody({ ...input, eventId: newRecordId('qe') }))
+export const createDeposit = (session: SupabaseSession, input: Parameters<typeof createDepositBody>[0]) => rpc<{ duplicate?: boolean }>(session, 'create_deposit', createDepositBody(input))
+export const updateDeposit = (session: SupabaseSession, input: { organizationId: string; depositId: string; action: DepositAction; note: string; promisedDate?: string; receivedMinor?: number; receivedOn?: string; eventId?: string }) =>
+  rpc<unknown>(session, 'update_deposit', updateDepositBody({ ...input, eventId: input.eventId ?? newRecordId('de') }))
+export const createTask = (session: SupabaseSession, input: Parameters<typeof createTaskBody>[0]) => rpc<{ duplicate?: boolean }>(session, 'create_task', createTaskBody(input))
+export const updateTask = (session: SupabaseSession, input: { organizationId: string; taskId: string; action: TaskAction; note?: string; dueDate?: string; ownerId?: string | null; eventId?: string }) =>
+  rpc<unknown>(session, 'update_task', updateTaskBody({ ...input, eventId: input.eventId ?? newRecordId('te') }))
+export const assignActionOwner = (session: SupabaseSession, input: { organizationId: string; actionId: string; ownerId: string | null }) => rpc<unknown>(session, 'assign_action_owner', assignActionOwnerBody(input))
+export const resolvePaymentReview = (session: SupabaseSession, input: { organizationId: string; itemId: string; action: ReviewAction; targetId?: string; note?: string }) => rpc<unknown>(session, 'resolve_payment_review', resolveReviewBody(input))
+export const rematchPaymentReview = (session: SupabaseSession, organizationId: string) => rpc<{ matched: number }>(session, 'rematch_payment_review', orgOnlyBody(organizationId))

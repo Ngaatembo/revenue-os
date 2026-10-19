@@ -1,10 +1,11 @@
 import { addMoney, formatMoney } from '../money.ts'
 import { INVOICE_RULES, invoiceSnoozedUntil } from './invoiceRules.ts'
 import { LEAD_RULES } from './leadRules.ts'
+import { RECORD_RULES } from './recordRules.ts'
 import type { AttentionContext, AttentionFinding, AttentionItem, AttentionRule, ScorePart } from './types.ts'
 import type { Money } from '../types.ts'
 
-export const ALL_RULES: AttentionRule[] = [...INVOICE_RULES, ...LEAD_RULES]
+export const ALL_RULES: AttentionRule[] = [...INVOICE_RULES, ...LEAD_RULES, ...RECORD_RULES]
 
 export const WEIGHTS = { impact: 0.3, urgency: 0.3, evidence: 0.15, likelihood: 0.15, ease: 0.1 } as const
 

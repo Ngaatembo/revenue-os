@@ -17,8 +17,44 @@ const REQUIRED = ['customer_id', 'customer_name', 'invoice_number', 'currency', 
 const MAX_ROWS = 50000
 const MAX_MINOR = 100_000_000_000
 
+const HEADER_ALIASES: Record<typeof REQUIRED[number], string[]> = {
+  customer_id: ['customer_id', 'customerid', 'client_id', 'clientid', 'account_id', 'accountid'],
+  customer_name: ['customer_name', 'customername', 'client_name', 'clientname', 'customer', 'client', 'account_name', 'accountname', 'name'],
+  invoice_number: ['invoice_number', 'invoicenumber', 'invoice_no', 'invoiceno', 'invoice_num', 'invoicenum', 'invoice', 'invoice_id', 'invoiceid', 'reference', 'ref'],
+  currency: ['currency', 'currency_code', 'currencycode', 'ccy'],
+  total_amount: ['total_amount', 'totalamount', 'invoice_amount', 'invoiceamount', 'amount_due', 'amountdue', 'total', 'gross_amount', 'grossamount'],
+  paid_amount: ['paid_amount', 'paidamount', 'amount_paid', 'amountpaid', 'amount_received', 'amountreceived', 'paid', 'payments_received'],
+  issued_at: ['issued_at', 'issuedat', 'issue_date', 'issuedate', 'invoice_date', 'invoicedate', 'date_issued', 'dateissued'],
+  due_at: ['due_at', 'dueat', 'due_date', 'duedate', 'payment_due_date', 'paymentduedate', 'deadline'],
+}
+
+function normalizeHeader(value: unknown): string {
+  return String(value ?? '').trim().toLowerCase().replace(/[^a-z0-9]/g, '')
+}
+
+function mapHeaders(values: unknown[]): Map<typeof REQUIRED[number], number> {
+  const normalized = values.map(normalizeHeader)
+  const mapped = new Map<typeof REQUIRED[number], number>()
+  const seen = new Set<string>()
+  for (const header of normalized) {
+    if (!header) continue
+    if (seen.has(header)) throw new Error('duplicate_sheet_headers')
+    seen.add(header)
+  }
+  normalized.forEach((header, index) => {
+    if (!header) return
+    const field = REQUIRED.find((candidate) => HEADER_ALIASES[candidate].some((alias) => normalizeHeader(alias) === header))
+    if (!field) return
+    if (mapped.has(field)) throw new Error('ambiguous_sheet_headers:' + field)
+    mapped.set(field, index)
+  })
+  const missing = REQUIRED.filter((field) => !mapped.has(field))
+  if (missing.length) throw new Error('missing_columns:' + missing.join(','))
+  return mapped
+}
+
 function amountMinor(value: string): number {
-  const match = /^(0|[1-9]\d*)(?:\.(\d{1,2}))?$/.exec(value.trim())
+  const match = /^(0|[1-9]\\d*)(?:\\.(\\d{1,2}))?$/.exec(value.trim())
   if (!match) throw new Error('invalid_amount')
   const minor = BigInt(match[1]) * 100n + BigInt((match[2] ?? '').padEnd(2, '0'))
   if (minor > BigInt(MAX_MINOR)) throw new Error('amount_too_large')
@@ -29,21 +65,17 @@ function isoDate(value: string): string {
   const normalized = value.trim()
   if (!normalized) throw new Error('invalid_date')
   // Google Sheets UNFORMATTED_VALUE returns dates as serial day numbers.
-  const serial = /^\d{4,6}(?:\.\d+)?$/.test(normalized) ? Number(normalized) : NaN
+  const serial = /^\\d{4,6}(?:\\.\\d+)?$/.test(normalized) ? Number(normalized) : NaN
   const timestamp = Number.isFinite(serial) ? Math.round((serial - 25569) * 86_400_000) : Date.parse(normalized)
   if (!Number.isFinite(timestamp)) throw new Error('invalid_date')
   return new Date(timestamp).toISOString()
 }
 
-/** Converts a Google Sheets values matrix using the same required columns as the CSV importer. */
+/** Maps common spreadsheet header names to the invoice import shape without changing source data. */
 export function parseSheetInvoiceValues(values: unknown[][], sourceId: string, importedAt: string): SheetInvoiceParseResult {
   if (!Array.isArray(values) || values.length < 2) throw new Error('sheet_needs_header_and_rows')
   if (values.length > MAX_ROWS + 1) throw new Error('sheet_too_many_rows')
-  const headers = values[0].map((value) => String(value ?? '').trim().toLowerCase())
-  if (new Set(headers).size !== headers.length) throw new Error('duplicate_sheet_headers')
-  const missing = REQUIRED.filter((header) => !headers.includes(header))
-  if (missing.length) throw new Error('missing_columns:' + missing.join(','))
-  const indexes = new Map(headers.map((header, index) => [header, index]))
+  const indexes = mapHeaders(values[0])
   const rows: SheetInvoiceRow[] = []
   const seen = new Set<string>()
   let rejectedRows = 0

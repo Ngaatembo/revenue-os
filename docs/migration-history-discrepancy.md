@@ -14,6 +14,8 @@ They were renamed to the hosted versions so a push cannot treat them as new:
 | `sync_overdue_opportunities` | `20261017200000` | `20261017192932` |
 | `provider_connections_server_only` | `20261018073000` | `20261018054702` |
 
+Hosted re-checked 2026-10-19 (read-only): still 20 migrations; none of the following is applied.
+
 Not yet applied to hosted (apply in this order, each once; owner approval needed):
 
 1. `20261019200000_invoice_responses_and_issue_states.sql`: customer responses, promises, issue states

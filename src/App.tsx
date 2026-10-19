@@ -483,6 +483,28 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
                 </aside>
               </section>
 
+              {activeSection === 'Opportunities' && <section className="panel invoice-register-panel" aria-labelledby="invoice-register-title">
+                <div className="panel-heading"><div><h2 id="invoice-register-title">Imported invoice register</h2><p>Open any saved invoice to inspect its source details, amounts and dates. These records are loaded from your workspace database.</p></div><span className="status-pill">{invoices.length} saved</span></div>
+                {invoicesLoading ? <div className="empty-state compact"><h3>Loading saved invoices…</h3></div> : invoices.length === 0 ? <div className="empty-state compact"><h3>No saved invoices yet</h3><p>Import a CSV to create your first invoice records.</p><button className="button button-secondary" type="button" onClick={() => fileRef.current?.click()}>Import invoices</button></div> : <div className="recovery-action-list">{[...invoices].sort((a, b) => a.dueAt.localeCompare(b.dueAt)).map((invoice) => {
+                  const outstanding = Math.max(0, invoice.total.amount - invoice.paid.amount)
+                  const overdue = outstanding > 0 && Date.parse(invoice.dueAt) < Date.now()
+                  const state = outstanding === 0 ? 'Paid' : overdue ? 'Overdue' : 'Outstanding'
+                  return <article className="recovery-action-card" key={invoice.id}>
+                    <div className="recovery-action-top"><div><strong>{invoice.customerName}</strong><small>Invoice {invoice.invoiceNumber} · Due {new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(invoice.dueAt))}</small></div><span className={'action-status ' + (outstanding === 0 ? 'action-status-executed' : overdue ? 'action-status-proposed' : 'action-status-approved')}>{state}</span></div>
+                    <p className="action-context">Total {formatMoney(invoice.total)} · Paid {formatMoney(invoice.paid)} · Outstanding {formatMoney(money(outstanding, invoice.currency))}</p>
+                    <details className="why-details"><summary>Open invoice details</summary><dl>
+                      <dt>Customer ID</dt><dd>{invoice.customerId}</dd>
+                      <dt>Invoice number</dt><dd>{invoice.invoiceNumber}</dd>
+                      <dt>Issued</dt><dd>{new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(invoice.issuedAt))}</dd>
+                      <dt>Due date</dt><dd>{new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(invoice.dueAt))}</dd>
+                      <dt>Source</dt><dd>{invoice.source.sourceId}</dd>
+                      <dt>Source record</dt><dd>{invoice.source.recordId}</dd>
+                      <dt>Imported</dt><dd>{new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(invoice.source.importedAt))}</dd>
+                    </dl></details>
+                  </article>
+                })}</div>}
+              </section>}
+
               {issues.length > 0 && <section className="panel issues-panel"><div className="panel-heading"><div><h2>Rows needing attention</h2><p>These rows were skipped; correct the source file and re-import.</p></div><span className="issue-count">{issues.length}</span></div><ul>{issues.slice(0, 8).map((issue) => <li key={`${issue.row}-${issue.message}`}><strong>Row {issue.row}</strong><span>{issue.message}</span></li>)}</ul>{issues.length > 8 && <p className="more-issues">And {issues.length - 8} more row issues.</p>}</section>}
             </>
           ) : activeSection === 'Lead Recovery' ? <LeadRecovery leadCapacity={checkLeadCapacity(plan, leads.filter((lead) => lead.status !== 'converted' && lead.status !== 'closed').length)} leads={leads} setLeads={setLeads} session={session} organization={organization} loading={leadLoading} loadError={leadError} /> : activeSection === 'Actions' ? <RecoveryActions actions={recoveryActions} invoices={invoices} loading={actionsLoading} busyId={actionBusy} notice={actionNotice} noticeIsError={actionNoticeIsError} onTransition={(action, transition) => void handleActionTransition(action, transition)} /> : activeSection === 'Outcomes' ? <RecoveryOutcomes actions={recoveryActions} invoices={invoices} outcomes={verifiedOutcomes} loading={outcomesLoading} busyId={actionBusy} notice={paymentNotice} noticeIsError={paymentNoticeIsError} issues={paymentIssues} fileRef={paymentFileRef} onImport={(file) => void handleImportPayments(file)} onVerify={(action) => void handleVerifyOutcome(action)} /> : activeSection === 'Connections' ? (

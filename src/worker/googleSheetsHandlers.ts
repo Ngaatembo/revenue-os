@@ -190,7 +190,7 @@ export async function handleGoogleSheets(request: Request, env: Env): Promise<Re
       const importedAt = new Date().toISOString()
       const sourceId = `google_sheets:${spreadsheetId}`
       const parsed = parseSheetInvoiceValues(sheetPayload.values as unknown[][], sourceId, importedAt)
-      const canonical = JSON.stringify({ spreadsheetId, range, rows: parsed.rows })
+      const canonical = JSON.stringify({ spreadsheetId, range, rows: parsed.rows.map((row) => ({ id: row.id, invoiceNumber: row.invoiceNumber, customerId: row.customerId, customerName: row.customerName, currency: row.currency, totalMinor: row.totalMinor, paidMinor: row.paidMinor, issuedAt: row.issuedAt, dueAt: row.dueAt })) })
       const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonical))
       const contentHash = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('')
       const savedResponse = await fetch(`${base(env)}/rest/v1/rpc/persist_invoice_import`, {

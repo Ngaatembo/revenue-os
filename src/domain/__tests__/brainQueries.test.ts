@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { assumptionHistoryParams, brainFactsParams, recordFactBody, resolveConflictBody, retractFactBody } from '../../lib/brainQueries.ts'
+import { evaluationRunsParams, assumptionHistoryParams, brainFactsParams, recordFactBody, resolveConflictBody, retractFactBody } from '../../lib/brainQueries.ts'
 
 test('every brain read is scoped to the workspace', () => {
   assert.equal(brainFactsParams('org-1').get('organization_id'), 'eq.org-1')
@@ -17,4 +17,11 @@ test('record body sends the workspace id and null for empty optional fields', ()
   assert.equal(body.p_org_id, 'org-1')
   assert.equal(body.p_source_ref, null)
   assert.equal(body.p_note, null)
+})
+
+test('automatic-check history is scoped to the workspace and capped', () => {
+  const params = evaluationRunsParams('org-1')
+  assert.equal(params.get('organization_id'), 'eq.org-1')
+  assert.equal(params.get('limit'), '10')
+  assert.throws(() => evaluationRunsParams(''), /workspace id/)
 })

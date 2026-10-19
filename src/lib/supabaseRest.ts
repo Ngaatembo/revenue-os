@@ -5,7 +5,7 @@ import type { RevenueOpportunity } from '../domain/types'
 import { interactionsParams, issueStateBody, opportunityEvidenceParams, paymentEvidenceParams, recordResponseBody, syncRpcBody, trackedOpportunitiesParams, type InvoiceResponseType, type IssueTransition, type RecordResponseInput } from './opportunityQueries'
 import type { PaymentRecord } from '../domain/promises'
 import type { BrainFact } from '../domain/businessBrain'
-import { assumptionHistoryParams, brainFactsParams, recordFactBody, resolveConflictBody, retractFactBody } from './brainQueries'
+import { assumptionHistoryParams, brainFactsParams, evaluationRunsParams, recordFactBody, resolveConflictBody, retractFactBody } from './brainQueries'
 
 export type SupabaseUser = { id: string; email?: string }
 export type SupabaseSession = {
@@ -857,4 +857,13 @@ export async function retractBrainFact(session: SupabaseSession, input: { organi
 
 export async function resolveBrainConflict(session: SupabaseSession, input: { organizationId: string; key: string; keepFactId: string; reason: string }): Promise<void> {
   await apiRequest<unknown>(session, 'rpc/resolve_brain_conflict', { method: 'POST', body: resolveConflictBody(input) })
+}
+
+export type EvaluationRun = { id: string; trigger: 'schedule' | 'manual'; status: 'ok' | 'skipped' | 'failed'; startedAt: string; created: number; closed: number; open: number; message: string | null }
+
+/** Most recent automatic checks, newest first. Empty until the scheduled-evaluation migration is applied and has run. */
+export async function loadEvaluationRuns(session: SupabaseSession, organizationId: string): Promise<EvaluationRun[]> {
+  const params = evaluationRunsParams(organizationId)
+  const rows = await apiRequest<{ id: string; trigger_kind: EvaluationRun['trigger']; status: EvaluationRun['status']; started_at: string; created_count: number; closed_count: number; open_count: number; message: string | null }[]>(session, `evaluation_runs?${params.toString()}`)
+  return rows.map((row) => ({ id: row.id, trigger: row.trigger_kind, status: row.status, startedAt: row.started_at, created: row.created_count, closed: row.closed_count, open: row.open_count, message: row.message }))
 }

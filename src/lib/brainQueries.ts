@@ -40,3 +40,13 @@ export function resolveConflictBody(input: { organizationId: string; key: string
   need(input.organizationId)
   return JSON.stringify({ p_org_id: input.organizationId, p_key: input.key, p_keep_fact_id: input.keepFactId, p_reason: input.reason })
 }
+
+export function evaluationRunsParams(organizationId: string): URLSearchParams {
+  need(organizationId)
+  return new URLSearchParams({
+    select: 'id,trigger_kind,status,started_at,created_count,closed_count,open_count,message',
+    organization_id: `eq.${organizationId}`,
+    order: 'started_at.desc',
+    limit: '10',
+  })
+}

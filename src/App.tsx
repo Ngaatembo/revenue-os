@@ -12,7 +12,7 @@ import { buildRecommendation } from './domain/recommendation'
 import { classifySyncFailure } from './lib/opportunityQueries'
 import { BILLING_STATUS, checkInvoiceImportSize, checkLeadCapacity, getPlan } from './domain/plans'
 import type { InvoiceEvidence, RevenueOpportunity } from './domain/types'
-import { getFreshSession, createSalesLead, deleteSalesLead, loadInvoices, loadRecoveryRate, loadSalesLeads, persistInvoiceImport, saveRecoveryRate, sha256Hex, updateSalesLead, type RevenueOrganization, type SalesLead, type SupabaseSession, type RecoveryAction, type VerifiedOutcome, loadRecoveryActions, loadVerifiedOutcomes, persistPaymentImport, proposeInvoiceReminder, transitionRecoveryAction, verifyRecoveryOutcome, loadOpenOpportunities, syncOverdueOpportunities, type OpportunitySyncResult, loadLeadActivities, recordLeadActivity, type LeadActivity, type LeadActivityType, loadInvoiceInteractions, loadPaymentEvidence, recordInvoiceResponse, setOpportunityState, type InvoiceInteraction, loadBrainFacts, loadAssumptionHistory, recordBrainFact, retractBrainFact, resolveBrainConflict, type AssumptionChange } from './lib/supabaseRest'
+import { getFreshSession, createSalesLead, deleteSalesLead, loadInvoices, loadRecoveryRate, loadSalesLeads, persistInvoiceImport, saveRecoveryRate, sha256Hex, updateSalesLead, type RevenueOrganization, type SalesLead, type SupabaseSession, type RecoveryAction, type VerifiedOutcome, loadRecoveryActions, loadVerifiedOutcomes, persistPaymentImport, proposeInvoiceReminder, transitionRecoveryAction, verifyRecoveryOutcome, loadOpenOpportunities, syncOverdueOpportunities, type OpportunitySyncResult, loadLeadActivities, recordLeadActivity, type LeadActivity, type LeadActivityType, loadInvoiceInteractions, loadPaymentEvidence, recordInvoiceResponse, setOpportunityState, type InvoiceInteraction, loadBrainFacts, loadAssumptionHistory, recordBrainFact, retractBrainFact, resolveBrainConflict, type AssumptionChange, loadEvaluationRuns, type EvaluationRun } from './lib/supabaseRest'
 import { BusinessBrain } from './BusinessBrain'
 import { AttentionQueue } from './AttentionQueue'
 import { evaluateAttention, summarizeAttention } from './domain/attention/engine'
@@ -247,6 +247,7 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
   const [payments, setPayments] = useState<PaymentRecord[]>([])
   const [issueBusy, setIssueBusy] = useState('')
   const [leadActivityLog, setLeadActivityLog] = useState<LeadActivity[]>([])
+  const [evaluationRuns, setEvaluationRuns] = useState<EvaluationRun[] | null>(null)
   const [brainFacts, setBrainFacts] = useState<BrainFact[]>([])
   const [assumptionHistory, setAssumptionHistory] = useState<AssumptionChange[]>([])
   const [brainLoading, setBrainLoading] = useState(true)
@@ -386,6 +387,14 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
       .catch(() => { /* attention falls back to lead dates only; the Lead Recovery page reports its own load errors */ })
     return () => { cancelled = true }
   }, [session, organization.id, leads])
+
+  useEffect(() => {
+    let cancelled = false
+    loadEvaluationRuns(session, organization.id)
+      .then((runs) => { if (!cancelled) setEvaluationRuns(runs) })
+      .catch(() => { if (!cancelled) setEvaluationRuns(null) })
+    return () => { cancelled = true }
+  }, [session, organization.id])
 
   async function brainAction(run: () => Promise<string>): Promise<string | null> {
     setBrainBusy(true)
@@ -836,7 +845,7 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
                   <article className="connection-source-card"><div className="connection-source-top"><span className="source-icon"><Icon name="check" /></span><span className="connection-pill">Not connected</span></div><h3>Email and enquiries</h3><p>Future source for detecting unanswered enquiries and commitments that need follow-up.</p><small>No mailbox is currently being read and no messages are sent automatically.</small><button className="button button-secondary" type="button" disabled>Connect email · planned</button></article>
                 </div>
               </section>
-              <section className="panel"><div className="panel-heading"><div><h2>Monitoring status</h2><p>Clear visibility into what Revenue OS can currently see.</p></div></div><div className="connection-status-list"><div><span><i className="connection-dot" />Workspace database</span><strong>Connected</strong></div><div><span><i className={invoices.length ? 'connection-dot' : 'connection-dot connection-dot-muted'} />Invoice data</span><strong>{invoices.length ? 'Available' : 'Waiting for import'}</strong></div><div><span><i className={leads.length ? 'connection-dot' : 'connection-dot connection-dot-muted'} />Lead data</span><strong>{leads.length ? `${leads.length} saved lead(s)` : 'No saved leads yet'}</strong></div><div><span><i className="connection-dot connection-dot-muted" />Background synchronization</span><strong>Not configured</strong></div><div><span><i className="connection-dot connection-dot-muted" />Daily business brief</span><strong>Not yet automated</strong></div></div><p className="brain-note">Important: Revenue OS does not yet monitor external services in the background. This page reports current capabilities honestly; the next engineering step is to implement a real Google data connection, secure token storage, and scheduled synchronization before marking a source connected.</p></section>
+              <section className="panel"><div className="panel-heading"><div><h2>Monitoring status</h2><p>Clear visibility into what Revenue OS can currently see.</p></div></div><div className="connection-status-list"><div><span><i className="connection-dot" />Workspace database</span><strong>Connected</strong></div><div><span><i className={invoices.length ? 'connection-dot' : 'connection-dot connection-dot-muted'} />Invoice data</span><strong>{invoices.length ? 'Available' : 'Waiting for import'}</strong></div><div><span><i className={leads.length ? 'connection-dot' : 'connection-dot connection-dot-muted'} />Lead data</span><strong>{leads.length ? `${leads.length} saved lead(s)` : 'No saved leads yet'}</strong></div><div><span><i className={evaluationRuns && evaluationRuns[0]?.status === 'ok' ? 'connection-dot' : 'connection-dot connection-dot-muted'} />Automatic overdue check</span><strong>{evaluationRuns === null ? 'Not available yet' : evaluationRuns.length === 0 ? 'Has not run yet' : `${evaluationRuns[0].status === 'ok' ? 'Last ran' : evaluationRuns[0].status === 'skipped' ? 'Skipped' : 'Failed'} ${new Date(evaluationRuns[0].startedAt).toLocaleString()}${evaluationRuns[0].status !== 'ok' && evaluationRuns[0].message ? ' · ' + evaluationRuns[0].message : ''}`}</strong></div><div><span><i className="connection-dot connection-dot-muted" />Daily business brief</span><strong>Shown when you open the app; not sent</strong></div></div><p className="brain-note">Important: Revenue OS does not monitor external services such as email or accounting systems. The only background work is a daily re-check of the invoices you have saved (once the latest database update is applied), and it sends no messages. This page reports current capabilities honestly; the next engineering step is to implement a real Google data connection, secure token storage, and scheduled synchronization before marking a source connected.</p></section>
             </div>
           ) : (
             <BusinessBrain facts={brainFacts} derived={derivedFacts} mismatches={recordMismatches} assumptionBps={assumptionBps} assumptionHistory={assumptionHistory}

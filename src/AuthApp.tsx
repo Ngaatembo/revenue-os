@@ -5,7 +5,6 @@ import {
   clearStoredSession,
   isSupabaseConfigured,
   readStoredSession,
-  signIn,
   signInWithGoogle,
   consumeOAuthCallback,
   signOut,
@@ -13,6 +12,7 @@ import {
   type RevenueOrganization,
   type SupabaseSession,
 } from './lib/supabaseRest'
+import { sendEmailSignInLink } from './lib/emailLinkAuth'
 import './auth.css'
 
 export default function AuthApp() {
@@ -78,8 +78,8 @@ export default function AuthApp() {
         await enterWorkspace(result.session, organizationName)
         return
       }
-      const activeSession = await signIn(email, password)
-      await enterWorkspace(activeSession, organizationName)
+      await sendEmailSignInLink(email)
+      setMessage('Sign-in link sent. Open the email on this device to enter your workspace. Check spam if it does not arrive.')
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Something went wrong. Please try again.')
     } finally {
@@ -106,8 +106,8 @@ export default function AuthApp() {
     <section className="auth-card">
       <div className="auth-brand"><img src="/revenue-os-mark.svg" alt="" /><span>Revenue<span> OS</span></span></div>
       <p className="auth-eyebrow">REVENUE OPERATIONS</p>
-      <h1>{mode === 'signin' ? 'Welcome back' : 'Create your workspace'}</h1>
-      <p className="auth-intro">Find overdue money, prioritize follow-ups, and track the outcomes that matter.</p>
+      <h1>{mode === 'signin' ? 'Your business, under control' : 'Create your workspace'}</h1>
+      <p className="auth-intro">Sign in with your email. We’ll guide you through connecting the information your business already uses, then surface what needs attention.</p>
       <div className="auth-mode" role="tablist" aria-label="Account access">
         <button type="button" role="tab" aria-selected={mode === 'signin'} className={mode === 'signin' ? 'active' : ''} onClick={() => { setMode('signin'); setMessage(''); setError('') }}>Sign in</button>
         <button type="button" role="tab" aria-selected={mode === 'signup'} className={mode === 'signup' ? 'active' : ''} onClick={() => { setMode('signup'); setMessage(''); setError('') }}>Create account</button>
@@ -140,11 +140,11 @@ export default function AuthApp() {
       <form className="auth-form" onSubmit={(event) => void handleSubmit(event)}>
         {mode === 'signup' && <label>Full name<input autoComplete="name" value={fullName} onChange={(event) => setFullName(event.target.value)} required maxLength={120} /></label>}
         <label>Email address<input type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} required maxLength={254} /></label>
-        <label>Password<input type="password" autoComplete={mode === 'signin' ? 'current-password' : 'new-password'} value={password} onChange={(event) => setPassword(event.target.value)} required minLength={8} maxLength={128} /></label>
-        <label>Business / workspace name<input autoComplete="organization" value={organizationName} onChange={(event) => setOrganizationName(event.target.value)} required maxLength={160} placeholder="e.g. WebAura" /></label>
+        {mode === 'signup' && <label>Password<input type="password" autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} required minLength={8} maxLength={128} /></label>}
+        {mode === 'signup' && <label>Business / workspace name<input autoComplete="organization" value={organizationName} onChange={(event) => setOrganizationName(event.target.value)} required maxLength={160} placeholder="e.g. WebAura" /></label>}
         {error && <p className="auth-message error" role="alert">{error}</p>}
         {message && <p className="auth-message success" role="status">{message}</p>}
-        <button className="auth-submit" type="submit" disabled={busy}>{busy ? 'Please wait…' : mode === 'signin' ? 'Sign in to Revenue OS' : 'Create account'}</button>
+        <button className="auth-submit" type="submit" disabled={busy}>{busy ? 'Please wait…' : mode === 'signin' ? 'Email me a sign-in link' : 'Create account'}</button>
       </form>
       <p className="auth-footnote">Your business records are scoped to your workspace. Do not upload client financial data until you have confirmed access and account security.</p>
     </section>

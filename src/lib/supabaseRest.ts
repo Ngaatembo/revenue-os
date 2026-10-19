@@ -152,20 +152,35 @@ export function signInWithGoogle() {
  * The access token is exchanged for the canonical user record before the session is stored.
  */
 export async function consumeOAuthCallback(): Promise<SupabaseSession | null> {
-  const params = new URLSearchParams(window.location.hash.replace(/^#/, ''))
-  const accessToken = params.get('access_token')
-  const refreshToken = params.get('refresh_token')
-  const expiresIn = Number(params.get('expires_in') ?? 3600)
-  const oauthError = params.get('error_description') ?? params.get('error')
+  const query = new URLSearchParams(window.location.search)
+  const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''))
+  const tokenHash = query.get('token_hash')
+  const tokenType = query.get('type')
+  const accessToken = hash.get('access_token')
+  const refreshToken = hash.get('refresh_token')
+  const expiresIn = Number(hash.get('expires_in') ?? 3600)
+  const callbackError = query.get('error_description') ?? query.get('error') ??
+    hash.get('error_description') ?? hash.get('error')
 
-  if (!accessToken && !oauthError) return null
+  if (!tokenHash && !accessToken && !callbackError) return null
 
-  // Remove credentials and provider errors from the visible URL immediately.
-  window.history.replaceState(null, document.title, window.location.pathname + window.location.search)
+  // Clear one-time credentials and provider errors before making any network request.
+  window.history.replaceState(null, document.title, window.location.pathname)
 
-  if (oauthError) {
-    throw new Error(oauthError.replace(/\+/g, ' '))
+  if (callbackError) {
+    throw new Error(callbackError.replace(/\+/g, ' '))
   }
+
+  if (tokenHash) {
+    if (!tokenType || !['magiclink', 'email', 'signup', 'invite'].includes(tokenType)) {
+      throw new Error('This email sign-in link is not valid. Request a new link and try again.')
+    }
+    const payload = await authRequest('verify', { token_hash: tokenHash, type: tokenType })
+    const session = normalizeSession(payload)
+    storeSession(session)
+    return session
+  }
+
   if (!accessToken || !refreshToken) {
     throw new Error('Google sign-in did not return a complete session. Please try again.')
   }
@@ -178,7 +193,7 @@ export async function consumeOAuthCallback(): Promise<SupabaseSession | null> {
   })
   const payload = await response.json().catch(() => null) as Record<string, unknown> | null
   if (!response.ok || !payload || typeof payload.id !== 'string') {
-    throw new Error(readError(payload, 'Google sign-in succeeded, but Revenue OS could not verify the session. Please try again.'))
+    throw new Error(readError(payload, 'Sign-in succeeded, but Revenue OS could not verify the session. Please request a new link and try again.'))
   }
 
   const session: SupabaseSession = {

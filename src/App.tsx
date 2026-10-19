@@ -529,8 +529,8 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
     <div className="app-shell">
       <aside className="sidebar" aria-label="Main navigation">
         <a className="brand" href="#overview" onClick={() => setActiveSection('Overview')}>
-          <span className="brand-mark" aria-hidden="true"><span /><span /><span /></span>
-          <span>Revenue<span className="brand-light">OS</span></span>
+          <img className="brand-symbol" src="/revenue-os-mark.svg" alt="" />
+          <span className="brand-wordmark">Revenue<span className="brand-light"> OS</span></span>
         </a>
         <div className="workspace-switcher">
           <span className="workspace-avatar">W</span>

@@ -3,32 +3,23 @@
  * Loaded after App.css so these rules intentionally win on equal specificity.
  */
 :root {
-  --page: #f3f5f1;
-  --surface: #fbfcfa;
-  --sidebar: #eef1ec;
-  --ink: #17202a;
-  --muted: #55625b;
-  --line: #d3dad2;
-  --action: #1f3a68;
-  --action-hover: #162b4e;
-  --teal: #1f3a68;
-  --verified: #0e6b4f;
-  --band-1: #d9b25f;
-  --band-2: #b7791f;
-  --band-3: #b4561b;
-  --band-4: #8a2a1a;
+  /* Revenue OS brand system: confident blue, growth green, quiet ledger neutrals. */
+  --page: #f5f8fc; --surface: #ffffff; --sidebar: #f9fbff; --ink: #14233b;
+  --muted: #637187; --line: #dce4ef; --action: #1769e0; --action-hover: #1254b5;
+  --teal: #1769e0; --verified: #15945f; --band-1: #f2c66d; --band-2: #e79b3d;
+  --band-3: #d96b3b; --band-4: #b94040;
   --money-font: Charter, 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
-  font-size: 16px;
+  color-scheme: light; font-size: 16px;
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --page: #12171d; --surface: #181f27; --sidebar: #151b22; --ink: #e8ecef; --muted: #aab4bc; --line: #2d3742;
-    --action: #8fb0ee; --action-hover: #b0c8f4; --teal: #8fb0ee; --verified: #6fd3ad;
-    --band-1: #d9b25f; --band-2: #d0983a; --band-3: #d27a41; --band-4: #d9604a;
+    --page: #101722; --surface: #172233; --sidebar: #121d2c; --ink: #e8eef8;
+    --muted: #a4b2c6; --line: #2c3b50; --action: #5b9bff; --action-hover: #80b1ff;
+    --teal: #5b9bff; --verified: #4bd69a; --band-1: #e5bd65; --band-2: #e49b43;
+    --band-3: #e37b51; --band-4: #df6666; color-scheme: dark;
   }
-  .button-primary { color: #10192a; }
+  .button-primary { color: #08172b; }
 }
-
 body { font-size: 14px; line-height: 1.5; }
 .button { min-height: 44px; font-size: 14px; }
 .button-primary { background: var(--action); color: #fff; }
@@ -178,3 +169,14 @@ h1, .panel-heading h2, .aging-head h2 { letter-spacing: -.01em; }
   .lead-activity-history { padding-inline: 14px; }
   .lead-activity-form .lead-form-actions .button { width: auto; }
 }
+
+
+/* Brand lockup shared by workspace navigation and product screens. */
+.brand { gap: 10px; color: var(--ink); letter-spacing: -.45px; }
+.brand-symbol { display: block; width: 34px; height: 34px; flex: 0 0 34px; }
+.brand-wordmark { font-size: 18px; font-weight: 760; letter-spacing: -.65px; }
+.brand-light { color: var(--action); font-weight: 650; }
+.nav-item.active { color: var(--action); background: color-mix(in srgb, var(--action) 9%, transparent); }
+.nav-item.active svg { color: var(--action); }
+.button-primary { box-shadow: 0 1px 2px rgba(18, 66, 130, .12); }
+.metric-card:nth-child(3) .metric-value { color: var(--verified); }

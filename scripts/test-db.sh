@@ -23,6 +23,8 @@ OUT=$(psql_db -f supabase/tests/02_journey.sql 2>&1)
 echo "$OUT" | sed -n '/===== RESULTS =====/,$p'
 OUT3=$(psql_db -f supabase/tests/03_sync_opportunities.sql 2>&1)
 echo "$OUT3" | sed -n '/===== SYNC RESULTS =====/,$p'
+OUT4=$(psql_db -f supabase/tests/04_invoice_responses.sql 2>&1)
+echo "$OUT4" | sed -n '/===== RESPONSE RESULTS =====/,$p'
 FAILED=$(psql_db -tAc "select count(*) from t.results where not ok")
 if [ "$FAILED" != "0" ]; then echo "DB TESTS FAILED: $FAILED" >&2; exit 1; fi
 echo "DB TESTS PASSED"

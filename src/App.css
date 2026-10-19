@@ -331,7 +331,7 @@ h1 { margin-bottom: 7px; color: var(--ink); font-size: clamp(25px, 3vw, 31px); l
 .daily-brief-heading h2 { margin: 0; color: var(--ink); font-size: 20px; letter-spacing: -.03em; }
 .daily-brief-heading p:not(.eyebrow) { max-width: 660px; margin: 7px 0 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
 .daily-brief-date { color: var(--muted); font-size: 11px; white-space: nowrap; padding-top: 4px; }
-.daily-brief-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.daily-brief-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
 .daily-brief-item { display: flex; flex-direction: column; align-items: flex-start; gap: 9px; padding: 16px; background: var(--page); border: 1px solid var(--line); border-radius: 12px; min-width: 0; }
 .daily-brief-kicker { color: var(--muted); font-size: 11px; font-weight: 650; }
 .daily-brief-item > strong { color: var(--ink); font-size: 17px; letter-spacing: -.02em; overflow-wrap: anywhere; }
@@ -363,3 +363,33 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 @media(max-width:1240px){.sidebar{width:226px;flex-basis:226px}.page-content{padding-right:24px;padding-left:24px}.topbar{padding-right:24px;padding-left:24px}.metric-card{padding:16px}}
 @media(max-width:900px){.sidebar{width:72px;flex-basis:72px}.page-content{padding-right:20px;padding-left:20px}.topbar{padding-right:20px;padding-left:20px}.metric-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:620px){.page-content{padding:22px 14px 18px}.page-heading{gap:13px}h1{font-size:28px}.page-subtitle{font-size:12px}.metric-grid{gap:10px}.metric-card{min-height:132px;padding:14px 12px}.metric-top{font-size:10px}.metric-card p{font-size:10px}.panel-heading{padding:17px 15px}.panel-heading h2{font-size:14px}.panel-heading p{font-size:10px}.opportunity-list{padding-right:14px;padding-left:14px}.opportunity-row{gap:9px;padding:15px 0}.opportunity-title strong{font-size:11px}.opportunity-main p{font-size:10px}.opportunity-values strong{font-size:11px}.functional-list{padding-right:15px;padding-left:15px}}
+
+/* Issue workflow: customer responses, promises, snooze and dismiss */
+.issue-controls { margin-top: 10px; display: grid; gap: 8px; }
+.issue-state { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0; font-size: 13px; color: #4b5b55; }
+.issue-pill { padding: 2px 9px; border-radius: 9px; font-size: 12px; font-weight: 650; color: #34505c; background: #eef3f6; }
+.issue-pill-promised { color: #286a50; background: #e8f3eb; }
+.issue-pill-disputed { color: #9b4038; background: #fff1ee; }
+.issue-pill-payment_claimed, .issue-pill-awaiting_response { color: #946325; background: #fbf4e8; }
+.issue-promise, .issue-evidence { margin: 0; padding: 8px 10px; border-radius: 8px; font-size: 13px; line-height: 1.5; background: #f4f8fa; color: #34505c; }
+.issue-promise-kept { background: #e8f3eb; color: #286a50; }
+.issue-promise-broken { background: #fff1ee; color: #9b4038; }
+.issue-promise-partly_kept { background: #fbf4e8; color: #946325; }
+.issue-buttons button { min-height: 44px; }
+.issue-form { display: grid; gap: 10px; padding: 12px; border: 1px solid #e3e7ee; border-radius: 10px; background: #fafbfc; }
+.issue-form label { display: grid; gap: 4px; font-size: 13px; font-weight: 600; color: #24433a; }
+.issue-form select, .issue-form input, .issue-form textarea { min-height: 44px; padding: 8px 10px; border: 1px solid #cfd6df; border-radius: 8px; font: inherit; font-weight: 400; background: #fff; color: #202d43; }
+.issue-form textarea { min-height: 80px; resize: vertical; }
+.issue-form-row { display: grid; grid-template-columns: 1fr; gap: 10px; }
+.issue-note { display: block; font-size: 12px; line-height: 1.5; color: #66736d; }
+.issue-history { margin: 6px 0 0; padding-left: 18px; }
+.issue-history li { margin-bottom: 6px; }
+.money-position { display: grid; gap: 0; margin: 0; padding: 4px 22px 14px; }
+.money-position > div { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 10px 0; border-bottom: 1px solid #edf0f4; }
+.money-position dt { font-size: 13px; color: #34505c; }
+.money-position dt small { display: block; font-size: 11px; color: #78859a; }
+.money-position dd { margin: 0; font-size: 14px; font-weight: 700; color: #202d43; white-space: nowrap; }
+.promise-status-kept { color: #286a50; background: #e8f3eb; }
+.promise-status-broken { color: #9b4038; background: #fff1ee; }
+.promise-status-partly_kept { color: #946325; background: #fbf4e8; }
+@media (min-width: 640px) { .issue-form-row { grid-template-columns: 1fr 1fr; } }

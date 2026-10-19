@@ -2,7 +2,8 @@ import { money } from '../domain/money'
 import type { CurrencyCode, InvoiceEvidence } from '../domain/types'
 import { toRevenueOpportunities, type DbEvidenceRow, type DbOpportunityRow } from '../domain/persistedOpportunities'
 import type { RevenueOpportunity } from '../domain/types'
-import { openOpportunitiesParams, opportunityEvidenceParams, syncRpcBody } from './opportunityQueries'
+import { interactionsParams, issueStateBody, opportunityEvidenceParams, paymentEvidenceParams, recordResponseBody, syncRpcBody, trackedOpportunitiesParams, type InvoiceResponseType, type IssueTransition, type RecordResponseInput } from './opportunityQueries'
+import type { PaymentRecord } from '../domain/promises'
 
 export type SupabaseUser = { id: string; email?: string }
 export type SupabaseSession = {
@@ -748,15 +749,70 @@ export async function syncOverdueOpportunities(session: SupabaseSession, organiz
   return { created: result.created, refreshed: result.refreshed, closed: result.closed, open: result.open, recoveryRateBps: result.recovery_rate_bps }
 }
 
-/** Saved open opportunities joined to their saved source invoices. Nothing is computed or invented here. */
+/** Saved open and dismissed opportunities joined to their saved source invoices. Nothing is computed or invented here. */
 export async function loadOpenOpportunities(
   session: SupabaseSession,
   organizationId: string,
   invoices: InvoiceEvidence[],
-): Promise<{ opportunities: RevenueOpportunity[]; unresolvedIds: string[] }> {
+): Promise<{ opportunities: RevenueOpportunity[]; dismissed: RevenueOpportunity[]; unresolvedIds: string[] }> {
   const [rows, evidence] = await Promise.all([
-    apiRequest<DbOpportunityRow[]>(session, `opportunities?${openOpportunitiesParams(organizationId).toString()}`),
+    apiRequest<DbOpportunityRow[]>(session, `opportunities?${trackedOpportunitiesParams(organizationId).toString()}`),
     apiRequest<DbEvidenceRow[]>(session, `opportunity_evidence?${opportunityEvidenceParams(organizationId).toString()}`),
   ])
   return toRevenueOpportunities(rows, evidence, invoices)
+}
+
+export type InvoiceInteraction = {
+  id: string
+  opportunityId: string
+  invoiceId: string
+  actionId: string | null
+  type: InvoiceResponseType
+  summary: string
+  promisedAmountMinor: number | null
+  promisedDate: string | null
+  nextFollowUp: string | null
+  createdAt: string
+}
+
+type DbInteraction = {
+  id: string; opportunity_id: string; invoice_id: string; action_id: string | null; interaction_type: InvoiceResponseType
+  summary: string; promised_amount_minor: number | string | null; promised_date: string | null; next_follow_up: string | null; created_at: string
+}
+
+export async function loadInvoiceInteractions(session: SupabaseSession, organizationId: string): Promise<InvoiceInteraction[]> {
+  const rows = await apiRequest<DbInteraction[]>(session, `invoice_interactions?${interactionsParams(organizationId).toString()}`)
+  return rows.map((row) => ({
+    id: row.id, opportunityId: row.opportunity_id, invoiceId: row.invoice_id, actionId: row.action_id, type: row.interaction_type,
+    summary: row.summary, promisedAmountMinor: row.promised_amount_minor === null ? null : Number(row.promised_amount_minor),
+    promisedDate: row.promised_date, nextFollowUp: row.next_follow_up, createdAt: row.created_at,
+  }))
+}
+
+/** Records what the customer said. Updates the issue state atomically in the database; never changes money. */
+export async function recordInvoiceResponse(
+  session: SupabaseSession,
+  input: Omit<RecordResponseInput, 'interactionId'> & { interactionId?: string },
+): Promise<{ id: string; duplicate: boolean; workflowState?: string }> {
+  const interactionId = input.interactionId ?? 'interaction-' + crypto.randomUUID()
+  const result = await apiRequest<{ id: string; duplicate: boolean; workflow_state?: string }>(session, 'rpc/record_invoice_response', {
+    method: 'POST',
+    body: recordResponseBody({ ...input, interactionId }),
+  })
+  return { id: result.id, duplicate: result.duplicate, workflowState: result.workflow_state }
+}
+
+export async function setOpportunityState(
+  session: SupabaseSession,
+  input: { organizationId: string; opportunityId: string; transition: IssueTransition; reason?: string; snoozeUntil?: string },
+): Promise<void> {
+  await apiRequest<unknown>(session, 'rpc/set_opportunity_state', { method: 'POST', body: issueStateBody(input) })
+}
+
+type DbPaymentEvidence = { id: string; invoice_id: string; amount_minor: number | string; currency: string; received_at: string }
+
+/** Saved payment evidence only (imported payment records). Promises and estimates are never in this list. */
+export async function loadPaymentEvidence(session: SupabaseSession, organizationId: string): Promise<PaymentRecord[]> {
+  const rows = await apiRequest<DbPaymentEvidence[]>(session, `payment_evidence?${paymentEvidenceParams(organizationId).toString()}`)
+  return rows.map((row) => ({ invoiceId: row.invoice_id, amount: money(Number(row.amount_minor), row.currency), receivedAt: row.received_at }))
 }

@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { buildOverdueOpportunities } from './domain/overdueInvoices'
 import { parseInvoiceCsv, type CsvIssue } from './domain/invoiceCsv'
 import { parsePaymentCsv } from './domain/paymentCsv'
@@ -12,7 +12,12 @@ import { buildRecommendation } from './domain/recommendation'
 import { classifySyncFailure } from './lib/opportunityQueries'
 import { BILLING_STATUS, checkInvoiceImportSize, checkLeadCapacity, getPlan } from './domain/plans'
 import type { InvoiceEvidence, RevenueOpportunity } from './domain/types'
-import { getFreshSession, createSalesLead, deleteSalesLead, loadInvoices, loadRecoveryRate, loadSalesLeads, persistInvoiceImport, saveRecoveryRate, sha256Hex, updateSalesLead, type RevenueOrganization, type SalesLead, type SupabaseSession, type RecoveryAction, type VerifiedOutcome, loadRecoveryActions, loadVerifiedOutcomes, persistPaymentImport, proposeInvoiceReminder, transitionRecoveryAction, verifyRecoveryOutcome, loadOpenOpportunities, syncOverdueOpportunities, type OpportunitySyncResult, loadLeadActivities, recordLeadActivity, type LeadActivity, type LeadActivityType } from './lib/supabaseRest'
+import { getFreshSession, createSalesLead, deleteSalesLead, loadInvoices, loadRecoveryRate, loadSalesLeads, persistInvoiceImport, saveRecoveryRate, sha256Hex, updateSalesLead, type RevenueOrganization, type SalesLead, type SupabaseSession, type RecoveryAction, type VerifiedOutcome, loadRecoveryActions, loadVerifiedOutcomes, persistPaymentImport, proposeInvoiceReminder, transitionRecoveryAction, verifyRecoveryOutcome, loadOpenOpportunities, syncOverdueOpportunities, type OpportunitySyncResult, loadLeadActivities, recordLeadActivity, type LeadActivity, type LeadActivityType, loadInvoiceInteractions, loadPaymentEvidence, recordInvoiceResponse, setOpportunityState, type InvoiceInteraction } from './lib/supabaseRest'
+import { IssueControls, type ResponseFormValues } from './IssueControls'
+import { summarizeWorkflow } from './domain/issueWorkflow'
+import { assessPromise, type PaymentRecord, type PromiseAssessment } from './domain/promises'
+import { buildMoneyPosition, type MoneyPosition } from './domain/moneyPosition'
+import type { IssueTransition } from './lib/opportunityQueries'
 import './App.css'
 import './design.css'
 
@@ -63,6 +68,8 @@ type OpportunityStore = {
   /** 'saved' = read from Supabase after server-side detection; 'live' = calculated in the browser (fallback). */
   mode: 'live' | 'saved'
   opportunities: RevenueOpportunity[]
+  /** Dismissed issues: out of the queue, but the invoices may still be unpaid. */
+  dismissed: RevenueOpportunity[]
   syncing: boolean
   note: string
   noteIsError: boolean
@@ -231,9 +238,13 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
   const [paymentNotice, setPaymentNotice] = useState('')
   const [paymentNoticeIsError, setPaymentNoticeIsError] = useState(false)
   const [paymentIssues, setPaymentIssues] = useState<CsvIssue[]>([])
+  const [interactions, setInteractions] = useState<InvoiceInteraction[]>([])
+  const [payments, setPayments] = useState<PaymentRecord[]>([])
+  const [issueBusy, setIssueBusy] = useState('')
+  const [issueNotice, setIssueNotice] = useState('')
   const [invoicesLoading, setInvoicesLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
-  const [store, setStore] = useState<OpportunityStore>({ mode: 'live', opportunities: [], syncing: false, note: '', noteIsError: false, lastSync: null })
+  const [store, setStore] = useState<OpportunityStore>({ mode: 'live', opportunities: [], dismissed: [], syncing: false, note: '', noteIsError: false, lastSync: null })
 
   useEffect(() => {
     let cancelled = false
@@ -246,7 +257,7 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
 
   const refreshOpportunities = useCallback(async (currentInvoices: InvoiceEvidence[], hasSavedRate: boolean): Promise<OpportunitySyncResult | null> => {
     if (!hasSavedRate || currentInvoices.length === 0) {
-      setStore({ mode: 'live', opportunities: [], syncing: false, note: '', noteIsError: false, lastSync: null })
+      setStore({ mode: 'live', opportunities: [], dismissed: [], syncing: false, note: '', noteIsError: false, lastSync: null })
       return null
     }
     setStore((current) => ({ ...current, syncing: true }))
@@ -254,7 +265,7 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
       const result = await syncOverdueOpportunities(session, organization.id)
       const loaded = await loadOpenOpportunities(session, organization.id, currentInvoices)
       setStore({
-        mode: 'saved', opportunities: loaded.opportunities, syncing: false, lastSync: result,
+        mode: 'saved', opportunities: loaded.opportunities, dismissed: loaded.dismissed, syncing: false, lastSync: result,
         note: loaded.unresolvedIds.length ? loaded.unresolvedIds.length + ' saved opportunity record(s) are hidden because their source invoice could not be found.' : '',
         noteIsError: loaded.unresolvedIds.length > 0,
       })
@@ -265,12 +276,12 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
       if (kind === 'no_permission') {
         try {
           const loaded = await loadOpenOpportunities(session, organization.id, currentInvoices)
-          setStore({ mode: 'saved', opportunities: loaded.opportunities, syncing: false, lastSync: null, note: 'Your role can view saved opportunities but cannot refresh detection.', noteIsError: false })
+          setStore({ mode: 'saved', opportunities: loaded.opportunities, dismissed: loaded.dismissed, syncing: false, lastSync: null, note: 'Your role can view saved opportunities but cannot refresh detection.', noteIsError: false })
           return null
         } catch { /* fall through to the live calculation below */ }
       }
       setStore({
-        mode: 'live', opportunities: [], syncing: false, lastSync: null,
+        mode: 'live', opportunities: [], dismissed: [], syncing: false, lastSync: null,
         note: kind === 'not_available'
           ? 'Saving opportunities is not enabled on this database yet, so this is a live calculation from your saved invoices. Nothing is lost.'
           : 'Opportunities could not be saved right now, so this is a live calculation from your saved invoices. ' + message,
@@ -321,6 +332,60 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
       .finally(() => { if (!cancelled) setActionsLoading(false) })
     return () => { cancelled = true }
   }, [session, organization.id])
+
+  const loadIssueEvidence = useCallback(async () => {
+    try {
+      const [loadedInteractions, loadedPayments] = await Promise.all([loadInvoiceInteractions(session, organization.id), loadPaymentEvidence(session, organization.id)])
+      setInteractions(loadedInteractions)
+      setPayments(loadedPayments)
+    } catch (cause) {
+      setIssueNotice(cause instanceof Error ? 'Could not load customer responses or payment evidence: ' + cause.message : 'Could not load customer responses or payment evidence.')
+    }
+  }, [session, organization.id])
+
+  useEffect(() => {
+    let cancelled = false
+    Promise.all([loadInvoiceInteractions(session, organization.id), loadPaymentEvidence(session, organization.id)])
+      .then(([loadedInteractions, loadedPayments]) => { if (!cancelled) { setInteractions(loadedInteractions); setPayments(loadedPayments) } })
+      .catch((cause) => { if (!cancelled) setIssueNotice(cause instanceof Error ? 'Could not load customer responses or payment evidence: ' + cause.message : 'Could not load customer responses or payment evidence.') })
+    return () => { cancelled = true }
+  }, [session, organization.id, invoices])
+
+  async function reloadIssues() {
+    const loaded = await loadOpenOpportunities(session, organization.id, invoices)
+    setStore((current) => ({ ...current, mode: 'saved', opportunities: loaded.opportunities, dismissed: loaded.dismissed }))
+    await loadIssueEvidence()
+  }
+
+  /** Returns an error message for the form to show, or null on success. */
+  async function handleRecordResponse(opportunity: RevenueOpportunity, values: ResponseFormValues): Promise<string | null> {
+    setIssueBusy(opportunity.id)
+    setIssueNotice('')
+    try {
+      const result = await recordInvoiceResponse(session, {
+        organizationId: organization.id, opportunityId: opportunity.id, type: values.type, summary: values.summary,
+        promisedAmount: values.promisedAmount, promisedDate: values.promisedDate, nextFollowUp: values.nextFollowUp,
+      })
+      await reloadIssues()
+      setIssueNotice(result.duplicate ? 'That response was already saved.' : 'Response saved. The issue, its follow-up date and the audit trail are updated. Nothing was sent and no money was recorded.')
+      return null
+    } catch (cause) {
+      return cause instanceof Error ? cause.message : 'Could not save this response.'
+    } finally { setIssueBusy('') }
+  }
+
+  async function handleIssueTransition(opportunity: RevenueOpportunity, transition: IssueTransition, options?: { reason?: string; snoozeUntil?: string }): Promise<string | null> {
+    setIssueBusy(opportunity.id)
+    setIssueNotice('')
+    try {
+      await setOpportunityState(session, { organizationId: organization.id, opportunityId: opportunity.id, transition, ...options })
+      await reloadIssues()
+      setIssueNotice(transition === 'dismiss' ? 'Issue dismissed. The invoice is still unpaid in your records and is listed under dismissed issues.' : transition === 'reopen' ? 'Issue reopened.' : transition === 'snooze' ? 'Snoozed for 7 days. The unpaid balance is still counted.' : transition === 'unsnooze' ? 'Snooze ended.' : 'Issue acknowledged.')
+      return null
+    } catch (cause) {
+      return cause instanceof Error ? cause.message : 'Could not update this issue.'
+    } finally { setIssueBusy('') }
+  }
 
   async function handleProposeReminder(opportunity: RevenueOpportunity) {
     const invoice = opportunity.evidence[0]
@@ -467,6 +532,21 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
   )
   const aging = useMemo(() => agingSummary(opportunities, new Date().toISOString()), [opportunities])
   const summary = useMemo(() => buildDashboardSummary(recoveryActions, verifiedOutcomes), [recoveryActions, verifiedOutcomes])
+  const workflowSummary = useMemo(() => summarizeWorkflow(opportunities, new Date().toISOString()), [opportunities])
+  const urgentQueue = useMemo(() => rankedOpportunities.filter((ranked) => ranked.attention.length > 0 && !ranked.snoozed), [rankedOpportunities])
+  const moneyPosition = useMemo<MoneyPosition[]>(
+    () => buildMoneyPosition({ invoices, opportunities, dismissed: store.dismissed, payments, verified: summary.verifiedByCurrency }),
+    [invoices, opportunities, store.dismissed, payments, summary.verifiedByCurrency],
+  )
+  const promiseRows = useMemo(() => {
+    const asOf = new Date().toISOString()
+    return opportunities.flatMap((opportunity) => {
+      const workflow = opportunity.workflow
+      const latest = interactions.find((interaction) => interaction.opportunityId === opportunity.id && interaction.type === 'promised_to_pay')
+      if (!workflow?.promisedAmount || !workflow.promisedDate || !latest) return []
+      return [{ opportunity, assessment: assessPromise({ invoiceId: opportunity.evidence[0].id, promised: workflow.promisedAmount, promisedDate: workflow.promisedDate, recordedAt: latest.createdAt, payments, asOf }) }]
+    })
+  }, [opportunities, interactions, payments])
   const plan = getPlan(undefined)
 
   async function importFile(file?: File) {
@@ -543,7 +623,7 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
             const icon = section === 'Overview' ? 'grid' : section === 'Urgent' ? 'clock' : section === 'Opportunities' ? 'spark' : section === 'Lead Recovery' ? 'check' : section === 'Actions' ? 'check' : section === 'Outcomes' ? 'chart' : section === 'Connections' ? 'plug' : 'brain'
             return <button key={section} className={`nav-item ${activeSection === section ? 'active' : ''}`} onClick={() => setActiveSection(section)}>
               <Icon name={icon} /><span>{section}</span>
-              {section === 'Opportunities' && opportunities.length > 0 && <span className="nav-count">{opportunities.length}</span>}
+              {section === 'Opportunities' && opportunities.length > 0 && <span className="nav-count">{opportunities.length}</span>}{section === 'Urgent' && urgentQueue.length > 0 && <span className="nav-count">{urgentQueue.length}</span>}
             </button>
           })}
         </nav>
@@ -581,6 +661,7 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
                   <article className="daily-brief-item"><span className="daily-brief-kicker">Money to review</span><strong>{opportunities.length} overdue opportunit{opportunities.length === 1 ? 'y' : 'ies'}</strong><p>{opportunities.length ? (rankedOpportunities[0] ? 'Top priority: ' + (rankedOpportunities[0].opportunity.evidence[0]?.customerName || 'customer record') + (rankedOpportunities[0].opportunity.evidence[0]?.invoiceNumber ? ' · invoice ' + rankedOpportunities[0].opportunity.evidence[0].invoiceNumber : '') + '.' : 'Review the overdue invoice list.') : invoices.length ? 'No overdue opportunities are currently detected from saved invoice data.' : 'Import invoice records to identify overdue money.'}</p><button type="button" className="template-link" onClick={() => setActiveSection('Opportunities')}>Review opportunities →</button></article>
                   <article className="daily-brief-item"><span className="daily-brief-kicker">Customer follow-ups</span><strong>{leads.filter((lead) => !['converted', 'closed'].includes(lead.status) && lead.nextFollowUp <= new Date().toISOString().slice(0, 10)).length} due or overdue</strong><p>{leads.length ? 'Based on saved lead follow-up dates. Check the queue before contacting customers.' : 'Add leads and next-follow-up dates to see which enquiries need attention.'}</p><button type="button" className="template-link" onClick={() => setActiveSection('Lead Recovery')}>Open follow-up queue →</button></article>
                   <article className="daily-brief-item"><span className="daily-brief-kicker">Waiting for your decision</span><strong>{summary.actionCounts.proposed} draft{summary.actionCounts.proposed === 1 ? '' : 's'} to review</strong><p>{summary.actionCounts.approved} approved reminder{summary.actionCounts.approved === 1 ? '' : 's'} waiting to be sent manually; {summary.awaitingEvidence} sent action{summary.awaitingEvidence === 1 ? '' : 's'} waiting for payment evidence.</p><button type="button" className="template-link" onClick={() => setActiveSection('Actions')}>Review actions →</button></article>
+                  <article className="daily-brief-item"><span className="daily-brief-kicker">Promises and follow-ups</span><strong>{workflowSummary.brokenPromises} broken promise{workflowSummary.brokenPromises === 1 ? '' : 's'} · {workflowSummary.followUpsDue} follow-up{workflowSummary.followUpsDue === 1 ? '' : 's'} due</strong><p>{urgentQueue.length ? urgentQueue.length + ' issue' + (urgentQueue.length === 1 ? '' : 's') + ' in the urgent queue. ' : 'Nothing in the urgent queue. '}{workflowSummary.promisesOutstanding.length ? 'Customers have promised ' + workflowSummary.promisesOutstanding.map((total) => formatMoney(total)).join(' · ') + ' (a promise is not money received). ' : ''}{workflowSummary.disputes ? workflowSummary.disputes + ' disputed.' : ''}</p><button type="button" className="template-link" onClick={() => setActiveSection('Urgent')}>Open urgent queue →</button></article>
                 </div>}
                 <div className="daily-brief-footnote"><span><i className={loadError || leadError ? 'connection-dot connection-dot-muted' : 'connection-dot'} />{loadError || leadError ? 'Some saved data could not be loaded; review the error notice in its section.' : 'Using saved workspace records'}</span><button type="button" className="template-link" onClick={() => setActiveSection('Connections')}>Manage data sources →</button></div>
               </section>}
@@ -594,7 +675,7 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
 
               <section className="work-grid">
                 <div className="panel opportunity-panel">
-                  <div className="panel-heading"><div><h2>{activeSection === 'Urgent' ? 'Urgent attention queue' : activeSection === 'Opportunities' ? 'Revenue opportunities' : 'Priority opportunities'}</h2><p>{activeSection === 'Urgent' ? 'Critical and high-priority overdue invoices, ranked by how late they are.' : 'Based on imported records and your stated assumptions.'}</p></div>{store.syncing ? <span className="status-pill">Refreshing…</span> : opportunities.length > 0 && <span className="status-pill">{opportunities.length} open</span>}</div>
+                  <div className="panel-heading"><div><h2>{activeSection === 'Urgent' ? 'Urgent attention queue' : activeSection === 'Opportunities' ? 'Revenue opportunities' : 'Priority opportunities'}</h2><p>{activeSection === 'Urgent' ? 'Issues that need you now: a broken promise, a due follow-up, a dispute, an unconfirmed payment claim, or an invoice over 30 days late. Snoozed issues are hidden here, never from your totals.' : 'Based on imported records and your stated assumptions.'}</p></div>{store.syncing ? <span className="status-pill">Refreshing…</span> : opportunities.length > 0 && <span className="status-pill">{opportunities.length} open</span>}</div>
                   {invoicesLoading ? (
                     <div className="empty-state compact" role="status"><h3>Loading your saved invoices…</h3><p>Checking this workspace for imported records.</p></div>
                   ) : loadError && invoices.length === 0 ? (
@@ -603,12 +684,12 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
                     <div className="empty-state"><span className="empty-icon"><Icon name="upload" /></span><h3>No invoices imported into this workspace yet</h3><p>Import an invoice CSV to identify overdue invoices. Opportunities, estimated recovery and verified revenue stay empty until real records are imported, and every opportunity links back to its source record.</p><button className="button button-secondary" onClick={() => fileRef.current?.click()}>Choose invoice CSV</button><button className="template-link" onClick={downloadCsvTemplate}>Download blank CSV template</button><a className="text-link" href="#csv-format" onClick={(event) => { event.preventDefault(); setActiveSection('Business Brain') }}>View required columns</a></div>
                   ) : assumptionBps === null ? (
                     <div className="assumption-prompt"><div className="assumption-icon"><Icon name="brain" /></div><div><h3>Set a recovery-rate assumption</h3><p>Estimates are calculated from outstanding invoice balances and this assumption. Choose a rate your team can support with evidence.</p><label htmlFor="recovery-rate">Expected recovery rate</label><div className="rate-input-wrap"><input id="recovery-rate" inputMode="decimal" placeholder="e.g. 25" value={recoveryRate} onChange={(event) => setRecoveryRate(event.target.value)} onBlur={() => void persistRecoveryRate()} aria-describedby="rate-help"/><span>%</span></div><small id="rate-help">Enter a percentage from 0 to 100. This will be labelled as an estimate.</small>{recoveryRate && parseRecoveryRate(recoveryRate) === null && <small className="field-error">Enter a valid percentage, such as 25 or 12.5.</small>}</div></div>
-                  ) : activeSection === 'Urgent' && !rankedOpportunities.some((ranked) => ranked.urgency >= 3) ? (
-                    <div className="empty-state compact"><span className="empty-icon"><Icon name="check" /></span><h3>No critical or high-priority invoices</h3><p>There are no overdue invoices in the urgent queue right now. Lower-priority overdue items remain available under Opportunities.</p></div>
+                  ) : activeSection === 'Urgent' && urgentQueue.length === 0 ? (
+                    <div className="empty-state compact"><span className="empty-icon"><Icon name="check" /></span><h3>Nothing needs you right now</h3><p>No broken promises, due follow-ups, disputes or severely late invoices{workflowSummary.snoozed ? ` (${workflowSummary.snoozed} snoozed issue${workflowSummary.snoozed === 1 ? ' is' : 's are'} hidden until the snooze ends)` : ''}. Other overdue items remain under Opportunities.</p></div>
                   ) : opportunities.length === 0 ? (
                     <div className="empty-state compact"><span className="empty-icon"><Icon name="check" /></span><h3>No overdue balances matched</h3><p>{outstandingInvoiceCount ? 'There are outstanding invoices, but none meet the overdue rule as of today.' : 'Imported invoices show no unpaid balances.'}</p></div>
                   ) : (
-                    <div className="opportunity-list">{(activeSection === 'Urgent' ? rankedOpportunities.filter((ranked) => ranked.urgency >= 3) : rankedOpportunities).map((ranked, index) => <OpportunityRow key={ranked.opportunity.id} ranked={ranked} rank={index + 1} progress={progressByInvoiceId.get(ranked.opportunity.evidence[0]?.id) ?? 'none'} onPropose={() => void handleProposeReminder(ranked.opportunity)} onViewActions={() => setActiveSection('Actions')} proposing={actionBusy === ranked.opportunity.evidence[0]?.id} />)}</div>
+                    <div className="opportunity-list">{issueNotice && <div className="alert alert-info" role="status">{issueNotice}</div>}{(activeSection === 'Urgent' ? urgentQueue : rankedOpportunities).map((ranked, index) => <OpportunityRow key={ranked.opportunity.id} ranked={ranked} rank={index + 1} progress={progressByInvoiceId.get(ranked.opportunity.evidence[0]?.id) ?? 'none'} onPropose={() => void handleProposeReminder(ranked.opportunity)} onViewActions={() => setActiveSection('Actions')} proposing={actionBusy === ranked.opportunity.evidence[0]?.id} controls={<IssueControls opportunity={ranked.opportunity} interactions={interactions} payments={payments} canWrite={store.mode === 'saved'} busy={issueBusy === ranked.opportunity.id} onRecord={(values) => handleRecordResponse(ranked.opportunity, values)} onTransition={(transition, options) => handleIssueTransition(ranked.opportunity, transition, options)} />} />)}</div>
                   )}
                 </div>
 
@@ -620,6 +701,15 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
                   <p className="brain-note">{brain.note}</p>
                 </aside>
               </section>
+
+              {activeSection === 'Opportunities' && store.dismissed.length > 0 && <section className="panel" aria-labelledby="dismissed-title">
+                <div className="panel-heading"><div><h2 id="dismissed-title">Dismissed issues, still unpaid</h2><p>These are out of your attention queue. Their invoices are still unpaid in your records, so the balances remain in your totals. Reopen one if the situation changes.</p></div><span className="status-pill">{store.dismissed.length}</span></div>
+                <div className="recovery-action-list">{store.dismissed.map((dismissed) => <article className="recovery-action-card" key={dismissed.id}>
+                  <div className="recovery-action-top"><div><strong>{dismissed.evidence[0].customerName}</strong><small>Invoice {dismissed.evidence[0].invoiceNumber} · {formatMoney(dismissed.outstanding)} outstanding</small></div><span className="action-status">Dismissed</span></div>
+                  <p className="action-context"><strong>Reason:</strong> {dismissed.workflow?.dismissedReason ?? 'No reason recorded.'}</p>
+                  {store.mode === 'saved' && <div className="recovery-action-controls"><button className="button button-secondary" type="button" disabled={issueBusy === dismissed.id} onClick={() => void handleIssueTransition(dismissed, 'reopen')}>Reopen issue</button></div>}
+                </article>)}</div>
+              </section>}
 
               {activeSection === 'Opportunities' && <section className="panel invoice-register-panel" aria-labelledby="invoice-register-title">
                 <div className="panel-heading"><div><h2 id="invoice-register-title">Imported invoice register</h2><p>Open any saved invoice to inspect its source details, amounts and dates. These records are loaded from your workspace database.</p></div><span className="status-pill">{invoices.length} saved</span></div>
@@ -645,7 +735,7 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
 
               {issues.length > 0 && <section className="panel issues-panel"><div className="panel-heading"><div><h2>Rows needing attention</h2><p>These rows were skipped; correct the source file and re-import.</p></div><span className="issue-count">{issues.length}</span></div><ul>{issues.slice(0, 8).map((issue) => <li key={`${issue.row}-${issue.message}`}><strong>Row {issue.row}</strong><span>{issue.message}</span></li>)}</ul>{issues.length > 8 && <p className="more-issues">And {issues.length - 8} more row issues.</p>}</section>}
             </>
-          ) : activeSection === 'Lead Recovery' ? <LeadRecovery leadCapacity={checkLeadCapacity(plan, leads.filter((lead) => lead.status !== 'converted' && lead.status !== 'closed').length)} leads={leads} setLeads={setLeads} session={session} organization={organization} loading={leadLoading} loadError={leadError} /> : activeSection === 'Actions' ? <RecoveryActions actions={recoveryActions} invoices={invoices} loading={actionsLoading} busyId={actionBusy} notice={actionNotice} noticeIsError={actionNoticeIsError} onTransition={(action, transition) => void handleActionTransition(action, transition)} /> : activeSection === 'Outcomes' ? <RecoveryOutcomes actions={recoveryActions} invoices={invoices} outcomes={verifiedOutcomes} loading={outcomesLoading} busyId={actionBusy} notice={paymentNotice} noticeIsError={paymentNoticeIsError} issues={paymentIssues} fileRef={paymentFileRef} onImport={(file) => void handleImportPayments(file)} onVerify={(action) => void handleVerifyOutcome(action)} /> : activeSection === 'Connections' ? (
+          ) : activeSection === 'Lead Recovery' ? <LeadRecovery leadCapacity={checkLeadCapacity(plan, leads.filter((lead) => lead.status !== 'converted' && lead.status !== 'closed').length)} leads={leads} setLeads={setLeads} session={session} organization={organization} loading={leadLoading} loadError={leadError} /> : activeSection === 'Actions' ? <RecoveryActions actions={recoveryActions} invoices={invoices} loading={actionsLoading} busyId={actionBusy} notice={actionNotice} noticeIsError={actionNoticeIsError} onTransition={(action, transition) => void handleActionTransition(action, transition)} /> : activeSection === 'Outcomes' ? <RecoveryOutcomes actions={recoveryActions} invoices={invoices} outcomes={verifiedOutcomes} loading={outcomesLoading} busyId={actionBusy} notice={paymentNotice} noticeIsError={paymentNoticeIsError} issues={paymentIssues} moneyPosition={moneyPosition} promises={promiseRows} fileRef={paymentFileRef} onImport={(file) => void handleImportPayments(file)} onVerify={(action) => void handleVerifyOutcome(action)} /> : activeSection === 'Connections' ? (
             <div className="connections-workspace">
               <section className="panel"><div className="panel-heading"><div><h2>Connect your business once</h2><p>Choose the systems Revenue OS should read. A connection is only active after authorization and a successful sync.</p></div><span className="status-pill">Connection centre</span></div>
                 <div className="connection-source-grid">
@@ -684,14 +774,14 @@ function AgingStrip({ aging }: { aging: ReturnType<typeof agingSummary> }) {
   </section>
 }
 
-function OpportunityRow({ ranked, rank, progress, onPropose, onViewActions, proposing }: { ranked: RankedOpportunity; rank: number; progress: ActionProgress; onPropose: () => void; onViewActions: () => void; proposing: boolean }) {
+function OpportunityRow({ ranked, rank, progress, onPropose, onViewActions, proposing, controls }: { ranked: RankedOpportunity; rank: number; progress: ActionProgress; onPropose: () => void; onViewActions: () => void; proposing: boolean; controls?: ReactNode }) {
   const { opportunity } = ranked
   const invoice = opportunity.evidence[0]
   const recommendation = (() => { try { return buildRecommendation(ranked, progress) } catch { return null } })()
-  return <article className="opportunity-row"><span className="opportunity-indicator" /><div className="opportunity-main"><div className="opportunity-title"><span className="rank-badge" aria-label={'Priority ' + rank}>#{rank}</span><strong>{invoice.customerName}</strong><span className={'overdue-pill urgency-' + ranked.urgency}>{ranked.urgencyLabel}</span></div><p>Invoice {invoice.invoiceNumber} <span>·</span> Due {new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(invoice.dueAt))}</p>
+  return <article className="opportunity-row"><span className="opportunity-indicator" /><div className="opportunity-main"><div className="opportunity-title"><span className="rank-badge" aria-label={'Priority ' + rank}>#{rank}</span><strong>{invoice.customerName}</strong><span className={'overdue-pill urgency-' + ranked.urgency}>{ranked.urgencyLabel}</span>{ranked.snoozed && <span className="overdue-pill">Snoozed</span>}</div><p>Invoice {invoice.invoiceNumber} <span>·</span> Due {new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(invoice.dueAt))}</p>
     <details className="why-details"><summary>Why this needs attention</summary><ul>{ranked.reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul><small>{ranked.uncertainty}</small><small>Source record: {recommendation ? recommendation.sourceRecord : invoice.source.recordId}</small>{recommendation && <div className="recommendation"><strong>Recommended steps</strong><ol>{recommendation.steps.map((step) => <li key={step}>{step}</li>)}</ol><dl>{recommendation.evidence.map((item) => <Fragment key={item.label}><dt>{item.label}</dt><dd>{item.value}</dd></Fragment>)}</dl><small>Needs your approval first. Revenue OS never sends a message or contacts a customer by itself, and the estimate is not money collected.</small></div>}</details>
     <p className="next-step"><strong>Next step:</strong> {ranked.nextAction}</p>
-    {progress === 'none' ? <button className="button button-secondary recovery-draft-button" type="button" onClick={onPropose} disabled={proposing}>{proposing ? 'Saving draft…' : 'Draft reminder'}</button> : <button className="button button-secondary recovery-draft-button" type="button" onClick={onViewActions}>View in Actions ({progress})</button>}</div><div className="opportunity-values"><strong>{formatMoney(opportunity.outstanding)}</strong><small>outstanding</small><span>Est. {formatMoney(opportunity.estimate.low)}</span></div></article>
+    {progress === 'none' ? <button className="button button-secondary recovery-draft-button" type="button" onClick={onPropose} disabled={proposing}>{proposing ? 'Saving draft…' : 'Draft reminder'}</button> : <button className="button button-secondary recovery-draft-button" type="button" onClick={onViewActions}>View in Actions ({progress})</button>}{controls}</div><div className="opportunity-values"><strong>{formatMoney(opportunity.outstanding)}</strong><small>outstanding</small><span>Est. {formatMoney(opportunity.estimate.low)}</span></div></article>
 }
 
 const statusOrder: Record<RecoveryAction['status'], number> = { approved: 0, proposed: 1, executed: 2, failed: 3, cancelled: 4 }
@@ -911,7 +1001,7 @@ function currencyTotals(records: LeadRecord[]) {
 }
 
 
-function RecoveryOutcomes({ actions, invoices, outcomes, loading, busyId, notice, noticeIsError, issues, fileRef, onImport, onVerify }: {
+function RecoveryOutcomes({ actions, invoices, outcomes, loading, busyId, notice, noticeIsError, issues, moneyPosition, promises, fileRef, onImport, onVerify }: {
   actions: RecoveryAction[]
   invoices: InvoiceEvidence[]
   outcomes: VerifiedOutcome[]
@@ -920,6 +1010,8 @@ function RecoveryOutcomes({ actions, invoices, outcomes, loading, busyId, notice
   notice: string
   noticeIsError: boolean
   issues: CsvIssue[]
+  moneyPosition: MoneyPosition[]
+  promises: { opportunity: RevenueOpportunity; assessment: PromiseAssessment }[]
   fileRef: { current: HTMLInputElement | null }
   onImport: (file?: File) => void
   onVerify: (action: RecoveryAction) => void
@@ -928,6 +1020,25 @@ function RecoveryOutcomes({ actions, invoices, outcomes, loading, busyId, notice
   const outcomeByAction = new Map(outcomes.map((outcome) => [outcome.actionId, outcome]))
   const executedActions = actions.filter((action) => action.status === 'executed')
   return <div className="outcomes-workspace">
+    <section className="panel money-position-panel" aria-labelledby="money-position-title">
+      <div className="panel-heading"><div><h2 id="money-position-title">Where the money stands</h2><p>Each line means something different and they are never added together. Only payment records and matched outcomes are money actually received.</p></div></div>
+      {moneyPosition.length === 0 ? <div className="empty-state compact"><h3>No financial records yet</h3><p>Import invoices and payment evidence to see outstanding, promised and received amounts here.</p></div> : moneyPosition.map((position) => <dl className="money-position" key={position.currency} aria-label={position.currency + ' money position'}>
+        <div><dt>Outstanding <small>(from your invoice records)</small></dt><dd>{formatMoney(position.outstanding)}</dd></div>
+        <div><dt>Overdue and being worked <small>(open issues)</small></dt><dd>{formatMoney(position.overdue)}</dd></div>
+        <div><dt>Dismissed but still unpaid</dt><dd>{formatMoney(position.dismissedUnpaid)}</dd></div>
+        <div><dt>Estimated recoverable <small>(assumption, not a prediction)</small></dt><dd>{formatMoney(position.estimated)}</dd></div>
+        <div><dt>Promised by customers <small>(not money received)</small></dt><dd>{formatMoney(position.promised)}</dd></div>
+        <div><dt>Payment evidence recorded <small>(imported payments)</small></dt><dd>{formatMoney(position.paymentEvidence)}</dd></div>
+        <div><dt>Verified after a sent reminder <small>(observed, not proven caused)</small></dt><dd>{formatMoney(position.verified)}</dd></div>
+      </dl>)}
+    </section>
+    <section className="panel promises-panel" aria-labelledby="promises-title">
+      <div className="panel-heading"><div><h2 id="promises-title">Customer promises vs payment evidence</h2><p>A promise is only what the customer said. It is checked against imported payment records received after it was recorded.</p></div><span className="status-pill">{promises.length}</span></div>
+      {promises.length === 0 ? <div className="empty-state compact"><h3>No open promises</h3><p>Record a promise from an issue in Urgent or Opportunities and it will be tracked here.</p></div> : <div className="recovery-action-list">{promises.map(({ opportunity, assessment }) => <article className="recovery-action-card" key={opportunity.id}>
+        <div className="recovery-action-top"><div><strong>{opportunity.evidence[0].customerName}</strong><small>Invoice {opportunity.evidence[0].invoiceNumber}</small></div><span className={'action-status promise-status-' + assessment.status}>{assessment.status === 'kept' ? 'Evidence received' : assessment.status === 'partly_kept' ? 'Partly received' : assessment.status === 'broken' ? 'Not received' : 'Awaiting'}</span></div>
+        <p className="action-context">{assessment.label}</p>
+      </article>)}</div>}
+    </section>
     <section className="panel outcomes-import-panel">
       <div className="panel-heading"><div><h2>Import payment evidence</h2><p>Use a payment export from your accounting or payment system. Revenue OS does not invent or infer payments.</p></div><span className="status-pill">Source records</span></div>
       <div className="payment-import-content">

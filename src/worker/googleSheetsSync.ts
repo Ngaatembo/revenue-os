@@ -26,8 +26,12 @@ function amountMinor(value: string): number {
 }
 
 function isoDate(value: string): string {
-  const timestamp = Date.parse(value.trim())
-  if (!value.trim() || !Number.isFinite(timestamp)) throw new Error('invalid_date')
+  const normalized = value.trim()
+  if (!normalized) throw new Error('invalid_date')
+  // Google Sheets UNFORMATTED_VALUE returns dates as serial day numbers.
+  const serial = /^\\d{4,6}(?:\\.\\d+)?$/.test(normalized) ? Number(normalized) : NaN
+  const timestamp = Number.isFinite(serial) ? Math.round((serial - 25569) * 86_400_000) : Date.parse(normalized)
+  if (!Number.isFinite(timestamp)) throw new Error('invalid_date')
   return new Date(timestamp).toISOString()
 }
 

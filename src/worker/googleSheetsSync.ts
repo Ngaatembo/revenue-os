@@ -54,7 +54,7 @@ function mapHeaders(values: unknown[]): Map<typeof REQUIRED[number], number> {
 }
 
 function amountMinor(value: string): number {
-  const match = /^(0|[1-9]\d*)(?:\\.(\d{1,2}))?$/.exec(value.trim())
+  const match = /^(0|[1-9]\d*)(?:\.(\d{1,2}))?$/.exec(value.trim())
   if (!match) throw new Error('invalid_amount')
   const minor = BigInt(match[1]) * 100n + BigInt((match[2] ?? '').padEnd(2, '0'))
   if (minor > BigInt(MAX_MINOR)) throw new Error('amount_too_large')
@@ -65,7 +65,7 @@ function isoDate(value: string): string {
   const normalized = value.trim()
   if (!normalized) throw new Error('invalid_date')
   // Google Sheets UNFORMATTED_VALUE returns dates as serial day numbers.
-  const serial = /^\d{4,6}(?:\\.\d+)?$/.test(normalized) ? Number(normalized) : NaN
+  const serial = /^\d{4,6}(?:\.\d+)?$/.test(normalized) ? Number(normalized) : NaN
   const timestamp = Number.isFinite(serial) ? Math.round((serial - 25569) * 86_400_000) : Date.parse(normalized)
   if (!Number.isFinite(timestamp)) throw new Error('invalid_date')
   return new Date(timestamp).toISOString()

@@ -96,23 +96,44 @@ function normalizeSession(payload: Record<string, unknown>): SupabaseSession {
 }
 
 export function readStoredSession(): SupabaseSession | null {
+  // Prefer durable browser storage so the owner remains signed in after closing the tab.
+  // Migrate sessions created by older builds, which used sessionStorage.
+  let raw: string | null = null
+  try { raw = localStorage.getItem(SESSION_KEY) } catch { /* Fall back below if storage is unavailable. */ }
+  if (!raw) {
+    try { raw = sessionStorage.getItem(SESSION_KEY) } catch { /* Storage may be disabled by the browser. */ }
+  }
+  if (!raw) return null
+
   try {
-    const raw = sessionStorage.getItem(SESSION_KEY)
-    if (!raw) return null
     const value = JSON.parse(raw) as SupabaseSession
-    if (!value.access_token || !value.refresh_token || !value.user?.id) return null
+    if (!value.access_token || !value.refresh_token || !value.user?.id) {
+      clearStoredSession()
+      return null
+    }
+    storeSession(value)
     return value
   } catch {
+    clearStoredSession()
     return null
   }
 }
 
 function storeSession(session: SupabaseSession) {
-  sessionStorage.setItem(SESSION_KEY, JSON.stringify(session))
+  const serialized = JSON.stringify(session)
+  try {
+    localStorage.setItem(SESSION_KEY, serialized)
+    try { sessionStorage.removeItem(SESSION_KEY) } catch { /* Durable copy is already saved. */ }
+  } catch {
+    // Keep the current tab working if durable storage is blocked; persistence across tabs
+    // is unavailable in that browser mode, but sign-in itself should not fail.
+    try { sessionStorage.setItem(SESSION_KEY, serialized) } catch { /* Browser storage is disabled. */ }
+  }
 }
 
 export function clearStoredSession() {
-  sessionStorage.removeItem(SESSION_KEY)
+  try { localStorage.removeItem(SESSION_KEY) } catch { /* Ignore unavailable storage. */ }
+  try { sessionStorage.removeItem(SESSION_KEY) } catch { /* Ignore unavailable storage. */ }
 }
 
 export function signInWithGoogle() {

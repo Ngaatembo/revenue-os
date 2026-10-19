@@ -4,14 +4,16 @@ Revenue OS helps a business identify, prioritize, execute, and measure revenue o
 
 ## Current MVP
 
-The current build has two connected work areas:
+The current product includes these connected work areas:
 
 - **Invoice recovery:** import an invoice CSV, set an explicit recovery-rate assumption, and deterministically identify overdue balances. Invoice rows and recovery-rate assumptions are stored in Supabase. Opportunity estimates are recalculated from those source records when the workspace loads.
 - **Lead Recovery:** sign in, create a workspace, record enquiries and follow-ups, and track pipeline status. Lead records are stored in Supabase Postgres and scoped to the authenticated organization by row-level security.
 - **Approval-gated recovery actions:** create an invoice-linked reminder draft from an overdue invoice, approve it, copy it to send manually, and only then mark it as sent. Revenue OS never sends customer messages automatically.
-- **Payment evidence and outcomes:** import a payment CSV, match records to unique invoice numbers and currencies, and verify payments received within 30 days after a manually sent action. Outcomes are labelled as observed after the action, not caused by it.
+- **Payment evidence and outcomes:** import a payment CSV, match records to unique invoice numbers and currencies, and verify payments received within the measurement window after a manually sent action. Outcomes are labelled as observed after the action, not caused by it.
+- **Google Sheets:** authorize a Google account through OAuth and import invoice rows from a selected spreadsheet range. Access is read-only; Revenue OS does not edit the spreadsheet or send messages.
+- **Business Brain and prioritization:** present ranked work queues, explain recommendations, and distinguish saved source records from calculated estimates.
 
-Lead Recovery does not send WhatsApp messages or email, and a user-marked conversion is not independently verified revenue. Actions remain human-controlled.
+Lead Recovery does not send WhatsApp messages or email. A user-marked conversion is not independently verified revenue. Actions remain human-controlled. Google Sheets authorization does not itself mean an import has succeeded; check the sync result and last-successful-sync status.
 
 ## Supabase configuration
 
@@ -31,8 +33,31 @@ The migration `supabase/migrations/20261014094640_sales_leads_and_org_bootstrap.
 - All client requests use the publishable key and the signed-in user's access token; no service-role key is used by the frontend.
 - RLS policies scope lead reads to organization membership and writes to owner/admin/operator roles.
 - The browser never chooses the authenticated user ID or grants itself a role.
-- Before importing real customer financial data, test authentication and organization isolation with separate accounts, confirm import idempotency and partial-payment behavior, and review access logs. Payment evidence and the complete approval/action workflow are still outstanding.
+- Before importing real customer financial data, test authentication and organization isolation with separate accounts, confirm import idempotency and partial-payment behavior, and review access logs.
 - The current lightweight auth wrapper uses Supabase Auth endpoints and keeps the session in `sessionStorage`. For a production release, review session handling, recovery flows, rate limits, and security headers before onboarding customers.
+
+## Google Sheets OAuth configuration
+
+The Worker handles the server-side OAuth callback and token storage. Configure these values in Cloudflare Worker secrets/variables; never commit secret values:
+
+- `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` from the Google Cloud OAuth client.
+- `GOOGLE_TOKEN_ENCRYPTION_KEY`: exactly 64 hexadecimal characters (32 random bytes). Keep the same key once encrypted tokens exist; rotating it can make stored tokens unreadable.
+- `APP_ORIGIN`: the exact Worker origin used by the app, with no path or trailing slash.
+- `SUPABASE_URL`, `SUPABASE_ANON_KEY` and `SUPABASE_SERVICE_ROLE_KEY` for the server-side integration. The service-role key must only exist in Worker secrets, never in Vite/browser variables.
+
+Register this exact redirect URI on the Google OAuth client (replace the host only if the production Worker hostname changes):
+
+```text
+https://revenue-os.ngaatendwew.workers.dev/api/integrations/google/callback
+```
+
+For an OAuth app in **Testing** publishing status, add every intended Google account under Google Auth Platform → Audience → Test users. Keep requested scopes limited to what the feature uses. Uploading a logo or submitting for verification is not required merely to test with an allow-listed account.
+
+In the app, open **Connections → Google Sheets**, authorize the account, paste the spreadsheet URL or ID, choose the invoice range including its header row (default `A:H`), then run the sync. The first row must contain these exact column names in order:
+
+```text
+customer_id,customer_name,invoice_number,currency,total_amount,paid_amount,issued_at,due_at
+```
 
 ## Invoice CSV format
 
@@ -74,13 +99,29 @@ npm run dev
 
 On Windows PowerShell, use `Copy-Item .env.example .env.local` instead of `cp`. The example file contains placeholders; the built-in public project defaults are used unless you replace them with valid environment variables.
 
-## Next engineering milestones
+## Release and deployment checks
 
-1. Persist invoice imports and recovery assumptions through authenticated Supabase operations.
-2. Build the approval-gated action workflow and payment-evidence import.
-3. Verify payment attribution against source records and distinguish observed outcomes from causal claims.
-4. Add integration tests for authentication, tenant isolation, duplicate imports, partial payments, and failed requests.
-5. Run a supervised pilot with synthetic data first, then a consenting WebAura client once the full financial-data workflow is secure.
+The production frontend and API are served by a Cloudflare Worker configured in `wrangler.jsonc`. The repository's GitHub Actions workflow validates pull requests and pushes to `main`; CI success alone does not prove the production Worker has deployed.
+
+Before a release:
+
+1. Require successful build/type-check, domain tests, lint, and database/security tests.
+2. Confirm the production Worker deployment completed and inspect its deployment log.
+3. Check `/api/health` returns `{"status":"ok","supabase":"reachable"}`.
+4. Test sign-in, workspace separation, invoice import, Google Sheets OAuth and sync, and failure handling with synthetic data.
+5. Verify desktop and mobile layouts in both light and dark mode.
+6. Only then use real customer financial data, with their consent and appropriate access controls.
+
+Useful commands:
+
+```sh
+npm run build
+npm run test:domain
+npm run lint
+npm run cf:deploy
+```
+
+The deploy command requires an authenticated Cloudflare Wrangler session. Never paste API tokens or service-role keys into chat, source files, or frontend build variables.
 
 ## Database tests
 

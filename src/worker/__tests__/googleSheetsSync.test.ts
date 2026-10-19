@@ -16,6 +16,16 @@ test('maps valid spreadsheet rows to the invoice import shape', () => {
   assert.equal(result.rejectedRows, 0)
 })
 
+test('maps common business-friendly column names automatically', () => {
+  const result = parseSheetInvoiceValues([
+    ['Client ID', 'Customer', 'Invoice No.', 'CCY', 'Invoice Amount', 'Amount Paid', 'Invoice Date', 'Due Date'],
+    ['c-1', 'Example Customer', 'INV-1', 'USD', '120.50', '20', '2026-01-01', '2026-02-01'],
+  ], 'gsheet:abc', '2026-10-19T00:00:00.000Z')
+  assert.equal(result.rows.length, 1)
+  assert.equal(result.rows[0].customerName, 'Example Customer')
+  assert.equal(result.rows[0].invoiceNumber, 'INV-1')
+})
+
 test('rejects invalid rows without discarding valid rows', () => {
   const result = parseSheetInvoiceValues([
     header,
@@ -27,7 +37,7 @@ test('rejects invalid rows without discarding valid rows', () => {
   assert.equal(result.rejectedRows, 2)
 })
 
-test('requires the same invoice columns as CSV imports', () => {
+test('reports missing required invoice columns', () => {
   assert.throws(() => parseSheetInvoiceValues([['invoice_number'], ['INV-1']], 'gsheet:abc', '2026-10-19T00:00:00.000Z'), /missing_columns/)
 })
 

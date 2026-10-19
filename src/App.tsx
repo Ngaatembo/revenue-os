@@ -346,7 +346,7 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
       const allIssues = [...result.issues, ...duplicates].sort((a, b) => a.row - b.row)
       setIssues(allIssues)
       setSourceName(file.name)
-      setActiveSection('Overview')
+      setActiveSection('Opportunities')
       const limit = checkInvoiceImportSize(plan, fresh.length)
       if (!limit.allowed) { setError(limit.message); return }
       if (fresh.length === 0) {

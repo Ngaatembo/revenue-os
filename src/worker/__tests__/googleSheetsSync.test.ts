@@ -32,9 +32,11 @@ test('requires the same invoice columns as CSV imports', () => {
 })
 
 test('rejects duplicate invoice numbers in one sheet range', () => {
-  assert.throws(() => parseSheetInvoiceValues([
+  const result = parseSheetInvoiceValues([
     header,
     ['c-1', 'Good', 'INV-1', 'USD', '10', '0', '2026-01-01', '2026-02-01'],
     ['c-2', 'Good 2', 'INV-1', 'USD', '12', '0', '2026-01-01', '2026-02-01'],
-  ], 'gsheet:abc', '2026-10-19T00:00:00.000Z'), /no_valid_invoice_rows|/)
+  ], 'gsheet:abc', '2026-10-19T00:00:00.000Z')
+  assert.equal(result.rows.length, 1)
+  assert.equal(result.rejectedRows, 1)
 })

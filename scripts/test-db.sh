@@ -29,6 +29,8 @@ OUT5=$(psql_db -f supabase/tests/05_business_brain.sql 2>&1)
 echo "$OUT5" | sed -n '/===== BRAIN RESULTS =====/,$p'
 OUT6=$(psql_db -f supabase/tests/06_scheduled_evaluation.sql 2>&1)
 echo "$OUT6" | sed -n '/===== SCHEDULE RESULTS =====/,$p'
+OUT7=$(psql_db -f supabase/tests/07_business_records.sql 2>&1)
+echo "$OUT7" | sed -n '/===== RECORDS RESULTS =====/,$p'
 FAILED=$(psql_db -tAc "select count(*) from t.results where not ok")
 if [ "$FAILED" != "0" ]; then echo "DB TESTS FAILED: $FAILED" >&2; exit 1; fi
 echo "DB TESTS PASSED"

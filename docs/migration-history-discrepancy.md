@@ -22,6 +22,9 @@ Not yet applied to hosted (apply in this order, each once; owner approval needed
    recovery-rate changes. Independent of (1).
 3. `20261019220000_scheduled_evaluation.sql`: daily background re-check and run log. Needs (1). It schedules
    itself with pg_cron only if that extension is available; otherwise it prints a notice and nothing is scheduled.
+4. `20261020100000_business_records.sql`: quotations, deposits, tasks, action owners, payment review queue,
+   workspace member list; replaces `persist_payment_import` so unmatched/ambiguous payments are queued for review
+   instead of rejecting the file. Needs (1)-(3) (extends the evaluation run).
 
 Apply through the project's normal migration workflow, then re-check `list_migrations`.
 Never re-apply a version that is already listed.

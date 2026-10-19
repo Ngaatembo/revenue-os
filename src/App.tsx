@@ -16,9 +16,9 @@ import { createSalesLead, deleteSalesLead, loadInvoices, loadRecoveryRate, loadS
 import './App.css'
 import './design.css'
 
-type Section = 'Overview' | 'Opportunities' | 'Lead Recovery' | 'Actions' | 'Outcomes' | 'Business Brain' | 'Connections'
+type Section = 'Overview' | 'Urgent' | 'Opportunities' | 'Lead Recovery' | 'Actions' | 'Outcomes' | 'Business Brain' | 'Connections'
 
-const sections: Section[] = ['Overview', 'Opportunities', 'Lead Recovery', 'Actions', 'Outcomes', 'Business Brain', 'Connections']
+const sections: Section[] = ['Overview', 'Urgent', 'Opportunities', 'Lead Recovery', 'Actions', 'Outcomes', 'Business Brain', 'Connections']
 const invoiceCsvHeader = 'customer_id,customer_name,invoice_number,currency,total_amount,paid_amount,issued_at,due_at\n'
 
 function downloadCsvTemplate() {
@@ -404,7 +404,7 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
         <p className="nav-label">WORKSPACE</p>
         <nav className="primary-nav">
           {sections.map((section) => {
-            const icon = section === 'Overview' ? 'grid' : section === 'Opportunities' ? 'spark' : section === 'Lead Recovery' ? 'check' : section === 'Actions' ? 'check' : section === 'Outcomes' ? 'chart' : section === 'Connections' ? 'plug' : 'brain'
+            const icon = section === 'Overview' ? 'grid' : section === 'Urgent' ? 'clock' : section === 'Opportunities' ? 'spark' : section === 'Lead Recovery' ? 'check' : section === 'Actions' ? 'check' : section === 'Outcomes' ? 'chart' : section === 'Connections' ? 'plug' : 'brain'
             return <button key={section} className={`nav-item ${activeSection === section ? 'active' : ''}`} onClick={() => setActiveSection(section)}>
               <Icon name={icon} /><span>{section}</span>
               {section === 'Opportunities' && opportunities.length > 0 && <span className="nav-count">{opportunities.length}</span>}
@@ -437,7 +437,7 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
           {loadError && <div className="alert alert-error" role="alert"><strong>Could not load your saved data.</strong> {loadError} Your records are not lost; reload the page to try again.</div>}
           {store.note && <div className={'alert ' + (store.noteIsError ? 'alert-error' : 'alert-info')} role={store.noteIsError ? 'alert' : 'status'}>{store.note}</div>}
 
-          {activeSection === 'Overview' || activeSection === 'Opportunities' ? (
+          {activeSection === 'Overview' || activeSection === 'Opportunities' || activeSection === 'Urgent' ? (
             <>
               {activeSection === 'Overview' && <section className="daily-brief panel" aria-labelledby="daily-brief-title">
                 <div className="daily-brief-heading"><div><p className="eyebrow">YOUR BUSINESS AT A GLANCE</p><h2 id="daily-brief-title">Daily brief</h2><p>Built from the records currently saved in this workspace. It refreshes when you open Revenue OS; external services are not yet monitored in the background.</p></div><span className="daily-brief-date">{new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date())}</span></div>
@@ -458,7 +458,7 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
 
               <section className="work-grid">
                 <div className="panel opportunity-panel">
-                  <div className="panel-heading"><div><h2>{activeSection === 'Opportunities' ? 'Revenue opportunities' : 'Priority opportunities'}</h2><p>Based on imported records and your stated assumptions.</p></div>{store.syncing ? <span className="status-pill">Refreshing…</span> : opportunities.length > 0 && <span className="status-pill">{opportunities.length} open</span>}</div>
+                  <div className="panel-heading"><div><h2>{activeSection === 'Urgent' ? 'Urgent attention queue' : activeSection === 'Opportunities' ? 'Revenue opportunities' : 'Priority opportunities'}</h2><p>{activeSection === 'Urgent' ? 'Critical and high-priority overdue invoices, ranked by how late they are.' : 'Based on imported records and your stated assumptions.'}</p></div>{store.syncing ? <span className="status-pill">Refreshing…</span> : opportunities.length > 0 && <span className="status-pill">{opportunities.length} open</span>}</div>
                   {invoicesLoading ? (
                     <div className="empty-state compact" role="status"><h3>Loading your saved invoices…</h3><p>Checking this workspace for imported records.</p></div>
                   ) : loadError && invoices.length === 0 ? (
@@ -470,7 +470,7 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
                   ) : opportunities.length === 0 ? (
                     <div className="empty-state compact"><span className="empty-icon"><Icon name="check" /></span><h3>No overdue balances matched</h3><p>{outstandingInvoiceCount ? 'There are outstanding invoices, but none meet the overdue rule as of today.' : 'Imported invoices show no unpaid balances.'}</p></div>
                   ) : (
-                    <div className="opportunity-list">{rankedOpportunities.map((ranked, index) => <OpportunityRow key={ranked.opportunity.id} ranked={ranked} rank={index + 1} progress={progressByInvoiceId.get(ranked.opportunity.evidence[0]?.id) ?? 'none'} onPropose={() => void handleProposeReminder(ranked.opportunity)} onViewActions={() => setActiveSection('Actions')} proposing={actionBusy === ranked.opportunity.evidence[0]?.id} />)}</div>
+                    <div className="opportunity-list">{(activeSection === 'Urgent' ? rankedOpportunities.filter((ranked) => ranked.urgency >= 3) : rankedOpportunities).map((ranked, index) => <OpportunityRow key={ranked.opportunity.id} ranked={ranked} rank={index + 1} progress={progressByInvoiceId.get(ranked.opportunity.evidence[0]?.id) ?? 'none'} onPropose={() => void handleProposeReminder(ranked.opportunity)} onViewActions={() => setActiveSection('Actions')} proposing={actionBusy === ranked.opportunity.evidence[0]?.id} />)}</div>
                   )}
                 </div>
 
@@ -526,7 +526,7 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
         </div>
       </main>
 
-      <nav className="mobile-nav" aria-label="Mobile navigation">{sections.map((section) => <button key={section} className={activeSection === section ? 'active' : ''} onClick={() => setActiveSection(section)} aria-label={section}><Icon name={section === 'Overview' ? 'grid' : section === 'Opportunities' ? 'spark' : section === 'Lead Recovery' ? 'check' : section === 'Actions' ? 'check' : section === 'Outcomes' ? 'chart' : section === 'Connections' ? 'plug' : 'brain'} /><span>{section}</span></button>)}</nav>
+      <nav className="mobile-nav" aria-label="Mobile navigation">{sections.map((section) => <button key={section} className={activeSection === section ? 'active' : ''} onClick={() => setActiveSection(section)} aria-label={section}><Icon name={section === 'Overview' ? 'grid' : section === 'Urgent' ? 'clock' : section === 'Opportunities' ? 'spark' : section === 'Lead Recovery' ? 'check' : section === 'Actions' ? 'check' : section === 'Outcomes' ? 'chart' : section === 'Connections' ? 'plug' : 'brain'} /><span>{section}</span></button>)}</nav>
     </div>
   )
 }

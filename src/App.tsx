@@ -12,7 +12,7 @@ import { buildRecommendation } from './domain/recommendation'
 import { classifySyncFailure } from './lib/opportunityQueries'
 import { BILLING_STATUS, checkInvoiceImportSize, checkLeadCapacity, getPlan } from './domain/plans'
 import type { InvoiceEvidence, RevenueOpportunity } from './domain/types'
-import { createSalesLead, deleteSalesLead, loadInvoices, loadRecoveryRate, loadSalesLeads, persistInvoiceImport, saveRecoveryRate, sha256Hex, updateSalesLead, type RevenueOrganization, type SalesLead, type SupabaseSession, type RecoveryAction, type VerifiedOutcome, loadRecoveryActions, loadVerifiedOutcomes, persistPaymentImport, proposeInvoiceReminder, transitionRecoveryAction, verifyRecoveryOutcome, loadOpenOpportunities, syncOverdueOpportunities, type OpportunitySyncResult, loadLeadActivities, recordLeadActivity, type LeadActivity, type LeadActivityType } from './lib/supabaseRest'
+import { getFreshSession, createSalesLead, deleteSalesLead, loadInvoices, loadRecoveryRate, loadSalesLeads, persistInvoiceImport, saveRecoveryRate, sha256Hex, updateSalesLead, type RevenueOrganization, type SalesLead, type SupabaseSession, type RecoveryAction, type VerifiedOutcome, loadRecoveryActions, loadVerifiedOutcomes, persistPaymentImport, proposeInvoiceReminder, transitionRecoveryAction, verifyRecoveryOutcome, loadOpenOpportunities, syncOverdueOpportunities, type OpportunitySyncResult, loadLeadActivities, recordLeadActivity, type LeadActivity, type LeadActivityType } from './lib/supabaseRest'
 import './App.css'
 import './design.css'
 
@@ -71,6 +71,140 @@ type OpportunityStore = {
 
 type LeadRecord = SalesLead
 type LeadStatus = SalesLead['status']
+
+type GoogleConnectionState = { status?: string; provider_account_email?: string | null; last_successful_sync_at?: string | null; last_error_code?: string | null }
+
+function GoogleSheetsConnector({ session, organization, onSynced }: { session: SupabaseSession; organization: RevenueOrganization; onSynced: () => Promise<void> }) {
+  const [connection, setConnection] = useState<GoogleConnectionState>({ status: 'loading' })
+  const [spreadsheet, setSpreadsheet] = useState('')
+  const [range, setRange] = useState('A:H')
+  const [busy, setBusy] = useState('')
+  const [notice, setNotice] = useState('')
+  const [noticeError, setNoticeError] = useState(false)
+
+  const loadStatus = useCallback(async () => {
+    try {
+      const current = await getFreshSession(session)
+      const response = await fetch(`/api/integrations/google/status?organization_id=${encodeURIComponent(organization.id)}`, {
+        headers: { Authorization: `Bearer ${current.access_token}` },
+      })
+      const payload = await response.json().catch(() => ({})) as { connection?: GoogleConnectionState; message?: string }
+      if (!response.ok) throw new Error(payload.message || (response.status === 503 ? 'Google Sheets server configuration is missing.' : 'Could not check Google Sheets connection.'))
+      setConnection(payload.connection ?? { status: 'disconnected' })
+    } catch (cause) {
+      setConnection({ status: 'unavailable' })
+      setNotice(cause instanceof Error ? cause.message : 'Could not check Google Sheets connection.')
+      setNoticeError(true)
+    }
+  }, [session, organization.id])
+
+  useEffect(() => {
+    void loadStatus()
+    const result = new URLSearchParams(window.location.search).get('google_sheets')
+    if (result === 'connected') {
+      setNotice('Google authorisation succeeded. Enter a spreadsheet ID and run a sync.')
+      setNoticeError(false)
+    } else if (result === 'failed') {
+      setNotice('Google authorisation did not complete. Check OAuth settings and try again.')
+      setNoticeError(true)
+    }
+    if (result) {
+      const url = new URL(window.location.href)
+      url.searchParams.delete('google_sheets')
+      window.history.replaceState(null, document.title, url.pathname + url.search + url.hash)
+    }
+  }, [loadStatus])
+
+  async function connect() {
+    setBusy('connect')
+    setNotice('')
+    try {
+      const current = await getFreshSession(session)
+      const response = await fetch(`/api/integrations/google/start?organization_id=${encodeURIComponent(organization.id)}`, {
+        headers: { Authorization: `Bearer ${current.access_token}` },
+      })
+      const payload = await response.json().catch(() => ({})) as { authorization_url?: string; message?: string; error?: string }
+      if (!response.ok || !payload.authorization_url) throw new Error(payload.message || (payload.error === 'google_sheets_not_configured' ? 'Google Sheets is not configured on the live Worker yet. Configure its Google OAuth and Supabase secrets first.' : 'Could not start Google authorisation.'))
+      window.location.assign(payload.authorization_url)
+    } catch (cause) {
+      setNotice(cause instanceof Error ? cause.message : 'Could not start Google authorisation.')
+      setNoticeError(true)
+      setBusy('')
+    }
+  }
+
+  async function disconnect() {
+    setBusy('disconnect')
+    setNotice('')
+    try {
+      const current = await getFreshSession(session)
+      const response = await fetch('/api/integrations/google/disconnect', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${current.access_token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ organization_id: organization.id }),
+      })
+      const payload = await response.json().catch(() => ({})) as { message?: string }
+      if (!response.ok) throw new Error(payload.message || 'Could not disconnect Google Sheets.')
+      setConnection({ status: 'disconnected' })
+      setNotice('Google Sheets has been disconnected.')
+      setNoticeError(false)
+    } catch (cause) {
+      setNotice(cause instanceof Error ? cause.message : 'Could not disconnect Google Sheets.')
+      setNoticeError(true)
+    } finally {
+      setBusy('')
+    }
+  }
+
+  async function sync() {
+    const match = spreadsheet.match(/\/spreadsheets\/d\/([A-Za-z0-9_-]+)/)
+    const spreadsheetId = match?.[1] ?? spreadsheet.trim()
+    if (!spreadsheetId) {
+      setNotice('Paste a Google Sheets URL or spreadsheet ID first.')
+      setNoticeError(true)
+      return
+    }
+    setBusy('sync')
+    setNotice('')
+    try {
+      const current = await getFreshSession(session)
+      const response = await fetch('/api/integrations/google/sync', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${current.access_token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ organization_id: organization.id, spreadsheet_id: spreadsheetId, range: range.trim() || 'A:H' }),
+      })
+      const payload = await response.json().catch(() => ({})) as { accepted_rows?: number; rejected_rows?: number; duplicate?: boolean; message?: string; error?: string }
+      if (!response.ok) throw new Error(payload.message || payload.error || 'Google Sheets sync failed.')
+      await onSynced()
+      await loadStatus()
+      setNotice(`Sync complete: ${payload.accepted_rows ?? 0} invoice row(s) accepted, ${payload.rejected_rows ?? 0} rejected.${payload.duplicate ? ' This data matched an existing import.' : ''}`)
+      setNoticeError(false)
+    } catch (cause) {
+      setNotice(cause instanceof Error ? cause.message : 'Google Sheets sync failed.')
+      setNoticeError(true)
+    } finally {
+      setBusy('')
+    }
+  }
+
+  const connected = connection.status === 'connected'
+  return <article className="connection-source-card">
+    <div className="connection-source-top"><span className="source-icon"><Icon name="grid" /></span><span className={connected ? 'connection-pill connection-pill-ready' : 'connection-pill'}>{connection.status === 'loading' ? 'Checking…' : connected ? 'Authorised' : connection.status === 'unavailable' ? 'Status unavailable' : 'Not connected'}</span></div>
+    <h3>Google Sheets</h3>
+    <p>Read invoice rows from a spreadsheet into this workspace. Access is read-only; Revenue Eyes will not edit your sheet or send messages.</p>
+    {connected && <small>Google account: {connection.provider_account_email || 'Connected account'}{connection.last_successful_sync_at ? ` · Last sync ${new Date(connection.last_successful_sync_at).toLocaleString()}` : ' · No successful sync yet'}</small>}
+    {!connected ? <button className="button button-secondary" type="button" onClick={() => void connect()} disabled={busy !== '' || connection.status === 'loading'}>{busy === 'connect' ? 'Opening Google…' : 'Connect Google Sheets'}</button> : <>
+      <label className="field-label" htmlFor="google-spreadsheet">Spreadsheet URL or ID</label>
+      <input id="google-spreadsheet" value={spreadsheet} onChange={(event) => setSpreadsheet(event.target.value)} placeholder="Paste Google Sheets URL or ID" />
+      <label className="field-label" htmlFor="google-range">Invoice range (include header row)</label>
+      <input id="google-range" value={range} onChange={(event) => setRange(event.target.value)} placeholder="A:H or Invoices!A:H" />
+      <button className="button button-secondary" type="button" onClick={() => void sync()} disabled={busy !== ''}>{busy === 'sync' ? 'Syncing invoices…' : 'Sync invoices'}</button>
+      <button className="template-link" type="button" onClick={() => void disconnect()} disabled={busy !== ''}>{busy === 'disconnect' ? 'Disconnecting…' : 'Disconnect Google'}</button>
+    </>}
+    {notice && <p className={noticeError ? 'field-error' : 'brain-note'} role={noticeError ? 'alert' : 'status'}>{notice}</p>}
+    {connection.last_error_code && <small>Last sync error: {connection.last_error_code}</small>}
+  </article>
+}
 
 function App({ session, organization, onSignOut }: { session: SupabaseSession; organization: RevenueOrganization; onSignOut: () => void }) {
   const fileRef = useRef<HTMLInputElement>(null)
@@ -514,7 +648,7 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
               <section className="panel"><div className="panel-heading"><div><h2>Connect your business once</h2><p>Choose the systems Revenue OS should read. A connection is only active after authorization and a successful sync.</p></div><span className="status-pill">Connection centre</span></div>
                 <div className="connection-source-grid">
                   <article className="connection-source-card"><div className="connection-source-top"><span className="source-icon"><Icon name="upload" /></span><span className={invoices.length ? 'connection-pill connection-pill-ready' : 'connection-pill'}>{invoices.length ? 'Data available' : 'No data yet'}</span></div><h3>Invoice CSV</h3><p>Current supported source. Import records to detect overdue balances and estimate possible recovery.</p><small>{invoices.length} invoice record(s) currently loaded · saved records are used where available.</small><button className="button button-secondary" type="button" onClick={() => fileRef.current?.click()}>Import invoices</button></article>
-                  <article className="connection-source-card"><div className="connection-source-top"><span className="source-icon"><Icon name="grid" /></span><span className="connection-pill">Not connected</span></div><h3>Google Sheets / Drive</h3><p>Planned first live connector for business spreadsheets and selected files.</p><small>Requires a dedicated Google OAuth integration and approved scopes. Google sign-in alone does not grant data access.</small><button className="button button-secondary" type="button" disabled>Connect Google data · coming next</button></article>
+                  <GoogleSheetsConnector session={session} organization={organization} onSynced={async () => { const loaded = await loadInvoices(session, organization.id); setInvoices(loaded); setInvoicesLoading(false); await refreshOpportunities(loaded, assumptionBps !== null) }} />
                   <article className="connection-source-card"><div className="connection-source-top"><span className="source-icon"><Icon name="check" /></span><span className="connection-pill">Not connected</span></div><h3>Email and enquiries</h3><p>Future source for detecting unanswered enquiries and commitments that need follow-up.</p><small>No mailbox is currently being read and no messages are sent automatically.</small><button className="button button-secondary" type="button" disabled>Connect email · planned</button></article>
                 </div>
               </section>

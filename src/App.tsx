@@ -99,20 +99,22 @@ function GoogleSheetsConnector({ session, organization, onSynced }: { session: S
   }, [session, organization.id])
 
   useEffect(() => {
-    void loadStatus()
     const result = new URLSearchParams(window.location.search).get('google_sheets')
-    if (result === 'connected') {
-      setNotice('Google authorisation succeeded. Enter a spreadsheet ID and run a sync.')
-      setNoticeError(false)
-    } else if (result === 'failed') {
-      setNotice('Google authorisation did not complete. Check OAuth settings and try again.')
-      setNoticeError(true)
-    }
     if (result) {
       const url = new URL(window.location.href)
       url.searchParams.delete('google_sheets')
       window.history.replaceState(null, document.title, url.pathname + url.search + url.hash)
     }
+    queueMicrotask(() => {
+      void loadStatus()
+      if (result === 'connected') {
+        setNotice('Google authorisation succeeded. Enter a spreadsheet ID and run a sync.')
+        setNoticeError(false)
+      } else if (result === 'failed') {
+        setNotice('Google authorisation did not complete. Check OAuth settings and try again.')
+        setNoticeError(true)
+      }
+    })
   }, [loadStatus])
 
   async function connect() {

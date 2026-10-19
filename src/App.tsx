@@ -193,7 +193,7 @@ function GoogleSheetsConnector({ session, organization, onSynced }: { session: S
   return <article className="connection-source-card">
     <div className="connection-source-top"><span className="source-icon"><Icon name="grid" /></span><span className={connected ? 'connection-pill connection-pill-ready' : 'connection-pill'}>{connection.status === 'loading' ? 'Checking…' : connected ? 'Authorised' : connection.status === 'unavailable' ? 'Status unavailable' : 'Not connected'}</span></div>
     <h3>Google Sheets</h3>
-    <p>Read invoice rows from a spreadsheet into this workspace. Access is read-only; Revenue Eyes will not edit your sheet or send messages.</p>
+    <p>Read invoice rows from a spreadsheet into this workspace. Access is read-only; Revenue OS will not edit your sheet or send messages.</p>
     {connected && <small>Google account: {connection.provider_account_email || 'Connected account'}{connection.last_successful_sync_at ? ` · Last sync ${new Date(connection.last_successful_sync_at).toLocaleString()}` : ' · No successful sync yet'}</small>}
     {!connected ? <button className="button button-secondary" type="button" onClick={() => void connect()} disabled={busy !== '' || connection.status === 'loading'}>{busy === 'connect' ? 'Opening Google…' : 'Connect Google Sheets'}</button> : <>
       <label className="field-label" htmlFor="google-spreadsheet">Spreadsheet URL or ID</label>

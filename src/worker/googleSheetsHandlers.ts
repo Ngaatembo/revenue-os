@@ -53,6 +53,25 @@ function safeAppOrigin(request: Request, env: Env) {
   const incoming = new URL(request.url).origin
   return configured && configured === incoming ? configured : null
 }
+/** Turn safe internal sync codes into next steps a non-technical business owner can act on. */
+export function googleSheetsSyncErrorMessage(code: string): string {
+  if (code.startsWith('missing_columns:')) {
+    const fields = code.slice('missing_columns:'.length).split(',').filter(Boolean).join(', ')
+    return fields ? 'Your sheet is missing these invoice fields: ' + fields + '. Add them to the header row, or use the Revenue OS invoice template.' : 'Your sheet is missing required invoice columns. Use the Revenue OS invoice template.'
+  }
+  if (code.startsWith('ambiguous_sheet_headers:')) return 'Two columns look like the same invoice field. Keep one column for each field and try again.'
+  if (code === 'duplicate_sheet_headers') return 'The header row contains duplicate column names. Rename the duplicate columns and try again.'
+  if (code === 'sheet_needs_header_and_rows') return 'This range needs a header row followed by at least one invoice row.'
+  if (code === 'no_valid_invoice_rows') return 'The headers were recognised, but no invoice rows were valid. Check customer names, invoice numbers, currency, amounts and dates.'
+  if (code === 'invalid_spreadsheet_id' || code === 'google_sheet_not_found') return 'We could not find that spreadsheet. Check that the URL or ID is correct.'
+  if (code === 'google_sheet_access_denied') return 'Google could not read this sheet. Make sure the connected Google account has at least Viewer access to it.'
+  if (code === 'google_token_refresh_failed') return 'Google access has expired or been revoked. Disconnect Google Sheets, reconnect it, and try again.'
+  if (code === 'invalid_range') return 'Enter a valid sheet range, such as Invoices!A:H, including the header row.'
+  if (code === 'invoice_import_persist_failed') return 'The sheet was read, but Revenue OS could not save the invoices. No successful sync was recorded; try again shortly.'
+  if (code === 'duplicate_sheet_headers') return 'The header row contains duplicate column names. Rename the duplicate columns and try again.'
+  return 'Google Sheets could not be synced. Check the sheet range, required invoice fields, and access, then try again.'
+}
+
 function appRedirect(origin: string, result: string) {
   const target = new URL('/', origin)
   target.searchParams.set('google_sheets', result)
@@ -220,8 +239,8 @@ export async function handleGoogleSheets(request: Request, env: Env): Promise<Re
         method: 'PATCH', headers: { Prefer: 'return=minimal' },
         body: JSON.stringify({ last_error_code: safeCode, updated_at: new Date().toISOString() }),
       }).catch(() => undefined)
-      const status = safeCode === 'google_sheet_access_denied' ? 403 : safeCode === 'google_sheet_not_found' ? 404 : safeCode.startsWith('missing_columns:') || safeCode === 'no_valid_invoice_rows' || safeCode === 'sheet_needs_header_and_rows' ? 422 : 502
-      return response({ error: safeCode, message: safeCode.startsWith('missing_columns:') ? 'The sheet is missing required invoice columns.' : 'Google Sheets sync failed. Check the spreadsheet ID, range, access, and required invoice columns.' }, status)
+      const status = safeCode === 'google_sheet_access_denied' ? 403 : safeCode === 'google_sheet_not_found' ? 404 : safeCode.startsWith('missing_columns:') || safeCode.startsWith('ambiguous_sheet_headers:') || ['duplicate_sheet_headers', 'no_valid_invoice_rows', 'sheet_needs_header_and_rows', 'invalid_range'].includes(safeCode) ? 422 : 502
+      return response({ error: safeCode, message: googleSheetsSyncErrorMessage(safeCode) }, status)
     }
   }
 

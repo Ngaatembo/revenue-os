@@ -170,3 +170,11 @@ test('output is deterministic: same inputs, same order', () => {
   const b = evaluateAttention({ ...c, opportunities: [...c.opportunities].reverse() }).items.map((i) => i.id)
   assert.deepEqual(a, b)
 })
+
+import { actionStatusLabel } from '../actions.ts'
+test('a sent reminder is never labelled as completed or successful', () => {
+  for (const status of ['proposed', 'approved', 'executed', 'failed', 'cancelled'] as const) {
+    assert.doesNotMatch(actionStatusLabel(status), /complete|success|done|recovered|paid/i)
+  }
+  assert.match(actionStatusLabel('executed'), /outcome not confirmed/)
+})

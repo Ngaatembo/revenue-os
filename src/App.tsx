@@ -14,6 +14,7 @@ import { BILLING_STATUS, checkInvoiceImportSize, checkLeadCapacity, getPlan } fr
 import type { InvoiceEvidence, RevenueOpportunity } from './domain/types'
 import { getFreshSession, createSalesLead, deleteSalesLead, loadInvoices, loadRecoveryRate, loadSalesLeads, persistInvoiceImport, saveRecoveryRate, sha256Hex, updateSalesLead, type RevenueOrganization, type SalesLead, type SupabaseSession, type RecoveryAction, type VerifiedOutcome, loadRecoveryActions, loadVerifiedOutcomes, persistPaymentImport, proposeInvoiceReminder, transitionRecoveryAction, verifyRecoveryOutcome, loadOpenOpportunities, syncOverdueOpportunities, type OpportunitySyncResult, loadLeadActivities, recordLeadActivity, type LeadActivity, type LeadActivityType, loadInvoiceInteractions, loadPaymentEvidence, recordInvoiceResponse, setOpportunityState, type InvoiceInteraction, loadBrainFacts, loadAssumptionHistory, recordBrainFact, retractBrainFact, resolveBrainConflict, type AssumptionChange, loadEvaluationRuns, type EvaluationRun } from './lib/supabaseRest'
 import { BusinessBrain } from './BusinessBrain'
+import { actionStatusLabel } from './domain/actions'
 import { AttentionQueue } from './AttentionQueue'
 import { evaluateAttention, summarizeAttention } from './domain/attention/engine'
 import { resolveAllSettings } from './domain/businessBrain'
@@ -898,7 +899,7 @@ function RecoveryActions({ actions, invoices, loading, busyId, notice, noticeIsE
       const invoice = invoiceById.get(action.invoiceId)
       const busy = busyId === action.id
       return <article className="recovery-action-card" key={action.id}>
-        <div className="recovery-action-top"><div><strong>{invoice ? invoice.customerName : action.recipientCustomerId}</strong><small>{invoice ? 'Invoice ' + invoice.invoiceNumber : 'Invoice record unavailable'} · Created {new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(action.proposedAt))}</small></div><span className={'action-status action-status-' + action.status}>{action.status.replace('_', ' ')}</span></div>
+        <div className="recovery-action-top"><div><strong>{invoice ? invoice.customerName : action.recipientCustomerId}</strong><small>{invoice ? 'Invoice ' + invoice.invoiceNumber : 'Invoice record unavailable'} · Created {new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(action.proposedAt))}</small></div><span className={'action-status action-status-' + action.status}>{actionStatusLabel(action.status)}</span></div>
         {invoice && <p className="action-context">Outstanding {formatMoney(money(invoice.total.amount - invoice.paid.amount, invoice.total.currency))} of {formatMoney(invoice.total)} · {daysOverdue(invoice.dueAt, new Date().toISOString())} day(s) past due. <strong>Next step:</strong> {action.status === 'proposed' ? 'review the draft and approve it.' : action.status === 'approved' ? 'send it yourself, then record that it was sent.' : action.status === 'executed' ? 'import payment evidence in Outcomes and check for a match.' : 'no further step.'}</p>}
         <p className="recovery-message">{action.message}</p>
         <div className="recovery-action-controls">

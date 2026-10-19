@@ -412,3 +412,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 .brain-fact small { color: #78847c; }
 .brain-conflicts { border-color: #e8c27a; }
 @media (max-width: 640px) { .brain-derived-item { grid-template-columns: 1fr; } .brain-setting-value, .brain-derived-item > div:last-of-type { justify-items: start; } }
+.attention-queue { display: grid; gap: 12px; padding: 0 22px 18px; }
+.attention-card { display: grid; gap: 6px; padding: 14px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+.attention-card header { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; align-items: center; }
+.attention-card p { margin: 0; font-size: 12px; line-height: 1.6; }

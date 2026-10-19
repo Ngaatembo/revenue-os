@@ -1,6 +1,6 @@
 import { isSupabaseConfigured } from './supabaseRest'
 
-const supabaseUrl = ((import.meta.env.VITE_SUPABASE_URL as string | undefined) || 'https://zivgfvcmposnbwqsudas.supabase.co').replace(/\\/$/, '')
+const supabaseUrl = ((import.meta.env.VITE_SUPABASE_URL as string | undefined) || 'https://zivgfvcmposnbwqsudas.supabase.co').replace(/\/$/, '')
 const publishableKey = (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined) || 'sb_publishable_twQnXi5Mwmy5_dWIcay0OQ_8-xjyP3h'
 
 /** Send a passwordless sign-in link. The existing OAuth callback consumes Supabase's token hash. */

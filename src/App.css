@@ -429,3 +429,11 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 .inline-select select { min-height: 44px; max-width: 100%; padding: 6px 8px; border: 1px solid #cfd6df; border-radius: 8px; background: #fff; font: inherit; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 @media (max-width: 620px) { .work-records { padding: 0 14px 16px; } .work-tabs { padding: 0 14px 10px; } }
+
+
+/* Keep evidence labels and money tags inside narrow phone viewports. */
+@media (max-width: 640px) {
+  .attention-card header > strong { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+  .attention-card header .brain-tag { min-width: 0; max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+  .attention-card header { min-width: 0; }
+}

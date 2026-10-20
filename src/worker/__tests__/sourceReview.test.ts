@@ -6,6 +6,7 @@ const env = {
   SUPABASE_URL: 'https://example.supabase.co',
   SUPABASE_ANON_KEY: 'anon-test',
   SUPABASE_SERVICE_ROLE_KEY: 'service-test',
+  APP_ORIGIN: 'https://app.example',
 } as Parameters<typeof handleGoogleSheets>[1]
 
 function json(data: unknown, status = 200) {

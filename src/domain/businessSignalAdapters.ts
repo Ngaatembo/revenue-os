@@ -5,6 +5,10 @@ import type { InvoiceEvidence } from './types.ts'
  * Translate existing invoice evidence into the provider-neutral signal contract.
  * This is deliberately a pure mapper: callers must load organization-scoped records
  * through the existing authorized data-access layer before invoking it.
+ *
+ * InvoiceEvidence currently carries a source ID but not its provider kind. Keep the
+ * provider explicitly unknown until the source connection model can supply that
+ * fact; never label a Google Sheets/CSV record as an accounting integration by guess.
  */
 export function overdueInvoiceSignals(
   invoices: InvoiceEvidence[],
@@ -35,7 +39,7 @@ export function overdueInvoiceSignals(
     return [{
       organizationId,
       sourceId: invoice.source.sourceId,
-      provider: 'accounting',
+      provider: 'unknown',
       type: 'invoice_overdue',
       idempotencyKey: `invoice-overdue:${invoice.source.recordId}:${dueAt.slice(0, 10)}`,
       occurredAt: dueAt,

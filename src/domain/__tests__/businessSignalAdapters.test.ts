@@ -17,10 +17,11 @@ const invoice = (overrides: Partial<InvoiceEvidence> = {}): InvoiceEvidence => (
   ...overrides,
 })
 
-test('maps overdue unpaid invoice evidence to a source-linked confirmed signal', () => {
+test('maps overdue unpaid invoice evidence to a source-linked signal without guessing provider kind', () => {
   const signals = overdueInvoiceSignals([invoice()], 'org-1', '2026-10-20T10:00:00.000Z')
   assert.equal(signals.length, 1)
   assert.equal(signals[0].type, 'invoice_overdue')
+  assert.equal(signals[0].provider, 'unknown')
   assert.equal(signals[0].customer.status, 'matched')
   assert.equal(signals[0].evidence.externalRecordId, 'row-42')
   assert.equal(signals[0].sourceId, 'sheet-connection-1')

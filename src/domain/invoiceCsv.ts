@@ -170,7 +170,8 @@ export function parseInvoiceCsv(
 
   let rows: string[][]
   try {
-    const cleanText = text.replace(/^\uFEFF/, '')\n    rows = parseRows(cleanText, detectDelimiter(cleanText))
+    const cleanText = text.replace(/^\uFEFF/, '')
+    rows = parseRows(cleanText, detectDelimiter(cleanText))
   } catch (error) {
     if (error instanceof Error) throw error
     throw new Error('CSV could not be read.', { cause: error })

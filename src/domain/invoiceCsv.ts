@@ -83,7 +83,7 @@ function detectDelimiter(text: string): string {
   // Excel exports in some locales use semicolons; tab-separated exports are also common.
   // Count delimiters in the first non-empty line outside quoted text.
   const firstLine = text.split(/\r?\n/).find((line) => line.trim().length > 0) ?? ''
-  const counts = new Map([[' ,', 0], [',', 0], [';', 0], ['\t', 0]])
+  const counts = new Map([[',', 0], [';', 0], ['\t', 0]])
   let quoted = false
   for (let i = 0; i < firstLine.length; i += 1) {
     const char = firstLine[i]

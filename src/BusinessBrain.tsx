@@ -74,7 +74,11 @@ export function BusinessBrain(props: Props) {
       {loadError && <div className="alert alert-error" role="alert">{loadError}</div>}
       {notice && <div className="alert alert-info" role="status">{notice}</div>}
       {error && <div className="alert alert-error" role="alert">{error}</div>}
-      <label>Reason for retracting or resolving (type this first, then use the buttons)<input maxLength={500} value={reason} onChange={(event) => setReason(event.target.value)} placeholder="e.g. Entered by mistake" /></label>
+      <details className="brain-reason-disclosure">
+        <summary>Need to retract a fact or resolve a conflict?</summary>
+        <p>Only open this if you are changing or removing an existing fact. A short reason is required before those actions can be saved.</p>
+        <label>Reason for this change<input maxLength={500} value={reason} onChange={(event) => setReason(event.target.value)} placeholder="e.g. Entered by mistake" /></label>
+      </details>
     </section>
 
     {conflicts.length > 0 && <section className="panel brain-conflicts" aria-labelledby="conflicts-title">

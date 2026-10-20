@@ -304,13 +304,17 @@ export async function handleGoogleSheets(request: Request, env: Env): Promise<Re
     if (!invoiceId || !sourceKey || !sourceRange || !allowed.includes(resolution) || !note || note.length > 500) {
       return response({ error: 'review_details_required', message: 'Choose a review decision and add a note of up to 500 characters.' }, 400)
     }
-    await db(env, `source_sync_memberships?organization_id=eq.${encodeURIComponent(organizationId)}&source_key=eq.${encodeURIComponent(sourceKey)}&source_range=eq.${encodeURIComponent(sourceRange)}&invoice_id=eq.${encodeURIComponent(invoiceId)}&review_state=eq.missing_from_source_pending_review`, {
-      method: 'PATCH', headers: { Prefer: 'return=representation' },
-      body: JSON.stringify({ review_state: 'resolved', review_note: '[' + resolution + '] ' + note, reviewed_by: member.user_id, reviewed_at: new Date().toISOString() }),
-    }).then((rows) => {
-      if (!Array.isArray(rows) || rows.length !== 1) throw new Error('source_review_item_not_pending')
-      return rows
-    })
+    try {
+      const rows = await db(env, `source_sync_memberships?organization_id=eq.${encodeURIComponent(organizationId)}&source_key=eq.${encodeURIComponent(sourceKey)}&source_range=eq.${encodeURIComponent(sourceRange)}&invoice_id=eq.${encodeURIComponent(invoiceId)}&review_state=eq.missing_from_source_pending_review`, {
+        method: 'PATCH', headers: { Prefer: 'return=representation' },
+        body: JSON.stringify({ review_state: 'resolved', review_note: '[' + resolution + '] ' + note, reviewed_by: member.user_id, reviewed_at: new Date().toISOString() }),
+      })
+      if (!Array.isArray(rows) || rows.length !== 1) {
+        return response({ error: 'source_review_item_not_pending', message: 'This review item has already changed. Refresh the queue before trying again.' }, 409)
+      }
+    } catch {
+      return response({ error: 'source_review_save_failed', message: 'The review could not be saved. Refresh the queue and try again.' }, 502)
+    }
     return response({ status: 'resolved', resolution })
   }
 

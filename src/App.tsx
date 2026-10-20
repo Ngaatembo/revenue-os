@@ -139,6 +139,20 @@ function GoogleSheetsConnector({ session, organization, onSynced }: { session: S
       } while (pageToken && pages < 20)
       setSpreadsheets(files)
       setSpreadsheet((currentId) => files.some((file) => file.id === currentId) ? currentId : '')
+      if (files.length) {
+        const selectionResponse = await fetch(`/api/integrations/google/source-selection?organization_id=${encodeURIComponent(organization.id)}`, {
+          headers: { Authorization: `Bearer ${current.access_token}` },
+        })
+        const selectionPayload = await selectionResponse.json().catch(() => ({})) as { selection?: { source_config?: { spreadsheet_id?: string; range?: string; tab_title?: string } } | null }
+        const saved = selectionPayload.selection?.source_config
+        if (selectionResponse.ok && saved?.spreadsheet_id && saved.range && files.some((file) => file.id === saved.spreadsheet_id)) {
+          await inspectSpreadsheet(saved.spreadsheet_id)
+          setRange(saved.range)
+          setNotice(`Restored saved source: ${files.find((file) => file.id === saved.spreadsheet_id)?.name ?? 'Google spreadsheet'} · ${saved.tab_title ?? saved.range}`)
+          setNoticeError(false)
+          return
+        }
+      }
       setNotice(files.length ? `Found ${files.length} spreadsheet(s). Choose the invoice source below.` : 'No Google spreadsheets were found in this account. Check sharing access or create a spreadsheet first.')
       setNoticeError(false)
     } catch (cause) {
@@ -168,11 +182,22 @@ function GoogleSheetsConnector({ session, organization, onSynced }: { session: S
       const tabs = payload.sheets ?? []
       setSheetTabs(tabs)
       const suggested = tabs.find((tab) => tab.likely_invoice_sheet) ?? tabs[0]
-      setRange(suggested?.suggested_range ?? payload.suggested_range ?? '')
+      const selectedRange = suggested?.suggested_range ?? payload.suggested_range ?? ''
+      setRange(selectedRange)
       setNotice(tabs.some((tab) => tab.likely_invoice_sheet)
         ? `Found invoice-like headers in “${suggested?.title ?? 'the selected tab'}”. Review the selected tab, then sync.`
         : 'No tab clearly matches the invoice fields. Choose the closest tab and check its header row before syncing.')
       setNoticeError(false)
+      if (suggested && selectedRange) {
+        const selectedFile = spreadsheets.find((file) => file.id === spreadsheetId)
+        const saveResponse = await fetch('/api/integrations/google/source-selection', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${current.access_token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ organization_id: organization.id, spreadsheet_id: spreadsheetId, spreadsheet_name: selectedFile?.name ?? String(payload.title ?? 'Google spreadsheet'), tab_title: suggested.title, range: selectedRange }),
+        })
+        const savePayload = await saveResponse.json().catch(() => ({})) as { message?: string; error?: string }
+        if (!saveResponse.ok) throw new Error(savePayload.message || savePayload.error || 'Could not save the selected source.')
+      }
     } catch (cause) {
       setNotice(cause instanceof Error ? cause.message : 'Could not inspect spreadsheet tabs.')
       setNoticeError(true)

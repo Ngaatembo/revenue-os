@@ -447,3 +447,99 @@ a { text-underline-offset: .18em; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; }
 }
+
+/* Dense operational workspaces: readable data and consistent semantic states. */
+.lead-intro h2, .panel-heading h2, .section-placeholder h2 { color: var(--ink); }
+.lead-intro p:not(.eyebrow), .lead-row-main p, .lead-row-main small, .lead-disclaimer,
+.lead-metric small, .lead-form-actions span, .lead-filter-row, .lead-notice,
+.recovery-action-top small, .action-human-note, .payment-csv-format small,
+.payment-issues, .payment-issues small, .issue-note, .issue-history,
+.brain-setting-top small, .brain-derived-item small, .brain-facts small,
+.section-placeholder > p, .format-box small, .format-box code,
+.page-footer, .page-footer span:first-child, .connection-source-card small {
+  font-size: 12px;
+  line-height: 1.55;
+}
+.lead-row-title strong, .lead-row-side > strong, .recovery-action-top strong,
+.opportunity-title strong, .brain-source strong, .format-box strong { color: var(--ink); font-size: 13px; }
+.lead-metric span, .lead-form label, .lead-row-side label, .lead-filter-row,
+.lead-form input, .lead-form select, .lead-row-side select, .lead-filter-row select,
+.issue-form label, .issue-form select, .issue-form input, .issue-form textarea {
+  font-size: 13px;
+}
+.lead-form input, .lead-form select, .lead-row-side select, .lead-filter-row select,
+.issue-form select, .issue-form input, .issue-form textarea {
+  min-height: 44px;
+  border-color: var(--line);
+  border-radius: 7px;
+  color: var(--ink);
+  background: var(--surface);
+}
+.lead-form input:focus, .lead-form select:focus, .lead-row-side select:focus,
+.lead-filter-row select:focus, .issue-form select:focus, .issue-form input:focus,
+.issue-form textarea:focus { border-color: var(--focus); outline: 3px solid rgba(45,124,99,.18); }
+.lead-local-pill, .action-status, .brain-tag, .brain-status {
+  border-color: var(--line);
+  border-radius: 6px;
+}
+.lead-status-new, .action-status, .brain-tag {
+  color: var(--action);
+  background: var(--surface-soft);
+}
+.lead-status-contacted, .lead-status-converted, .action-status-executed,
+.promise-status-kept, .issue-pill-promised, .issue-promise-kept {
+  color: #205b3c;
+  background: #e9f3e9;
+}
+.lead-status-follow_up, .action-status-approved, .issue-pill-awaiting_response,
+.issue-pill-payment_claimed, .promise-status-partly_kept {
+  color: #7a4b0a;
+  background: #f8eedb;
+}
+.lead-status-closed, .action-status-cancelled, .action-status-failed,
+.brain-tag-muted, .lead-local-pill {
+  color: var(--muted);
+  background: var(--surface-soft);
+}
+.lead-due, .issue-pill-disputed, .promise-status-broken, .issue-promise-broken,
+.lead-error, .payment-issues, .alert-error {
+  color: var(--critical);
+  background: #fbece8;
+  border-color: #ebc9c3;
+}
+.recovery-action-card, .brain-setting, .brain-derived-item, .brain-conflict,
+.attention-card, .issue-form, .format-box, .recovery-message {
+  background: var(--surface);
+  border-color: var(--line);
+  box-shadow: none;
+}
+.recovery-message, .payment-csv-format code, .issue-promise, .issue-evidence,
+.money-position dt, .money-position dd { color: var(--ink); }
+.payment-csv-format code { background: var(--surface-soft); border-color: var(--line); }
+.verified-outcome-detail { background: #edf5ed; border-color: #cbdccb; }
+.verified-outcome-detail strong { color: #205b3c; }
+.verified-outcome-detail small, .verified-outcome-detail p { color: #405f4b; }
+.brain-note, .functional-note, .lead-disclaimer {
+  color: var(--muted);
+  background: var(--surface-soft);
+  border-color: var(--line);
+}
+.brain-conflicts { border-color: #d9b66e; }
+.mobile-nav { background: var(--surface); border-color: var(--line); backdrop-filter: none; }
+.mobile-nav button { min-height: 44px; color: var(--muted); }
+.mobile-nav button span { font-size: 10px; }
+.mobile-nav button.active { color: var(--action); }
+@media (max-width: 760px) {
+  .page-heading .button { width: auto; min-width: 44px; height: auto; padding: 0 12px; font-size: 13px; }
+  .page-heading .button svg { width: 16px; height: 16px; }
+  .metric-card, .metric-card + .metric-card { padding: 14px 12px; min-height: 112px; }
+  .metric-value { font-size: clamp(20px, 5vw, 27px); }
+  .panel { padding: 0; }
+  .panel-heading { padding: 17px 15px; }
+  .page-footer { font-size: 11px; flex-wrap: wrap; }
+}
+@media (max-width: 420px) {
+  .mobile-nav button span { font-size: 9px; }
+  .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .metric-value { overflow-wrap: anywhere; }
+}

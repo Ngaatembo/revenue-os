@@ -426,6 +426,7 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
   const fileRef = useRef<HTMLInputElement>(null)
   const paymentFileRef = useRef<HTMLInputElement>(null)
   const [activeSection, setActiveSection] = useState<Section>('Overview')
+  const [mobileMoreOpen, setMobileMoreOpen] = useState(false)
   const [invoices, setInvoices] = useState<InvoiceEvidence[]>([])
   const [issues, setIssues] = useState<CsvIssue[]>([])
   const [sourceName, setSourceName] = useState('')
@@ -1140,7 +1141,16 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
         </div>
       </main>
 
-      <nav className="mobile-nav" aria-label="Mobile navigation">{sections.map((section) => <button key={section} className={activeSection === section ? 'active' : ''} onClick={() => setActiveSection(section)} aria-label={section}><Icon name={section === 'Overview' ? 'grid' : section === 'Urgent' ? 'clock' : section === 'Follow-ups' ? 'check' : section === 'Opportunities' ? 'spark' : section === 'Lead Recovery' ? 'check' : section === 'Actions' ? 'check' : section === 'Outcomes' ? 'chart' : section === 'Connections' ? 'plug' : 'brain'} /><span>{section}</span></button>)}</nav>
+      {mobileMoreOpen && <div className="mobile-more-backdrop" onClick={() => setMobileMoreOpen(false)}>
+        <nav className="mobile-more-menu" aria-label="More workspace sections" onClick={(event) => event.stopPropagation()}>
+          <div className="mobile-more-heading"><strong>More sections</strong><button type="button" onClick={() => setMobileMoreOpen(false)} aria-label="Close menu">Close</button></div>
+          {(['Opportunities', 'Lead Recovery', 'Actions', 'Outcomes', 'Business Brain', 'Connections'] as Section[]).map((section) => <button key={section} type="button" className={activeSection === section ? 'active' : ''} onClick={() => { setActiveSection(section); setMobileMoreOpen(false) }}><Icon name={section === 'Opportunities' ? 'spark' : section === 'Lead Recovery' || section === 'Actions' ? 'check' : section === 'Outcomes' ? 'chart' : section === 'Connections' ? 'plug' : 'brain'} /><span>{section}</span><span className="mobile-more-arrow">›</span></button>)}
+        </nav>
+      </div>}
+      <nav className="mobile-nav" aria-label="Mobile navigation">
+        {(['Overview', 'Urgent', 'Follow-ups'] as Section[]).map((section) => <button key={section} type="button" className={activeSection === section ? 'active' : ''} onClick={() => { setActiveSection(section); setMobileMoreOpen(false) }} aria-label={section}><Icon name={section === 'Overview' ? 'grid' : section === 'Urgent' ? 'clock' : 'check'} /><span>{section}</span></button>)}
+        <button type="button" className={['Opportunities', 'Lead Recovery', 'Actions', 'Outcomes', 'Business Brain', 'Connections'].includes(activeSection) ? 'active' : ''} onClick={() => setMobileMoreOpen((open) => !open)} aria-expanded={mobileMoreOpen} aria-label="More sections"><Icon name="grid" /><span>More</span></button>
+      </nav>
     </div>
   )
 }

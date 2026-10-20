@@ -375,6 +375,7 @@ function GoogleSheetsConnector({ session, organization, onSynced }: { session: S
     {connected && <small>Google account: {connection.provider_account_email || 'Connected account'}{connection.last_successful_sync_at ? ` · Last sync ${new Date(connection.last_successful_sync_at).toLocaleString()}` : ' · No successful sync yet'}</small>}
     {!connected ? <button className="button button-secondary" type="button" onClick={() => void connect()} disabled={busy !== '' || connection.status === 'loading'}>{busy === 'connect' ? 'Opening Google…' : 'Connect Google Sheets'}</button> : <>
       <div className="connection-source-actions">
+        <button className="button button-secondary" type="button" onClick={() => void connect()} disabled={busy !== '' || discoveryBusy}>{busy === 'connect' ? 'Reconnecting Google…' : 'Reconnect Google permissions'}</button>
         <button className="button button-secondary" type="button" onClick={() => void discoverSpreadsheets()} disabled={busy !== '' || discoveryBusy}>{discoveryBusy ? 'Finding spreadsheets…' : 'Refresh spreadsheet list'}</button>
       </div>
       <label className="field-label" htmlFor="google-spreadsheet">Choose a spreadsheet</label>

@@ -616,3 +616,35 @@ h1 { color: var(--ink); letter-spacing: -.045em; font-weight: 680; }
 @media (prefers-reduced-motion: reduce) {
   .daily-brief-item { transition: none; }
 }
+
+
+/* Opportunities workspace: make recovery value, status, and source evidence scannable. */
+.invoice-register-panel .recovery-action-list { display: grid; gap: 0; padding: 0 22px 10px; }
+.invoice-register-panel .recovery-action-card {
+  min-width: 0; margin: 0; padding: 18px 0; border: 0; border-bottom: 1px solid var(--line);
+  border-radius: 0; background: transparent; box-shadow: none;
+}
+.invoice-register-panel .recovery-action-card:last-child { border-bottom: 0; }
+.invoice-register-panel .recovery-action-top { align-items: flex-start; gap: 12px; }
+.invoice-register-panel .recovery-action-top > div { min-width: 0; display: grid; gap: 5px; }
+.invoice-register-panel .recovery-action-top strong { color: var(--ink); font-size: 15px; font-weight: 720; overflow-wrap: anywhere; }
+.invoice-register-panel .recovery-action-top small { color: var(--muted); font-size: 13px; line-height: 1.5; }
+.invoice-register-panel .action-context { margin: 10px 0; color: var(--muted); font-size: 13px; line-height: 1.65; overflow-wrap: anywhere; }
+.invoice-register-panel .action-status { flex: none; }
+.invoice-register-panel .why-details { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
+.invoice-register-panel .why-details summary { min-height: 36px; display: flex; align-items: center; color: var(--action); font-size: 13px; font-weight: 650; cursor: pointer; }
+.invoice-register-panel .why-details dl {
+  display: grid; grid-template-columns: minmax(100px, .65fr) minmax(0, 1.35fr);
+  gap: 8px 14px; margin: 12px 0 2px; padding: 14px; border-radius: 7px; background: var(--page);
+}
+.invoice-register-panel .why-details dt { color: var(--muted); font-size: 12px; }
+.invoice-register-panel .why-details dd { min-width: 0; margin: 0; color: var(--ink); font-size: 12px; overflow-wrap: anywhere; }
+.invoice-register-panel .panel-heading > div { min-width: 0; }
+.invoice-register-panel .panel-heading p { max-width: 66ch; line-height: 1.65; }
+@media (max-width: 680px) {
+  .invoice-register-panel .recovery-action-list { padding: 0 14px 8px; }
+  .invoice-register-panel .recovery-action-card { padding: 15px 0; }
+  .invoice-register-panel .recovery-action-top { flex-wrap: wrap; }
+  .invoice-register-panel .why-details dl { grid-template-columns: 1fr; gap: 4px; padding: 12px; }
+  .invoice-register-panel .why-details dd { margin-bottom: 8px; }
+}

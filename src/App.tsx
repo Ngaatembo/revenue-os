@@ -88,9 +88,17 @@ type LeadRecord = SalesLead
 type LeadStatus = SalesLead['status']
 
 type GoogleConnectionState = { status?: string; provider_account_email?: string | null; last_successful_sync_at?: string | null; last_error_code?: string | null }
+type SourceReviewItem = {
+  organization_id: string; source_key: string; source_range: string; invoice_id: string; last_seen_at: string;
+  invoice: { id: string; invoice_number: string; customer_name: string; currency: string; total_minor: number; paid_minor: number; due_at: string } | null
+}
 
 function GoogleSheetsConnector({ session, organization, onSynced }: { session: SupabaseSession; organization: RevenueOrganization; onSynced: () => Promise<void> }) {
   const [connection, setConnection] = useState<GoogleConnectionState>({ status: 'loading' })
+  const [reviewItems, setReviewItems] = useState<SourceReviewItem[]>([])
+  const [reviewDrafts, setReviewDrafts] = useState<Record<string, { resolution: string; note: string }>>({})
+  const [reviewBusy, setReviewBusy] = useState('')
+  const [reviewNotice, setReviewNotice] = useState('')
   const [spreadsheet, setSpreadsheet] = useState('')
   const [range, setRange] = useState('A:H')
   const [busy, setBusy] = useState('')
@@ -106,6 +114,22 @@ function GoogleSheetsConnector({ session, organization, onSynced }: { session: S
       const payload = await response.json().catch(() => ({})) as { connection?: GoogleConnectionState; message?: string }
       if (!response.ok) throw new Error(payload.message || (response.status === 503 ? 'Google Sheets server configuration is missing.' : 'Could not check Google Sheets connection.'))
       setConnection(payload.connection ?? { status: 'disconnected' })
+      if (payload.connection?.status === 'connected') {
+        try {
+          const current = await getFreshSession(session)
+          const reviewResponse = await fetch(`/api/integrations/google/source-review?organization_id=${encodeURIComponent(organization.id)}`, { headers: { Authorization: `Bearer ${current.access_token}` } })
+          if (reviewResponse.ok) {
+            const reviewPayload = await reviewResponse.json() as { items?: SourceReviewItem[] }
+            setReviewItems(reviewPayload.items ?? [])
+          } else if (reviewResponse.status !== 403) {
+            setReviewNotice('The source review queue could not be loaded. Try refreshing the connection status.')
+          }
+        } catch {
+          setReviewNotice('The source review queue could not be loaded. Try refreshing the connection status.')
+        }
+      } else {
+        setReviewItems([])
+      }
     } catch (cause) {
       setConnection({ status: 'unavailable' })
       setNotice(cause instanceof Error ? cause.message : 'Could not check Google Sheets connection.')
@@ -173,6 +197,32 @@ function GoogleSheetsConnector({ session, organization, onSynced }: { session: S
     }
   }
 
+  async function resolveSourceReview(item: SourceReviewItem) {
+    const draft = reviewDrafts[item.invoice_id]
+    if (!draft?.resolution || !draft.note.trim()) {
+      setReviewNotice('Choose a decision and explain it in the note before saving.')
+      return
+    }
+    setReviewBusy(item.invoice_id)
+    setReviewNotice('')
+    try {
+      const current = await getFreshSession(session)
+      const result = await fetch('/api/integrations/google/source-review', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${current.access_token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ organization_id: organization.id, invoice_id: item.invoice_id, source_key: item.source_key, source_range: item.source_range, resolution: draft.resolution, note: draft.note.trim() }),
+      })
+      const payload = await result.json().catch(() => ({})) as { message?: string; error?: string }
+      if (!result.ok) throw new Error(payload.message || payload.error || 'Could not save this review.')
+      setReviewItems((items) => items.filter((row) => row.invoice_id !== item.invoice_id || row.source_key !== item.source_key || row.source_range !== item.source_range))
+      setReviewNotice('Review saved. The invoice and its history were preserved. This decision does not mark it paid or automatically close an opportunity.')
+    } catch (cause) {
+      setReviewNotice(cause instanceof Error ? cause.message : 'Could not save this review.')
+    } finally {
+      setReviewBusy('')
+    }
+  }
+
   async function sync() {
     const match = spreadsheet.match(/\/spreadsheets\/d\/([A-Za-z0-9_-]+)/)
     const spreadsheetId = match?.[1] ?? spreadsheet.trim()
@@ -220,6 +270,28 @@ function GoogleSheetsConnector({ session, organization, onSynced }: { session: S
     </>}
     {notice && <p className={noticeError ? 'field-error' : 'brain-note'} role={noticeError ? 'alert' : 'status'}>{notice}</p>}
     {connection.last_error_code && <small>Last sync error: {connection.last_error_code}</small>}
+    {connected && reviewItems.length > 0 && <section className="source-review-queue" aria-labelledby="source-review-title">
+      <div className="panel-heading"><div><h4 id="source-review-title">Rows missing from the sheet</h4><p>These invoices were present in an earlier successful sync but not in the latest complete snapshot. Absence is not proof of payment.</p></div><span className="status-pill">{reviewItems.length} to review</span></div>
+      {reviewItems.map((item) => {
+        const draft = reviewDrafts[item.invoice_id] ?? { resolution: 'keep_tracking', note: '' }
+        const invoice = item.invoice
+        return <article className="source-review-item" key={item.source_key + ':' + item.source_range + ':' + item.invoice_id}>
+          <div><strong>{invoice?.invoice_number ?? item.invoice_id}</strong><small>{invoice?.customer_name ?? 'Invoice details unavailable'} · {item.source_range}</small></div>
+          {invoice && <p>Outstanding: {invoice.currency} {((Number(invoice.total_minor) - Number(invoice.paid_minor)) / 100).toFixed(2)} · Due {invoice.due_at ? new Date(invoice.due_at).toLocaleDateString() : 'date unavailable'}</p>}
+          <label className="field-label">Review decision</label>
+          <select value={draft.resolution} onChange={(event) => setReviewDrafts((current) => ({ ...current, [item.invoice_id]: { ...draft, resolution: event.target.value } }))}>
+            <option value="keep_tracking">Keep tracking this invoice</option>
+            <option value="settled_elsewhere">Owner says settled elsewhere (not payment-verified)</option>
+            <option value="voided">Invoice voided / cancelled</option>
+            <option value="moved_out_of_range">Moved outside this sheet range</option>
+          </select>
+          <label className="field-label">Reason / notes</label>
+          <textarea rows={2} maxLength={500} value={draft.note} onChange={(event) => setReviewDrafts((current) => ({ ...current, [item.invoice_id]: { ...draft, note: event.target.value } }))} placeholder="Record what you checked and why." />
+          <button className="button button-secondary" type="button" disabled={reviewBusy !== ''} onClick={() => void resolveSourceReview(item)}>{reviewBusy === item.invoice_id ? 'Saving review…' : 'Save review'}</button>
+        </article>
+      })}
+    </section>}
+    {reviewNotice && <p className="brain-note" role="status">{reviewNotice}</p>}
   </article>
 }
 

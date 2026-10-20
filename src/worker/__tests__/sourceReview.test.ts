@@ -144,7 +144,7 @@ test('source review does not overwrite an item that is no longer pending', async
       headers: { Authorization: 'Bearer valid-test-token', 'Content-Type': 'application/json' },
       body: JSON.stringify({ organization_id: 'org-1', invoice_id: 'invoice-1', source_key: 'google_sheets:spreadsheet123', source_range: 'Invoices!A:H', resolution: 'voided', note: 'Owner confirmed cancellation.' }),
     }), env)
-    assert.equal(response.status, 502)
+    assert.equal(response.status, 409)
     assert.equal((await response.json() as { error: string }).error, 'source_review_item_not_pending')
   } finally { restore() }
 })

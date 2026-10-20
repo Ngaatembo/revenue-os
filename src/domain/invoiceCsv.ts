@@ -180,7 +180,7 @@ export function parseInvoiceCsv(
   }
   if (new Set(headers).size !== headers.length) {
     const repeated = headers.filter((header, index) => headers.indexOf(header) !== index)
-    throw new Error(`Two or more columns look like the same field (${[...new Set(repeated)].join(', ').replace(/_/g, ' ')}). Please keep only one column for each field.`)
+    throw new Error(`CSV header names must be unique. Two or more columns look like the same field (${[...new Set(repeated)].join(', ').replace(/_/g, ' ')}). Please keep only one column for each field.`)
   }
   const indexes = new Map(headers.map((header, index) => [header, index]))
   const invoices: InvoiceEvidence[] = []

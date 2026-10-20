@@ -277,6 +277,43 @@ export async function handleGoogleSheets(request: Request, env: Env): Promise<Re
     }
   }
 
+  if (url.pathname === '/api/integrations/google/source-review') {
+    if (request.method !== 'GET' && request.method !== 'POST') return response({ error: 'method_not_allowed' }, 405)
+    const user = await authenticate(request, env)
+    if (!user) return response({ error: 'unauthorized' }, 401)
+    const body = request.method === 'POST' ? await request.json().catch(() => null) as Json | null : null
+    const organizationId = (request.method === 'GET' ? url.searchParams.get('organization_id') : body?.organization_id)?.toString().trim() ?? ''
+    if (!organizationId || organizationId.length > 160) return response({ error: 'organization_required' }, 400)
+    const member = await membership(env, user.authId, organizationId)
+    if (!member || !['owner', 'admin'].includes(member.role)) return response({ error: 'workspace_admin_required' }, 403)
+
+    if (request.method === 'GET') {
+      const rows = await db(env, `source_sync_memberships?select=organization_id,source_key,source_range,invoice_id,last_seen_at,review_state,review_note&organization_id=eq.${encodeURIComponent(organizationId)}&review_state=eq.missing_from_source_pending_review&order=last_seen_at.desc&limit=100`) as Array<Record<string, unknown>>
+      const ids = rows.map((row) => String(row.invoice_id ?? '')).filter(Boolean)
+      const invoices = ids.length ? await db(env, `invoices?select=id,invoice_number,customer_name,currency,total_minor,paid_minor,due_at&organization_id=eq.${encodeURIComponent(organizationId)}&id=in.(${ids.map(encodeURIComponent).join(',')})`) as Array<Record<string, unknown>> : []
+      const byId = new Map(invoices.map((invoice) => [String(invoice.id), invoice]))
+      return response({ items: rows.map((row) => ({ ...row, invoice: byId.get(String(row.invoice_id)) ?? null })) })
+    }
+
+    const invoiceId = typeof body?.invoice_id === 'string' ? body.invoice_id.trim() : ''
+    const sourceKey = typeof body?.source_key === 'string' ? body.source_key.trim() : ''
+    const sourceRange = typeof body?.source_range === 'string' ? body.source_range.trim() : ''
+    const resolution = typeof body?.resolution === 'string' ? body.resolution : ''
+    const note = typeof body?.note === 'string' ? body.note.trim() : ''
+    const allowed = ['keep_tracking', 'settled_elsewhere', 'voided', 'moved_out_of_range']
+    if (!invoiceId || !sourceKey || !sourceRange || !allowed.includes(resolution) || !note || note.length > 500) {
+      return response({ error: 'review_details_required', message: 'Choose a review decision and add a note of up to 500 characters.' }, 400)
+    }
+    await db(env, `source_sync_memberships?organization_id=eq.${encodeURIComponent(organizationId)}&source_key=eq.${encodeURIComponent(sourceKey)}&source_range=eq.${encodeURIComponent(sourceRange)}&invoice_id=eq.${encodeURIComponent(invoiceId)}&review_state=eq.missing_from_source_pending_review`, {
+      method: 'PATCH', headers: { Prefer: 'return=representation' },
+      body: JSON.stringify({ review_state: 'resolved', review_note: '[' + resolution + '] ' + note, reviewed_by: member.user_id, reviewed_at: new Date().toISOString() }),
+    }).then((rows) => {
+      if (!Array.isArray(rows) || rows.length !== 1) throw new Error('source_review_item_not_pending')
+      return rows
+    })
+    return response({ status: 'resolved', resolution })
+  }
+
   if (url.pathname === '/api/integrations/google/status') {
     if (request.method !== 'GET') return response({ error: 'method_not_allowed' }, 405)
     const user = await authenticate(request, env)

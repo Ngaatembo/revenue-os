@@ -11,7 +11,8 @@ This document separates implemented behavior from configuration and verification
 - The connector records an authorized account and explicitly displays “No successful sync yet” until a sync succeeds.
 - The connector can discover spreadsheets visible to the connected account using Drive metadata (file ID, name, modified time, and web link). Discovery is organization-scoped and paginated by the provider API.
 - The Connections UI offers a spreadsheet picker instead of requiring the user to paste an ID. A successful OAuth connection is still distinct from a successful invoice sync.
-- First sync currently reads the selected spreadsheet/range. Tab/header inspection and remembered mappings remain follow-up work; the range field is still an advanced manual step.
+- When a spreadsheet is selected, the connector inspects its tabs and first rows, scores header names against known invoice fields, and suggests the most likely invoice tab and range. The user can select another tab if needed.
+- The selected spreadsheet and tab are currently held in the UI state; persisting that source choice across sessions/workspaces is still a follow-up migration.
 - Invoice rows are validated and persisted through the invoice-import RPC. Repeated imports use a content hash and stable source-row identity.
 - Successful complete snapshots track source/range membership. Missing rows enter a review queue; absence never marks an invoice paid or deletes its history.
 - Owner/admin users can record a decision and note for a missing row. Decisions are audit metadata only; they do not verify payment, close an opportunity, or suppress overdue detection.
@@ -23,6 +24,7 @@ This document separates implemented behavior from configuration and verification
 - `GET /api/integrations/google/callback`: validates/consumes state, exchanges code, checks the granted read-only scope, encrypts and stores the refresh token, then redirects to the configured app origin. It does not test a selected spreadsheet because no spreadsheet is selected at this point.
 - `GET /api/integrations/google/status`: authenticated, organization-scoped status; does not return tokens.
 - `GET /api/integrations/google/discover`: authenticated, organization-scoped spreadsheet discovery; returns metadata only, never tokens or spreadsheet cell contents.
+- `GET /api/integrations/google/inspect`: authenticated, organization-scoped spreadsheet tab/header inspection; returns tab names, first-row headers, and a suggested invoice range.
 - `POST /api/integrations/google/sync`: reads the requested spreadsheet/range, validates rows, persists invoices and completes source reconciliation.
 - `GET /api/integrations/google/source-review`: owner/admin-only missing-row review queue.
 - `POST /api/integrations/google/source-review`: owner/admin-only decision and audit note.
@@ -40,7 +42,7 @@ Set only through Cloudflare Worker secrets/variables, never in Git or browser va
 - `APP_ORIGIN`: exact production app origin, with no path or trailing slash.
 - `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and server-only `SUPABASE_SERVICE_ROLE_KEY`.
 
-The Google OAuth redirect URI must exactly match the deployed callback:
+Google authorization now requests `drive.metadata.readonly` in addition to `spreadsheets.readonly` so it can list spreadsheet metadata. Existing connections created before this scope was added must reconnect once to grant it. The Google OAuth redirect URI must exactly match the deployed callback:
 `https://revenue-os.ngaatendwew.workers.dev/api/integrations/google/callback`
 (or the exact production origin actually configured for the app).
 
@@ -75,7 +77,8 @@ Do not paste secrets into chat, commit them, or place them in `VITE_*` variables
 
 ## Known limitations
 
-- Google OAuth, spreadsheet discovery, and live spreadsheet sync are not confirmed merely by the code or CI.
+- Google OAuth, spreadsheet discovery, tab inspection, and live spreadsheet sync are not confirmed merely by the code or CI.
+- The chosen source/tab is not yet persisted server-side; a future connection-selection migration will make the choice follow the workspace across sessions and devices.
 - Existing OAuth connections created before Drive metadata discovery was added must reconnect once to grant the additional read-only metadata scope.
 - Google token revocation is not implemented; disconnect only removes Revenue OS's stored credential.
 - The review queue is audit-only; review decisions do not yet change overdue-opportunity calculation.

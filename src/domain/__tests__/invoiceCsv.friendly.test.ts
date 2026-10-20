@@ -43,3 +43,14 @@ test('normalizes spaces, hyphens, and capitalization in headers', () => {
   assert.equal(result.invoices.length, 1)
   assert.equal(result.invoices[0].invoiceNumber, 'INV-105')
 })
+
+test('reads semicolon-separated spreadsheet exports', () => {
+  const csv = [
+    'Client;Invoice No;Currency;Amount;Paid;Invoice Date;Due Date',
+    'Mupfumi Hardware;INV-106;USD;250;0;2026-09-01;2026-10-01',
+  ].join('\n')
+
+  const result = parseInvoiceCsv(csv, 'csv:client-invoices', importedAt)
+  assert.equal(result.invoices.length, 1)
+  assert.equal(result.invoices[0].invoiceNumber, 'INV-106')
+})

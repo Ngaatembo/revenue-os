@@ -1,50 +1,77 @@
 # Google Sheets connector — implementation contract
 
-This document describes the first connector milestone. It is not evidence that OAuth is configured or that a provider is connected.
+This document separates implemented behavior from configuration and verification that are still required. Code in the repository or a successful Worker build does not prove that hosted OAuth is configured or that a real spreadsheet has synced.
 
-## Scope
+## Current implemented scope
 
-- Google Sheets read-only access using `https://www.googleapis.com/auth/spreadsheets.readonly`.
-- OAuth authorization-code flow with a one-time, short-lived, server-validated state value.
-- Bind every connection to the authenticated Revenue OS organization; never accept an organization ID as proof of membership.
-- Encrypt refresh tokens before persistence using an independently configured Cloudflare secret key.
-- Never return access or refresh tokens to the browser, log them, or place them in URLs.
-- Only show “Connected” after the callback succeeds and a server-side Sheets API read is verified.
-- Provide disconnect/revoke behavior, safe error messages, and last-successful-sync metadata.
-- Keep invoice imports idempotent and preserve source spreadsheet ID, sheet/range, row identity, import timestamp, and currency/amount validation.
+- Google Sheets API access requests the read-only `https://www.googleapis.com/auth/spreadsheets.readonly` scope.
+- OAuth uses a short-lived, one-time state stored as a hash and consumed server-side.
+- Authenticated requests are checked against Revenue OS organization membership.
+- Refresh tokens are encrypted server-side using `GOOGLE_TOKEN_ENCRYPTION_KEY`; tokens are not returned to the browser.
+- The connector records an authorized account and explicitly displays “No successful sync yet” until a sync succeeds.
+- First sync reads the spreadsheet/range selected by the user. This is the first proof that the connected Google account can read that particular sheet.
+- Invoice rows are validated and persisted through the invoice-import RPC. Repeated imports use a content hash and stable source-row identity.
+- Successful complete snapshots track source/range membership. Missing rows enter a review queue; absence never marks an invoice paid or deletes its history.
+- Owner/admin users can record a decision and note for a missing row. Decisions are audit metadata only; they do not verify payment, close an opportunity, or suppress overdue detection.
+- Disconnect removes the stored refresh token and marks the local connection disconnected. It does **not** currently call Google's token-revocation endpoint; do not describe this as provider-side revocation.
 
-## Planned endpoints
+## Implemented endpoints
 
-- `GET /api/integrations/google/start`: requires a valid Supabase access token; starts authorization for the current organization.
-- `GET /api/integrations/google/callback`: validates one-time state, exchanges the code server-side, encrypts and persists credentials, verifies read-only access, then redirects to a safe app URL.
-- `GET /api/integrations/google/status`: authenticated, organization-scoped status only; never returns secrets.
-- `POST /api/integrations/google/disconnect`: authenticated, organization-scoped disconnect and best-effort Google token revocation.
-- `POST /api/integrations/google/read-test`: authenticated, organization-scoped test read for an explicitly selected spreadsheet ID.
+- `GET /api/integrations/google/start`: authenticated organization member; starts OAuth authorization.
+- `GET /api/integrations/google/callback`: validates/consumes state, exchanges code, checks the granted read-only scope, encrypts and stores the refresh token, then redirects to the configured app origin. It does not test a selected spreadsheet because no spreadsheet is selected at this point.
+- `GET /api/integrations/google/status`: authenticated, organization-scoped status; does not return tokens.
+- `POST /api/integrations/google/sync`: reads the requested spreadsheet/range, validates rows, persists invoices and completes source reconciliation.
+- `GET /api/integrations/google/source-review`: owner/admin-only missing-row review queue.
+- `POST /api/integrations/google/source-review`: owner/admin-only decision and audit note.
+- `POST /api/integrations/google/disconnect`: owner/admin-only local disconnect and credential removal.
 
-All endpoints must use no-store responses, strict method checks, bounded request sizes, generic user-facing OAuth errors, and safe redirects. CORS must not be opened to arbitrary origins.
+The callback and API require an exact `APP_ORIGIN` match. Responses are non-cacheable and errors should not expose provider credentials.
 
-## Required deployment configuration
+## Required Cloudflare Worker configuration
 
-Set only through Cloudflare Worker secrets / bindings, never in Git or browser variables:
+Set only through Cloudflare Worker secrets/variables, never in Git or browser variables:
 
 - `GOOGLE_CLIENT_ID`
 - `GOOGLE_CLIENT_SECRET`
-- `GOOGLE_TOKEN_ENCRYPTION_KEY` (random, high-entropy key used for AES-GCM encryption)
-- A server-only persistence credential or binding with least privilege for the connector credential table.
+- `GOOGLE_TOKEN_ENCRYPTION_KEY`: 64 hexadecimal characters representing 256 bits for AES-GCM.
+- `APP_ORIGIN`: exact production app origin, with no path or trailing slash.
+- `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and server-only `SUPABASE_SERVICE_ROLE_KEY`.
 
-The Google OAuth redirect URI must exactly match the callback URL registered in Google Cloud. Do not enable the feature in production until the secret configuration, storage migration, tenant isolation, and tests are complete.
+The Google OAuth redirect URI must exactly match the deployed callback:
+`https://revenue-os.ngaatendwew.workers.dev/api/integrations/google/callback`
+(or the exact production origin actually configured for the app).
 
-## Storage and tenancy requirements
+Do not paste secrets into chat, commit them, or place them in `VITE_*` variables. If the OAuth consent screen is in testing mode, add the account used for testing as an allowed test user.
 
-Persist provider, organization ID, encrypted refresh token, granted scopes, connection status, connected account identifier, created/updated timestamps, last successful sync, and safe error code. Enforce one connection per provider per organization unless multi-account behavior is explicitly designed. RLS/authorization must prevent cross-organization reads and writes. Never store provider tokens in localStorage/sessionStorage.
+## Safety and reconciliation rules
 
-## Acceptance criteria
+- A connected account is not the same as a successful spreadsheet sync.
+- A failed read, rejected row, failed persistence, or incomplete snapshot must not mark missing rows.
+- Empty/header-only snapshots are rejected to avoid treating an accidental empty range as a complete snapshot.
+- Only a fully accepted snapshot can mark previously present rows as `missing_from_source_pending_review`.
+- Missing rows are never deleted and are never inferred to be paid.
+- Decisions such as `settled_elsewhere` are not payment evidence.
+- Provider sync history and review decisions must remain organization-scoped.
+- Production database migrations require explicit owner approval; repository migrations and disposable-database tests do not prove hosted migrations have been applied.
 
-1. OAuth state mismatch, replay, missing code, and provider denial fail closed.
-2. Invalid/expired Supabase sessions are rejected.
-3. Organization A cannot inspect, use, disconnect, or read Organization B's connection.
-4. Tokens are encrypted at rest and never included in API responses or logs.
-5. Sheets API errors/timeouts do not mark a connection healthy.
-6. Duplicate sync attempts do not create duplicate invoice records.
-7. Existing sign-in, invoice CSV, lead recovery, actions, outcomes, and health endpoints continue to work.
-8. Lint, type-check/build, domain/security tests, and integration tests pass before merge.
+## Stage 1 acceptance checklist
+
+1. Worker reports explicit unavailable/configuration status when required secrets are absent.
+2. OAuth state mismatch, replay, missing code, provider denial, and invalid sessions fail closed.
+3. Organization A cannot inspect, use, sync, review, or disconnect Organization B's connection.
+4. The callback stores only an encrypted refresh token; no token appears in API responses or logs.
+5. A first real sync reads a synthetic spreadsheet with the required headers and persists the expected rows.
+6. Invalid rows are counted and shown; partial/rejected snapshots do not reconcile missing rows or advance last-successful-sync time.
+7. An identical successful sync creates no duplicate invoices and leaves membership consistent.
+8. A later complete snapshot with a missing row creates a review item; owner review is auditable and does not infer payment.
+9. Failed/revoked access does not mark the connection healthy; disconnect clears the local usable credential.
+10. CSV fallback and the existing sign-in, invoice recovery, leads, actions, outcomes, and workspace isolation continue to work.
+11. Type-check/build, lint, domain tests, SQL migration/security tests, and browser E2E pass.
+12. A real hosted OAuth/sync test is performed only after secrets and Google redirect/test-user settings are confirmed. This is not covered by disposable-database CI.
+
+## Known limitations
+
+- Google OAuth and live spreadsheet sync are not confirmed merely by the code or CI.
+- Google token revocation is not implemented; disconnect only removes Revenue OS's stored credential.
+- The review queue is audit-only; review decisions do not yet change overdue-opportunity calculation.
+- The browser E2E uses local Postgres/PostgREST and a Supabase Auth stand-in. It does not exercise Google OAuth or hosted Supabase.

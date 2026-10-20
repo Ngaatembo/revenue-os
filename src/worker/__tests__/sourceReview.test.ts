@@ -90,3 +90,61 @@ test('source review requires an explicit decision and audit note', async () => {
     assert.equal((await response.json() as { error: string }).error, 'review_details_required')
   } finally { restore() }
 })
+
+
+test('owner can resolve a pending source review with an auditable decision', async () => {
+  let patchedUrl = ''
+  let patchedBody: Record<string, unknown> | null = null
+  const restore = mockFetch((url, init) => {
+    if (url.pathname === '/auth/v1/user') return json({ id: 'auth-user-1', email: 'owner@example.test' })
+    if (url.pathname === '/rest/v1/users') return json([{ id: 'internal-user-1' }])
+    if (url.pathname === '/rest/v1/memberships') return json([{ organization_id: 'org-1', user_id: 'internal-user-1', role: 'owner' }])
+    if (url.pathname === '/rest/v1/source_sync_memberships' && init?.method === 'PATCH') {
+      patchedUrl = url.toString()
+      patchedBody = JSON.parse(String(init.body)) as Record<string, unknown>
+      return json([{ invoice_id: 'invoice-1', review_state: 'resolved' }])
+    }
+    throw new Error('Unexpected request: ' + url.pathname)
+  })
+  try {
+    const response = await handleGoogleSheets(new Request('https://app.example/api/integrations/google/source-review', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer valid-test-token', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ organization_id: 'org-1', invoice_id: 'invoice-1', source_key: 'google_sheets:spreadsheet123', source_range: 'Invoices!A:H', resolution: 'settled_elsewhere', note: 'Owner checked the bank statement.' }),
+    }), env)
+    assert.equal(response.status, 200)
+    assert.deepEqual(await response.json(), { status: 'resolved', resolution: 'settled_elsewhere' })
+    assert.match(patchedUrl, /organization_id=eq\.org-1/)
+    assert.match(patchedUrl, /review_state=eq\.missing_from_source_pending_review/)
+    assert.deepEqual(patchedBody && {
+      review_state: patchedBody.review_state,
+      review_note: patchedBody.review_note,
+      reviewed_by: patchedBody.reviewed_by,
+      reviewed_at: typeof patchedBody.reviewed_at === 'string',
+    }, {
+      review_state: 'resolved',
+      review_note: '[settled_elsewhere] Owner checked the bank statement.',
+      reviewed_by: 'internal-user-1',
+      reviewed_at: true,
+    })
+  } finally { restore() }
+})
+
+test('source review does not overwrite an item that is no longer pending', async () => {
+  const restore = mockFetch((url, init) => {
+    if (url.pathname === '/auth/v1/user') return json({ id: 'auth-user-1', email: 'owner@example.test' })
+    if (url.pathname === '/rest/v1/users') return json([{ id: 'internal-user-1' }])
+    if (url.pathname === '/rest/v1/memberships') return json([{ organization_id: 'org-1', user_id: 'internal-user-1', role: 'owner' }])
+    if (url.pathname === '/rest/v1/source_sync_memberships' && init?.method === 'PATCH') return json([])
+    throw new Error('Unexpected request: ' + url.pathname)
+  })
+  try {
+    const response = await handleGoogleSheets(new Request('https://app.example/api/integrations/google/source-review', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer valid-test-token', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ organization_id: 'org-1', invoice_id: 'invoice-1', source_key: 'google_sheets:spreadsheet123', source_range: 'Invoices!A:H', resolution: 'voided', note: 'Owner confirmed cancellation.' }),
+    }), env)
+    assert.equal(response.status, 502)
+    assert.equal((await response.json() as { error: string }).error, 'source_review_item_not_pending')
+  } finally { restore() }
+})

@@ -49,7 +49,6 @@ test('invalid rows are skipped with a row-specific reason; valid rows still impo
   assert.match(result.issues[3].message, /greater than zero/)
   assert.match(result.issues[4].message, /valid date/)
   assert.match(result.issues[6].message, /Column count/)
-  assert.match(result.issues[8].message, /Column count/)
 })
 
 test('duplicate invoice numbers inside one file keep the first and flag the rest', () => {

@@ -79,16 +79,47 @@
   .auth-google, .auth-submit { transition: none; }
 }
 
-@media (prefers-color-scheme: dark) {
-  .auth-page { background: radial-gradient(circle at 15% 10%, #1c3150 0, transparent 38%), #101722; color:#e8eef8; }
-  .auth-card { background:#172233; border-color:#2c3b50; }
-  .auth-brand,.auth-card h1 { color:#e8eef8; }
-  .auth-card > p:not(.auth-eyebrow) { color:#a4b2c6; }
-  .auth-form label { color:#c9d5e5; }
-  .auth-form input { color:#e8eef8; background:#101722; border-color:#3a4a60; }
-  .auth-mode { background:#101722; }
-  .auth-mode button { color:#a4b2c6; }
-  .auth-mode button.active { color:#5b9bff; background:#202e42; }
-  .auth-google { color:#e8eef8; background:#172233; border-color:#3a4a60; }
-  .auth-footnote { color:#a4b2c6; }
+/* Authentication uses the same Revenue Desk tokens and mark as the signed-in app. */
+.auth-page {
+  --auth-action: var(--action);
+  --auth-action-hover: var(--action-hover);
+  background: radial-gradient(ellipse at 15% 10%, rgba(225,230,215,.65), transparent 38%), var(--page);
+  color: var(--ink);
+}
+.auth-card {
+  width: min(100%, 480px);
+  border-color: var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 0 18px 54px rgba(24,59,50,.07);
+}
+.auth-brand { display:flex; align-items:center; gap:11px; margin-bottom:28px; color:var(--sidebar); font-size:20px; font-weight:700; letter-spacing:-.5px; }
+.auth-brand img { display:block; width:40px; height:40px; object-fit:contain; flex:none; }
+.auth-brand > span > span { color:#557c66; font-weight:500; }
+.auth-card h1 { color:var(--ink); }
+.auth-eyebrow { color:var(--action); font-size:11px; letter-spacing:.08em; }
+.auth-card > p:not(.auth-eyebrow) { color:var(--muted); font-size:14px; line-height:1.65; }
+.auth-mode { background:var(--surface-soft); border-radius:8px; }
+.auth-mode button { min-height:44px; color:var(--muted); font-size:13px; }
+.auth-mode button.active { color:var(--action); background:var(--surface); box-shadow:0 1px 3px rgba(32,41,35,.08); }
+.auth-google, .auth-submit { min-height:46px; border-radius:7px; font-size:14px; }
+.auth-google { color:var(--ink); background:var(--surface); border-color:var(--line); }
+.auth-google:hover:not(:disabled) { background:var(--surface-soft); border-color:#b9c8bb; }
+.auth-submit { color:var(--surface); background:var(--action); }
+.auth-submit:hover:not(:disabled) { background:var(--action-hover); }
+.auth-form label { color:var(--ink); font-size:13px; }
+.auth-form input { min-height:46px; color:var(--ink); background:var(--surface); border-color:var(--line); border-radius:7px; font-size:14px; }
+.auth-form input:focus { outline:3px solid rgba(45,124,99,.24); border-color:var(--focus); }
+.auth-google:focus-visible, .auth-submit:focus-visible, .auth-mode button:focus-visible { outline:3px solid var(--focus); outline-offset:3px; }
+.auth-divider { color:var(--muted); font-size:12px; }
+.auth-divider::before, .auth-divider::after { background:var(--line); }
+.auth-setup { border-color:var(--line); background:var(--surface-soft); }
+.auth-setup code { color:var(--action); background:#e4e9df; }
+.auth-setup small, .auth-footnote { color:var(--muted); }
+.auth-card a { color:var(--action); }
+.auth-message.error { color:#8f2925; background:#fbece8; }
+.auth-message.success { color:#205b3c; background:#e9f3e9; }
+@media (max-width: 520px) {
+  .auth-card { border-radius:10px; }
+  .auth-brand { margin-bottom:24px; }
 }

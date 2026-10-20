@@ -181,11 +181,21 @@ export async function handleGoogleSheets(request: Request, env: Env): Promise<Re
     if (!range || range.length > 200 || /[\r\n]/.test(range)) return response({ error: 'invalid_range' }, 400)
     const member = await membership(env, user.authId, organizationId)
     if (!member || !['owner', 'admin', 'operator'].includes(member.role)) return response({ error: 'workspace_permission_denied' }, 403)
+    let activeRunId: string | null = null
+    const sourceId = `google_sheets:${spreadsheetId}`
     try {
+      const runId = crypto.randomUUID()
+      activeRunId = runId
+      await db(env, 'source_sync_runs', {
+        method: 'POST', headers: { Prefer: 'return=minimal' },
+        body: JSON.stringify({ organization_id: organizationId, id: runId, source_key: sourceId,
+          provider: 'google_sheets', spreadsheet_id: spreadsheetId, source_range: range,
+          status: 'started', accepted_rows: 0, rejected_rows: 0 }),
+      })
       const connections = await db(env, `provider_connections?select=status,encrypted_refresh_token&organization_id=eq.${encodeURIComponent(organizationId)}&provider=eq.google_sheets&limit=1`) as Array<{ status: string; encrypted_refresh_token: string | null }>
       const connection = connections[0]
       if (!connection || connection.status !== 'connected' || !connection.encrypted_refresh_token) {
-        return response({ error: 'google_sheets_not_connected', message: 'Connect Google Sheets before syncing.' }, 409)
+        throw new Error('google_sheets_not_connected')
       }
       const refreshToken = await decryptRefreshToken(connection.encrypted_refresh_token, env.GOOGLE_TOKEN_ENCRYPTION_KEY!)
       const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
@@ -207,7 +217,6 @@ export async function handleGoogleSheets(request: Request, env: Env): Promise<Re
         throw new Error(reason)
       }
       const importedAt = new Date().toISOString()
-      const sourceId = `google_sheets:${spreadsheetId}`
       const parsed = parseSheetInvoiceValues(sheetPayload.values as unknown[][], sourceId, importedAt)
       const canonical = JSON.stringify({ spreadsheetId, range, rows: parsed.rows.map((row) => ({ id: row.id, invoiceNumber: row.invoiceNumber, customerId: row.customerId, customerName: row.customerName, currency: row.currency, totalMinor: row.totalMinor, paidMinor: row.paidMinor, issuedAt: row.issuedAt, dueAt: row.dueAt })) })
       const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonical))
@@ -223,18 +232,42 @@ export async function handleGoogleSheets(request: Request, env: Env): Promise<Re
       })
       const saved = await savedResponse.json().catch(() => null) as Json | null
       if (!savedResponse.ok || !saved) throw new Error('invoice_import_persist_failed')
-      await db(env, `provider_connections?organization_id=eq.${encodeURIComponent(organizationId)}&provider=eq.google_sheets`, {
-        method: 'PATCH', headers: { Prefer: 'return=minimal' },
-        body: JSON.stringify({ last_successful_sync_at: importedAt, last_error_code: null, updated_at: importedAt }),
-      })
+      const finalized = await db(env, 'rpc/complete_source_sync_snapshot', {
+        method: 'POST',
+        body: JSON.stringify({
+          p_organization_id: organizationId, p_run_id: runId, p_source_key: sourceId,
+          p_source_range: range, p_spreadsheet_id: spreadsheetId, p_content_digest: contentHash,
+          p_invoice_ids: parsed.rows.map((row) => row.id),
+          p_accepted_rows: parsed.rows.length, p_rejected_rows: parsed.rejectedRows,
+        }),
+      }) as Json
+      activeRunId = null
+      if (parsed.rejectedRows === 0) {
+        await db(env, `provider_connections?organization_id=eq.${encodeURIComponent(organizationId)}&provider=eq.google_sheets`, {
+          method: 'PATCH', headers: { Prefer: 'return=minimal' },
+          body: JSON.stringify({ last_successful_sync_at: importedAt, last_error_code: null, updated_at: importedAt }),
+        })
+      } else {
+        await db(env, `provider_connections?organization_id=eq.${encodeURIComponent(organizationId)}&provider=eq.google_sheets`, {
+          method: 'PATCH', headers: { Prefer: 'return=minimal' },
+          body: JSON.stringify({ last_error_code: 'snapshot_rejected_rows', updated_at: importedAt }),
+        })
+      }
       return response({
-        status: 'synced', accepted_rows: Number(saved.accepted_rows ?? 0),
-        rejected_rows: parsed.rejectedRows, duplicate: Boolean(saved.duplicate),
+        status: parsed.rejectedRows === 0 ? 'synced' : 'synced_with_errors',
+        accepted_rows: Number(saved.accepted_rows ?? 0), rejected_rows: parsed.rejectedRows,
+        duplicate: Boolean(saved.duplicate), reconciliation: finalized,
         import_id: typeof saved.import_id === 'string' ? saved.import_id : '',
       })
     } catch (cause) {
       const code = cause instanceof Error ? cause.message : 'google_sheet_sync_failed'
       const safeCode = /^[a-z0-9_:-]{1,80}$/.test(code) ? code : 'google_sheet_sync_failed'
+      if (activeRunId) {
+        await db(env, `source_sync_runs?organization_id=eq.${encodeURIComponent(organizationId)}&id=eq.${encodeURIComponent(activeRunId)}`, {
+          method: 'PATCH', headers: { Prefer: 'return=minimal' },
+          body: JSON.stringify({ status: 'failed', completed_at: new Date().toISOString(), error_code: safeCode }),
+        }).catch(() => undefined)
+      }
       await db(env, `provider_connections?organization_id=eq.${encodeURIComponent(organizationId)}&provider=eq.google_sheets`, {
         method: 'PATCH', headers: { Prefer: 'return=minimal' },
         body: JSON.stringify({ last_error_code: safeCode, updated_at: new Date().toISOString() }),
@@ -242,6 +275,43 @@ export async function handleGoogleSheets(request: Request, env: Env): Promise<Re
       const status = safeCode === 'google_sheet_access_denied' ? 403 : safeCode === 'google_sheet_not_found' ? 404 : safeCode.startsWith('missing_columns:') || safeCode.startsWith('ambiguous_sheet_headers:') || ['duplicate_sheet_headers', 'no_valid_invoice_rows', 'sheet_needs_header_and_rows', 'invalid_range'].includes(safeCode) ? 422 : 502
       return response({ error: safeCode, message: googleSheetsSyncErrorMessage(safeCode) }, status)
     }
+  }
+
+  if (url.pathname === '/api/integrations/google/source-review') {
+    if (request.method !== 'GET' && request.method !== 'POST') return response({ error: 'method_not_allowed' }, 405)
+    const user = await authenticate(request, env)
+    if (!user) return response({ error: 'unauthorized' }, 401)
+    const body = request.method === 'POST' ? await request.json().catch(() => null) as Json | null : null
+    const organizationId = (request.method === 'GET' ? url.searchParams.get('organization_id') : body?.organization_id)?.toString().trim() ?? ''
+    if (!organizationId || organizationId.length > 160) return response({ error: 'organization_required' }, 400)
+    const member = await membership(env, user.authId, organizationId)
+    if (!member || !['owner', 'admin'].includes(member.role)) return response({ error: 'workspace_admin_required' }, 403)
+
+    if (request.method === 'GET') {
+      const rows = await db(env, `source_sync_memberships?select=organization_id,source_key,source_range,invoice_id,last_seen_at,review_state,review_note&organization_id=eq.${encodeURIComponent(organizationId)}&review_state=eq.missing_from_source_pending_review&order=last_seen_at.desc&limit=100`) as Array<Record<string, unknown>>
+      const ids = rows.map((row) => String(row.invoice_id ?? '')).filter(Boolean)
+      const invoices = ids.length ? await db(env, `invoices?select=id,invoice_number,customer_name,currency,total_minor,paid_minor,due_at&organization_id=eq.${encodeURIComponent(organizationId)}&id=in.(${ids.map(encodeURIComponent).join(',')})`) as Array<Record<string, unknown>> : []
+      const byId = new Map(invoices.map((invoice) => [String(invoice.id), invoice]))
+      return response({ items: rows.map((row) => ({ ...row, invoice: byId.get(String(row.invoice_id)) ?? null })) })
+    }
+
+    const invoiceId = typeof body?.invoice_id === 'string' ? body.invoice_id.trim() : ''
+    const sourceKey = typeof body?.source_key === 'string' ? body.source_key.trim() : ''
+    const sourceRange = typeof body?.source_range === 'string' ? body.source_range.trim() : ''
+    const resolution = typeof body?.resolution === 'string' ? body.resolution : ''
+    const note = typeof body?.note === 'string' ? body.note.trim() : ''
+    const allowed = ['keep_tracking', 'settled_elsewhere', 'voided', 'moved_out_of_range']
+    if (!invoiceId || !sourceKey || !sourceRange || !allowed.includes(resolution) || !note || note.length > 500) {
+      return response({ error: 'review_details_required', message: 'Choose a review decision and add a note of up to 500 characters.' }, 400)
+    }
+    await db(env, `source_sync_memberships?organization_id=eq.${encodeURIComponent(organizationId)}&source_key=eq.${encodeURIComponent(sourceKey)}&source_range=eq.${encodeURIComponent(sourceRange)}&invoice_id=eq.${encodeURIComponent(invoiceId)}&review_state=eq.missing_from_source_pending_review`, {
+      method: 'PATCH', headers: { Prefer: 'return=representation' },
+      body: JSON.stringify({ review_state: 'resolved', review_note: '[' + resolution + '] ' + note, reviewed_by: member.user_id, reviewed_at: new Date().toISOString() }),
+    }).then((rows) => {
+      if (!Array.isArray(rows) || rows.length !== 1) throw new Error('source_review_item_not_pending')
+      return rows
+    })
+    return response({ status: 'resolved', resolution })
   }
 
   if (url.pathname === '/api/integrations/google/status') {

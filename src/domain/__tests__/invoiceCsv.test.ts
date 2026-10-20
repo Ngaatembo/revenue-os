@@ -42,7 +42,7 @@ test('invalid rows are skipped with a row-specific reason; valid rows still impo
     'c10,Iota,INV-10,USD,100,0,2026-01-01',
   ])
   assert.deepEqual(result.invoices.map((invoice) => invoice.invoiceNumber), ['INV-1', 'INV-9'])
-  assert.deepEqual(result.issues.map((issue) => issue.row), [3, 4, 5, 6, 7, 8, 10, 11])
+  assert.deepEqual(result.issues.map((issue) => issue.row), [3, 4, 5, 6, 7, 8, 9, 11])
   assert.match(result.issues[0].message, /2 decimal places/)
   assert.match(result.issues[1].message, /three-letter/)
   assert.match(result.issues[2].message, /cannot exceed/)

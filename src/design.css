@@ -180,3 +180,52 @@ h1, .panel-heading h2, .aging-head h2 { letter-spacing: -.01em; }
 .nav-item.active svg { color: var(--action); }
 .button-primary { box-shadow: 0 1px 2px rgba(18, 66, 130, .12); }
 .metric-card:nth-child(3) .metric-value { color: var(--verified); }
+
+
+/* Urgent workspace: a calm, evidence-first command queue. */
+.attention-queue { display: grid; gap: 18px; }
+.attention-queue > .brain-note {
+  margin: 0; padding: 14px 16px; border: 1px solid var(--line);
+  border-left: 3px solid var(--action); border-radius: 6px;
+  background: color-mix(in srgb, var(--action) 4%, var(--surface));
+  color: var(--muted); line-height: 1.65;
+}
+.attention-queue > .brain-note strong { color: var(--ink); font-weight: 700; }
+.attention-queue .opportunity-list { display: grid; gap: 12px; }
+.attention-card {
+  min-width: 0; padding: 20px 22px; border: 1px solid var(--line);
+  border-radius: 8px; background: var(--surface);
+  box-shadow: 0 2px 5px rgba(20, 35, 59, .025);
+  transition: border-color .16s ease, box-shadow .16s ease;
+}
+.attention-card:hover { border-color: color-mix(in srgb, var(--action) 35%, var(--line)); box-shadow: 0 5px 18px rgba(20, 35, 59, .055); }
+.attention-card > header {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px;
+  margin-bottom: 14px; padding-bottom: 13px; border-bottom: 1px solid var(--line);
+}
+.attention-card > header > strong { color: var(--ink); font-size: 15px; font-weight: 720; }
+.attention-card .brain-tag { display: inline-flex; align-items: center; min-height: 25px; padding: 3px 9px; border-radius: 5px; background: color-mix(in srgb, var(--band-2) 15%, var(--surface)); color: var(--ink); font-size: 12px; font-weight: 650; }
+.attention-card .brain-tag-muted { background: var(--page); color: var(--muted); }
+.attention-card > p { margin: 9px 0; color: var(--muted); font-size: 14px; line-height: 1.65; overflow-wrap: anywhere; }
+.attention-card > p > strong { color: var(--ink); font-weight: 650; }
+.attention-card .why-details { margin-top: 13px; padding-top: 12px; border-top: 1px solid var(--line); }
+.attention-card .why-details summary { width: fit-content; color: var(--action); font-size: 13px; font-weight: 650; cursor: pointer; }
+.attention-card .why-details ul { padding-left: 20px; color: var(--muted); line-height: 1.65; }
+.attention-card .why-details li + li { margin-top: 5px; }
+.attention-card .recovery-action-controls { margin-top: 14px; }
+.attention-card .recovery-action-controls .button { min-height: 40px; }
+.attention-queue > .empty-state { padding: 34px 22px; border: 1px dashed var(--line); border-radius: 8px; background: var(--surface); }
+.attention-queue > .empty-state h3 { margin: 0 0 7px; color: var(--ink); font-size: 17px; }
+.attention-queue > .empty-state p { max-width: 680px; margin: 0; color: var(--muted); line-height: 1.65; }
+.attention-queue > details.why-details { padding: 14px 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--page); }
+.attention-queue > details.why-details > summary { color: var(--muted); font-size: 13px; font-weight: 650; cursor: pointer; }
+.attention-queue > details.why-details .opportunity-list { margin-top: 12px; }
+@media (max-width: 620px) {
+  .attention-card { padding: 16px; }
+  .attention-card > header { align-items: flex-start; }
+  .attention-card > header > strong { flex: 1 1 100%; }
+  .attention-card .recovery-action-controls .button { width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .attention-card { transition: none; }
+}

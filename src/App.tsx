@@ -28,6 +28,7 @@ import { buildMoneyPosition, type MoneyPosition } from './domain/moneyPosition'
 import type { IssueTransition } from './lib/opportunityQueries'
 import './App.css'
 import './design.css'
+import './sourceReview.css'
 
 type Section = 'Overview' | 'Urgent' | 'Follow-ups' | 'Opportunities' | 'Lead Recovery' | 'Actions' | 'Outcomes' | 'Business Brain' | 'Connections'
 

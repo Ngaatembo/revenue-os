@@ -24,8 +24,9 @@ export function attachBusinessSignalEvidence(
   const sourceNotes = new Map<string, string[]>()
   for (const signal of signals) {
     if (signal.type !== 'invoice_overdue' || signal.customer.status !== 'matched') continue
+    const customerId = signal.customer.customerId
     const opportunity = opportunities.find((candidate) => candidate.evidence.some((invoice) =>
-      invoice.customerId === signal.customer.customerId
+      invoice.customerId === customerId
       && invoice.source.sourceId === signal.sourceId
       && invoice.source.recordId === signal.evidence.externalRecordId))
     if (!opportunity) continue

@@ -234,6 +234,7 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
   const [rateDraft, setRateDraft] = useState('')
   const [error, setError] = useState('')
   const [importNote, setImportNote] = useState('')
+  const [pendingInvoiceImport, setPendingInvoiceImport] = useState<{ fileName: string; sourceId: string; contentHash: string; invoices: ReturnType<typeof parseInvoiceCsv>['invoices']; issues: CsvIssue[]; parsedCount: number } | null>(null)
   const [leads, setLeads] = useState<LeadRecord[]>([])
   const [leadLoading, setLeadLoading] = useState(true)
   const [leadError, setLeadError] = useState('')
@@ -627,6 +628,7 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
     if (!file) return
     setError('')
     setImportNote('')
+    setPendingInvoiceImport(null)
     try {
       const text = await file.text()
       const importedAt = new Date().toISOString()
@@ -634,18 +636,38 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
       const result = parseInvoiceCsv(text, sourceId, importedAt)
       const { fresh, duplicates } = partitionCrossSourceDuplicates(result.invoices, result.rowNumbers, invoices)
       const allIssues = [...result.issues, ...duplicates].sort((a, b) => a.row - b.row)
-      setIssues(allIssues)
-      setSourceName(file.name)
-      setActiveSection('Opportunities')
       const limit = checkInvoiceImportSize(plan, fresh.length)
       if (!limit.allowed) { setError(limit.message); return }
-      if (fresh.length === 0) {
-        setImportNote(duplicates.length && !result.issues.length ? 'No new invoices were saved: every valid row is already saved from another file.' : 'No valid invoice rows were saved. Review the row issues below and correct the source file.')
-        return
-      }
+      setIssues(allIssues)
+      setSourceName(file.name)
+      setPendingInvoiceImport({
+        fileName: file.name,
+        sourceId,
+        contentHash: await sha256Hex(text),
+        invoices: fresh,
+        issues: allIssues,
+        parsedCount: result.invoices.length,
+      })
+      setActiveSection('Opportunities')
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'This file could not be read. Choose a CSV export and try again.')
+    } finally {
+      if (fileRef.current) fileRef.current.value = ''
+    }
+  }
+
+  async function confirmInvoiceImport() {
+    const pending = pendingInvoiceImport
+    if (!pending || pending.invoices.length === 0) return
+    setError('')
+    setImportNote('')
+    try {
       const outcome = await persistInvoiceImport(session, organization, {
-        sourceId, sourceName: file.name, contentHash: await sha256Hex(text),
-        invoices: fresh, rejectedRows: allIssues.length,
+        sourceId: pending.sourceId,
+        sourceName: pending.fileName,
+        contentHash: pending.contentHash,
+        invoices: pending.invoices,
+        rejectedRows: pending.issues.length,
       })
       // Payments that were waiting for an invoice are matched now. Only exact, unambiguous matches are applied.
       await rematchPaymentReview(session, organization.id).then(() => records.reload()).catch(() => undefined)
@@ -658,13 +680,13 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
         : outcome.acceptedRows + ' invoice record' + (outcome.acceptedRows === 1 ? '' : 's') + ' saved to Supabase.' + (outcome.rejectedRows ? ' ' + outcome.rejectedRows + ' row(s) were skipped (see below).' : '')
       const now = Date.now()
       const day = 24 * 60 * 60 * 1000
-      const unpaid = fresh.filter((invoice) => invoice.total.amount > invoice.paid.amount)
+      const unpaid = pending.invoices.filter((invoice) => invoice.total.amount > invoice.paid.amount)
       const overdue = unpaid.filter((invoice) => Date.parse(invoice.dueAt) < now)
       const dueSoon = unpaid.filter((invoice) => {
         const dueAt = Date.parse(invoice.dueAt)
         return dueAt >= now && dueAt <= now + 7 * day
       })
-      const paid = fresh.length - unpaid.length
+      const paid = pending.invoices.length - unpaid.length
       const findings = ' From the new records: ' + unpaid.length + ' still have a balance, ' +
         overdue.length + ' are past their due date, ' + dueSoon.length + ' are due within 7 days, and ' +
         paid + ' are fully paid.'
@@ -672,11 +694,17 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
         ? ' ' + synced.open + ' overdue recovery opportunit' + (synced.open === 1 ? 'y' : 'ies') + ' currently identified' + (synced.created ? ' (' + synced.created + ' new)' : '') + '.'
         : assumptionBps === null ? ' Set a recovery-rate assumption to calculate estimated recovery value.' : ''
       setImportNote(saved + findings + detected)
+      setPendingInvoiceImport(null)
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'This file could not be imported.')
-    } finally {
-      if (fileRef.current) fileRef.current.value = ''
+      setError(cause instanceof Error ? cause.message : 'The records could not be saved. Your file has not been confirmed as imported; review the message and try again.')
     }
+  }
+
+  function cancelInvoiceImport() {
+    setPendingInvoiceImport(null)
+    setIssues([])
+    setImportNote('')
+    setError('')
   }
 
   const derivedFacts = useMemo(() => deriveRecordFacts({ invoices, payments, assumptionBps, asOf: new Date().toISOString() }), [invoices, payments, assumptionBps])
@@ -769,6 +797,23 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
 
           {error && <div className="alert alert-error" role="alert"><strong>Could not complete the operation.</strong> {error}</div>}
           {importNote && <div className="alert alert-success" role="status"><strong>Saved.</strong> {importNote}</div>}
+          {pendingInvoiceImport && <section className="panel import-preview" aria-labelledby="import-preview-title">
+            <div className="panel-heading"><div><p className="eyebrow">CHECK BEFORE SAVING</p><h2 id="import-preview-title">Here is what Revenue OS understood</h2><p>Nothing from this file has been saved yet. Review the summary and sample records before confirming.</p></div><span className="status-pill">Preview</span></div>
+            <p><strong>{pendingInvoiceImport.fileName}</strong></p>
+            <div className="metric-grid import-preview-metrics">
+              <article className="metric-card"><span>Recognised invoice rows</span><strong className="metric-value">{pendingInvoiceImport.parsedCount}</strong></article>
+              <article className="metric-card"><span>New records to save</span><strong className="metric-value">{pendingInvoiceImport.invoices.length}</strong></article>
+              <article className="metric-card"><span>Rows to review</span><strong className="metric-value">{pendingInvoiceImport.issues.length}</strong></article>
+            </div>
+            {pendingInvoiceImport.invoices.length > 0 ? <>
+              <p className="import-preview-help">Sample of up to five records. Balances are calculated from invoice amount minus amount paid.</p>
+              <div className="table-scroll"><table><thead><tr><th>Invoice</th><th>Customer</th><th>Currency</th><th>Balance</th><th>Due date</th></tr></thead><tbody>
+                {pendingInvoiceImport.invoices.slice(0, 5).map((invoice) => <tr key={invoice.id}><td>{invoice.invoiceNumber}</td><td>{invoice.customerName}</td><td>{invoice.currency}</td><td>{(Math.max(0, invoice.total.amount - invoice.paid.amount) / 100).toFixed(2)} {invoice.currency}</td><td>{invoice.dueAt.slice(0, 10)}</td></tr>)}
+              </tbody></table></div>
+            </> : <div className="alert alert-info">No new valid invoice rows are ready to save. Review the row issues or choose a corrected file.</div>}
+            {pendingInvoiceImport.issues.length > 0 && <div className="import-preview-help"><strong>Rows to check:</strong> {pendingInvoiceImport.issues.slice(0, 5).map((issue) => 'Row ' + issue.row + ': ' + issue.message).join(' · ')}{pendingInvoiceImport.issues.length > 5 ? ' · and ' + (pendingInvoiceImport.issues.length - 5) + ' more' : ''}</div>}
+            <div className="recovery-action-controls"><button className="button button-primary" type="button" onClick={() => void confirmInvoiceImport()} disabled={pendingInvoiceImport.invoices.length === 0}>Confirm and save {pendingInvoiceImport.invoices.length} record{pendingInvoiceImport.invoices.length === 1 ? '' : 's'}</button><button className="button button-secondary" type="button" onClick={cancelInvoiceImport}>Cancel import</button></div>
+          </section>}
           {loadError && <div className="alert alert-error" role="alert"><strong>Could not load your saved data.</strong> {loadError} Your records are not lost; reload the page to try again.</div>}
           {store.note && <div className={'alert ' + (store.noteIsError ? 'alert-error' : 'alert-info')} role={store.noteIsError ? 'alert' : 'status'}>{store.note}</div>}
 

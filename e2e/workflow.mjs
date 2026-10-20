@@ -64,7 +64,9 @@ try {
       + `c2,Birch Co,INV-200,USD,500.00,0,${day(-70)},${day(-40)}\n`
       + `c3,Cedar Ltd,INV-300,USD,250.00,0,${day(-60)},${day(-30)}\n`
     await page.locator('input[type=file]').first().setInputFiles(write('invoices.csv', csv))
-    await page.getByText(/3 invoice records? saved/).first().waitFor({ timeout: 20000 })
+    await page.getByRole('button', { name: /Confirm and save 3 records/ }).waitFor({ timeout: 15000 })
+    await page.getByRole('button', { name: /Confirm and save 3 records/ }).click()
+    await page.getByText(/3 invoice records? saved to Supabase/).first().waitFor({ timeout: 20000 })
     assert(sql(`select count(*) from public.invoices`) === '3', 'invoices not saved')
   })
   await step('recovery rate set so overdue invoices become opportunities', async () => {

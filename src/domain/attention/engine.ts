@@ -13,6 +13,34 @@ const subjectKey = (finding: AttentionFinding) => `${finding.subject.type}:${fin
 const moneyOf = (item: { knownMoney: Money | null; speculativeMoney: Money | null }): Money | null => item.knownMoney ?? item.speculativeMoney
 
 /**
+ * Adds source provenance from normalized invoice signals to the existing invoice finding.
+ * It intentionally enriches existing findings instead of creating another queue item.
+ */
+export function attachBusinessSignalEvidence(
+  findings: AttentionFinding[],
+  opportunities: AttentionContext['opportunities'],
+  signals: NonNullable<AttentionContext['businessSignals']> = [],
+): AttentionFinding[] {
+  const sourceNotes = new Map<string, string[]>()
+  for (const signal of signals) {
+    if (signal.type !== 'invoice_overdue' || signal.customer.status !== 'matched') continue
+    const opportunity = opportunities.find((candidate) => candidate.evidence.some((invoice) =>
+      invoice.customerId === signal.customer.customerId
+      && invoice.source.sourceId === signal.sourceId
+      && invoice.source.recordId === signal.evidence.externalRecordId))
+    if (!opportunity) continue
+    const note = `Normalized signal source: ${signal.provider} · record ${signal.evidence.externalRecordId} · observed ${signal.observedAt}.`
+    sourceNotes.set(opportunity.id, [...(sourceNotes.get(opportunity.id) ?? []), note])
+  }
+  return findings.map((finding) => {
+    if (finding.subject.type !== 'invoice') return finding
+    const notes = sourceNotes.get(finding.subject.id) ?? []
+    if (!notes.length) return finding
+    return { ...finding, evidence: [...new Set([...finding.evidence, ...notes])] }
+  })
+}
+
+/**
  * Runs every rule, merges findings about the same subject into ONE item (no duplicate alerts),
  * scores each item and sorts. A rule that throws is skipped and reported, never allowed to hide the others.
  */
@@ -22,8 +50,9 @@ export function evaluateAttention(context: AttentionContext, rules: AttentionRul
   for (const rule of rules) {
     try { findings.push(...rule.run(context)) } catch { failedRules.push(rule.id) }
   }
+  const enrichedFindings = attachBusinessSignalEvidence(findings, context.opportunities, context.businessSignals)
   const grouped = new Map<string, AttentionFinding[]>()
-  for (const finding of findings) grouped.set(subjectKey(finding), [...(grouped.get(subjectKey(finding)) ?? []), finding])
+  for (const finding of enrichedFindings) grouped.set(subjectKey(finding), [...(grouped.get(subjectKey(finding)) ?? []), finding])
 
   const drafts = [...grouped].map(([id, list]) => {
     const sorted = [...list].sort((a, b) => b.severity - a.severity || b.urgency - a.urgency || a.ruleId.localeCompare(b.ruleId))

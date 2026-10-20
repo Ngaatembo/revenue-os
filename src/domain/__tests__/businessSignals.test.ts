@@ -49,6 +49,22 @@ test('candidate and unmatched customers must remain in review', () => {
   })), [])
 })
 
+test('malformed input is rejected without throwing', () => {
+  assert.ok(validateBusinessSignal(null as unknown as BusinessSignal).some((error) => error.includes('object')))
+  assert.ok(validateBusinessSignal(base({ customer: null as unknown as BusinessSignal['customer'] }))
+    .some((error) => error.includes('customer must be an object')))
+  assert.ok(validateBusinessSignal(base({ evidence: null as unknown as BusinessSignal['evidence'] }))
+    .some((error) => error.includes('evidence must be an object')))
+
+  const result = classifyBusinessSignalBatch([
+    null as unknown as BusinessSignal,
+    base({ customer: undefined as unknown as BusinessSignal['customer'] }),
+    base({ idempotencyKey: 'valid-after-malformed' }),
+  ])
+  assert.equal(result.accepted.length, 1)
+  assert.equal(result.rejected.length, 2)
+})
+
 test('identical source events are idempotent within a batch', () => {
   const signal = base()
   const result = classifyBusinessSignalBatch([signal, { ...signal }])
@@ -57,14 +73,17 @@ test('identical source events are idempotent within a batch', () => {
   assert.deepEqual(result.conflicts, [])
 })
 
-test('conflicting content that reuses an idempotency key is quarantined', () => {
+test('conflicting content quarantines every row sharing an idempotency key', () => {
+  const first = base()
   const result = classifyBusinessSignalBatch([
-    base(),
+    first,
     base({ summary: 'A different event was observed under the same source key.' }),
+    base({ summary: 'A third event reused the same key.' }),
   ])
-  assert.equal(result.accepted.length, 1)
-  assert.equal(result.conflicts.length, 1)
-  assert.match(result.conflicts[0].reason, /conflicting signal content/)
+  assert.equal(result.accepted.length, 0)
+  assert.equal(result.conflicts.length, 2)
+  assert.ok(result.conflicts.every((conflict) => conflict.idempotencyKey === first.idempotencyKey))
+  assert.match(result.conflicts[0].reason, /all rows.*quarantined/)
 })
 
 test('same provider key from separate organizations does not collide', () => {

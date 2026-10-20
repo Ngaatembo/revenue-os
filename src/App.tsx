@@ -337,6 +337,17 @@ function GoogleSheetsConnector({ session, organization, onSynced }: { session: S
     setNotice('')
     try {
       const current = await getFreshSession(session)
+      const selectedFile = spreadsheets.find((file) => file.id === spreadsheetId)
+      const selectedTab = sheetTabs.find((tab) => tab.suggested_range === range)
+      if (selectedFile && selectedTab) {
+        const selectionResponse = await fetch('/api/integrations/google/source-selection', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${current.access_token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ organization_id: organization.id, spreadsheet_id: spreadsheetId, spreadsheet_name: selectedFile.name, tab_title: selectedTab.title, range }),
+        })
+        const selectionPayload = await selectionResponse.json().catch(() => ({})) as { message?: string; error?: string }
+        if (!selectionResponse.ok) throw new Error(selectionPayload.message || selectionPayload.error || 'Could not save the selected source.')
+      }
       const response = await fetch('/api/integrations/google/sync', {
         method: 'POST',
         headers: { Authorization: `Bearer ${current.access_token}`, 'Content-Type': 'application/json' },

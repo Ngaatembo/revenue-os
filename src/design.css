@@ -588,3 +588,13 @@ a { text-underline-offset: .18em; }
   .mobile-more-menu > button svg { width: 20px; height: 20px; flex: 0 0 20px; }
   .mobile-more-arrow { margin-left: auto; color: var(--muted); font-size: 22px; }
 }
+
+
+/* Business Brain progressive disclosure: ordinary reading first, correction controls on demand. */
+.brain-reason-disclosure { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
+.brain-reason-disclosure summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 42px; color: var(--action); font-size: 13px; font-weight: 650; cursor: pointer; }
+.brain-reason-disclosure p { max-width: 56ch; margin: 4px 0 10px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.brain-reason-disclosure label { display: grid; gap: 6px; color: var(--ink); font-size: 13px; font-weight: 600; }
+.brain-reason-disclosure input { width: 100%; min-height: 44px; box-sizing: border-box; padding: 10px 12px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); color: var(--ink); font: inherit; }
+.brain-reason-disclosure input:focus-visible { outline: 3px solid color-mix(in srgb, var(--action) 24%, transparent); outline-offset: 1px; border-color: var(--action); }
+@media (max-width: 760px) { .brain-reason-disclosure { margin-top: 10px; } .brain-reason-disclosure summary { min-height: 46px; } }

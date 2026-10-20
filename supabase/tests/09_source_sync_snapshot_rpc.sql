@@ -12,14 +12,20 @@ select set_config('t.org', :'org', false) \gset
 select set_config('request.jwt.claim.sub', '', false) \gset
 
 -- Persist synthetic invoices through the same import RPC used by the application.
-set role service_role;
-select set_config('request.jwt.claim.role', 'service_role', false);
+select set_config('request.jwt.claim.sub', :'U', false);
+set role authenticated;
 select t.ok('snapshot: seed invoices', $q$select public.persist_invoice_import(
   t.o('org'), 'google_sheets:spreadsheet12345', 'sheet.csv', repeat('a',64),
   jsonb_build_array(
     jsonb_build_object('id','snapshot-inv-a','invoiceNumber','S-A','customerId','c-a','customerName','Customer A','currency','USD','totalMinor',10000,'paidMinor',0,'issuedAt',now()-interval '30 days','dueAt',now()-interval '10 days','importedAt',now()),
     jsonb_build_object('id','snapshot-inv-b','invoiceNumber','S-B','customerId','c-b','customerName','Customer B','currency','USD','totalMinor',20000,'paidMinor',0,'issuedAt',now()-interval '30 days','dueAt',now()-interval '10 days','importedAt',now())
   ),0)$q$);
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
+-- Snapshot completion is a service-role-only server operation.
+set role service_role;
+select set_config('request.jwt.claim.role', 'service_role', false);
 
 -- First complete snapshot should mark both rows present.
 insert into public.source_sync_runs(organization_id,id,source_key,provider,spreadsheet_id,source_range,status)

@@ -224,6 +224,41 @@ export async function handleGoogleSheets(request: Request, env: Env): Promise<Re
     }
   }
 
+  if (url.pathname === '/api/integrations/google/source-selection') {
+    const user = await authenticate(request, env)
+    if (!user) return response({ error: 'unauthorized' }, 401)
+    const organizationId = request.method === 'GET'
+      ? (url.searchParams.get('organization_id')?.trim() ?? '')
+      : ''
+    const body = request.method === 'POST' ? await request.json().catch(() => null) as Json | null : null
+    const orgId = organizationId || (typeof body?.organization_id === 'string' ? body.organization_id.trim() : '')
+    if (!orgId || orgId.length > 160) return response({ error: 'organization_required' }, 400)
+    if (request.method !== 'GET' && request.method !== 'POST') return response({ error: 'method_not_allowed' }, 405)
+    const member = await membership(env, user.authId, orgId)
+    if (!member || !['owner', 'admin', 'operator'].includes(member.role)) return response({ error: 'workspace_permission_denied' }, 403)
+    if (request.method === 'GET') {
+      const rows = await db(env, `provider_source_selections?select=source_id,source_name,source_config,updated_at&organization_id=eq.${encodeURIComponent(orgId)}&provider=eq.google_sheets&limit=1`) as Array<{ source_id: string; source_name: string; source_config: Json; updated_at: string }>
+      return response({ selection: rows[0] ?? null })
+    }
+    const spreadsheetId = typeof body?.spreadsheet_id === 'string' ? body.spreadsheet_id.trim() : ''
+    const spreadsheetName = typeof body?.spreadsheet_name === 'string' ? body.spreadsheet_name.trim().slice(0, 300) : ''
+    const range = typeof body?.range === 'string' ? body.range.trim() : ''
+    const tabTitle = typeof body?.tab_title === 'string' ? body.tab_title.trim().slice(0, 200) : ''
+    if (!/^[A-Za-z0-9_-]{10,200}$/.test(spreadsheetId) || !spreadsheetName || !range || range.length > 300 || /[\r\n]/.test(range) || !tabTitle) {
+      return response({ error: 'invalid_source_selection', message: 'Choose a spreadsheet and invoice tab before saving the source.' }, 400)
+    }
+    const savedAt = new Date().toISOString()
+    await db(env, 'provider_source_selections?on_conflict=organization_id,provider', {
+      method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=representation' },
+      body: JSON.stringify({
+        organization_id: orgId, provider: 'google_sheets', source_id: `google_sheets:${spreadsheetId}`,
+        source_name: spreadsheetName, source_config: { spreadsheet_id: spreadsheetId, range, tab_title: tabTitle },
+        updated_at: savedAt,
+      }),
+    })
+    return response({ saved: true, updated_at: savedAt })
+  }
+
   if (url.pathname === '/api/integrations/google/inspect') {
     if (request.method !== 'GET') return response({ error: 'method_not_allowed' }, 405)
     const user = await authenticate(request, env)

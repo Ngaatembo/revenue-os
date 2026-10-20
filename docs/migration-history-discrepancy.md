@@ -1,44 +1,52 @@
 # Hosted migration history and schema drift
 
-## Read-only verification on 2026-10-20
+## Verified production state on 2026-10-20
 
-The hosted project `revenue-os` (`zivgfvcmposnbwqsudas`) reports 20 tracked migrations, from
-`20261013212317` through `20261018111455`. The history includes the previously reconciled
-`20261014150000` migration.
+The hosted project `revenue-os` (`zivgfvcmposnbwqsudas`) reports 22 tracked migrations, from
+`20261013212317` through `20261020081110`. The two source-snapshot migrations are now applied and
+tracked under these exact hosted versions:
 
-A read-only schema inspection found an important discrepancy: several tables associated with later local
-work exist in the hosted schema, including `quotations`, `quotation_events`, `deposits`,
-`payment_review_items`, `tasks`, `brain_facts`, `evaluation_runs`, and `invoice_interactions`,
-but the hosted migration history does not list the later local migration versions
-`20261019200000`, `20261019210000`, `20261019220000`, or `20261020100000`.
-The new `source_sync_runs` and `source_sync_memberships` tables are absent from the hosted schema.
+- `20261020081030 source_sync_snapshot_tracking`
+- `20261020081110 complete_source_sync_snapshot`
 
-The live Google Sheets connection row currently reports `status=connected`, no successful sync timestamp,
-and a generic sync error. This is not proof that a spreadsheet sync has succeeded.
+The local filenames must match those version stamps so future Supabase CLI runs do not treat these
+already-applied migrations as new work.
 
-## Safety decision
+A prior read-only schema inspection found objects associated with four later local migrations already
+present in the hosted schema, while the hosted migration history did not list their local versions:
+`20261019200000`, `20261019210000`, `20261019220000`, and `20261020100000`. Their presence alone
+does not prove that every constraint, policy, trigger, function body, index, or grant matches the local
+migration. The attempt to repair the internal migration ledger was blocked by the database tool's safety
+controls and was not bypassed.
 
-**Do not apply any further production migrations until the schema/history discrepancy is reconciled.**
-Existing tables may have been created outside the tracked migration workflow or through partial manual
-application. Replaying the same DDL blindly could fail or leave partially divergent functions, triggers,
-constraints, grants, and policies. The hosted database also contains real workspace records, so it must not
-be treated as empty or disposable.
+## Source snapshot migration verification
 
-No production schema or data was changed during this check.
+The following checks were run after applying the two migrations:
 
-## Reconciliation procedure
+- `public.source_sync_runs` exists.
+- `public.source_sync_memberships` exists.
+- `public.complete_source_sync_snapshot(...)` is SECURITY DEFINER with an empty search path.
+- `anon` and `authenticated` cannot execute the finalizer; `service_role` can.
+- The latest repository verification, database, browser-workflow, and Cloudflare Worker build checks passed.
 
-1. Compare each of the four later local migration files against the actual hosted tables, columns, constraints,
+## Google Sheets connection status
+
+The hosted connection record is `connected`, but `last_successful_sync_at` is still NULL and the last
+recorded error is `google_sheet_sync_failed`. The saved scopes include the read-only Sheets scope.
+This is not proof of a successful real spreadsheet import; an end-to-end sync, repeat-sync idempotency,
+partial-row rejection, and owner review flow still need a real safe test.
+
+## Reconciliation plan for the four older schema-history gaps
+
+1. Compare each of the four local migration files against the actual hosted tables, columns, constraints,
    indexes, policies, triggers, functions, and grants. Do not compare table names alone.
-2. Identify which objects are missing, which are already present, and whether their definitions exactly match
-   the local migration.
-3. Prepare a reviewed, idempotent reconciliation migration or documented migration-history repair plan. Do not
-   insert migration-history rows merely to make the list look current.
+2. Identify exactly which objects match and which differ.
+3. Prepare a reviewed reconciliation plan. Do not insert migration-history rows merely to make the list
+   look current.
 4. Run the complete migration suite and SQL security tests on a disposable database first.
-5. Obtain explicit owner approval before any production DDL or migration-history mutation.
-6. Apply the reviewed change once through the approved workflow, then re-check migration history and schema.
-7. Apply the source snapshot migrations only after the prior schema dependencies and their definitions are
-   confirmed consistent.
+5. Use the supported Supabase migration workflow to reconcile the history; do not bypass tool safety
+   controls or replay DDL blindly.
+6. Re-check the migration list and object definitions after the supported repair.
 
 ## Known local migration order
 
@@ -47,15 +55,15 @@ No production schema or data was changed during this check.
 - `20261019220000_scheduled_evaluation.sql`: evaluation run log and optional `pg_cron` schedule.
 - `20261020100000_business_records.sql`: quotations, deposits, tasks, action owners, payment review queue,
   workspace member list, and payment import behavior.
-- `20261020083000_source_sync_snapshot_tracking.sql` and
-  `20261020084500_complete_source_sync_snapshot.sql`: Google Sheets source snapshot tracking and reconciliation.
+- `20261020081030_source_sync_snapshot_tracking.sql`: Google Sheets source snapshot tracking.
+- `20261020081110_complete_source_sync_snapshot.sql`: atomic snapshot finalization and reconciliation.
 
-The migration timestamps do not themselves establish dependency order; verify the actual function and table
-dependencies from the SQL before preparing the reconciliation plan.
+Migration timestamps alone do not establish dependency order; verify actual function and table dependencies
+from the SQL before preparing any production reconciliation.
 
 ## Earlier version-stamp reconciliation
 
-Two local files were renamed to match the hosted versions previously confirmed:
+Two earlier local files were renamed to match hosted versions:
 
 | Migration | Old local version | Hosted/local version |
 | --- | --- | --- |

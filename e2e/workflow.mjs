@@ -243,8 +243,21 @@ try {
     for (const name of ['Follow-ups', 'Urgent']) {
       await page.locator('nav').getByRole('button', { name: new RegExp('^' + name) }).last().click()
       await page.waitForTimeout(300)
-      const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
-      assert(overflow <= 1, `${name} overflows by ${overflow}px`)
+      const diagnostics = await page.evaluate(() => {
+        const width = document.documentElement.clientWidth
+        return {
+          overflow: document.documentElement.scrollWidth - width,
+          elements: [...document.querySelectorAll('body *')]
+            .map((element) => {
+              const rect = element.getBoundingClientRect()
+              return { tag: element.tagName, className: typeof element.className === 'string' ? element.className : '', text: (element.textContent || '').trim().slice(0, 60), left: Math.round(rect.left), right: Math.round(rect.right), width: Math.round(rect.width), scrollWidth: element.scrollWidth, clientWidth: element.clientWidth }
+            })
+            .filter((element) => element.right > width + 1 || element.left < -1 || element.scrollWidth > element.clientWidth + 1)
+            .sort((a, b) => b.right - a.right)
+            .slice(0, 12),
+        }
+      })
+      assert(diagnostics.overflow <= 1, `${name} overflows by ${diagnostics.overflow}px: ${JSON.stringify(diagnostics.elements)}`)
     }
   })
 

@@ -89,6 +89,8 @@ type LeadRecord = SalesLead
 type LeadStatus = SalesLead['status']
 
 type GoogleConnectionState = { status?: string; provider_account_email?: string | null; last_successful_sync_at?: string | null; last_error_code?: string | null }
+type GoogleSpreadsheetOption = { id: string; name: string; modified_time: string | null; web_view_link: string | null }
+type GoogleSheetTab = { title: string; suggested_range: string; headers: string[]; sample_row_count: number; invoice_header_match_count: number; likely_invoice_sheet: boolean }
 type SourceReviewItem = {
   organization_id: string; source_key: string; source_range: string; invoice_id: string; last_seen_at: string;
   invoice: { id: string; invoice_number: string; customer_name: string; currency: string; total_minor: number; paid_minor: number; due_at: string } | null
@@ -101,10 +103,108 @@ function GoogleSheetsConnector({ session, organization, onSynced }: { session: S
   const [reviewBusy, setReviewBusy] = useState('')
   const [reviewNotice, setReviewNotice] = useState('')
   const [spreadsheet, setSpreadsheet] = useState('')
-  const [range, setRange] = useState('A:H')
+  const [spreadsheets, setSpreadsheets] = useState<GoogleSpreadsheetOption[]>([])
+  const [discoveryBusy, setDiscoveryBusy] = useState(false)
+  const [sheetTabs, setSheetTabs] = useState<GoogleSheetTab[]>([])
+  const [inspectBusy, setInspectBusy] = useState(false)
+  const [range, setRange] = useState('')
   const [busy, setBusy] = useState('')
   const [notice, setNotice] = useState('')
   const [noticeError, setNoticeError] = useState(false)
+
+  async function discoverSpreadsheets() {
+    setDiscoveryBusy(true)
+    setNotice('')
+    try {
+      const current = await getFreshSession(session)
+      const files: GoogleSpreadsheetOption[] = []
+      let pageToken: string | null = null
+      let pages = 0
+      do {
+        const query = new URLSearchParams({ organization_id: organization.id })
+        if (pageToken) query.set('page_token', pageToken)
+        const response = await fetch(`/api/integrations/google/discover?${query.toString()}`, {
+          headers: { Authorization: `Bearer ${current.access_token}` },
+        })
+        const payload = await response.json().catch(() => ({})) as { files?: GoogleSpreadsheetOption[]; error?: string; message?: string; next_page_token?: string | null }
+        if (!response.ok) {
+          if (response.status === 409 && payload.error === 'google_drive_discovery_scope_missing') {
+            throw new Error('Reconnect Google Sheets to enable automatic spreadsheet discovery. The requested permission is read-only.')
+          }
+          throw new Error(payload.message || payload.error || 'Could not discover Google spreadsheets.')
+        }
+        files.push(...(payload.files ?? []))
+        pageToken = payload.next_page_token ?? null
+        pages += 1
+      } while (pageToken && pages < 20)
+      setSpreadsheets(files)
+      setSpreadsheet((currentId) => files.some((file) => file.id === currentId) ? currentId : '')
+      if (files.length) {
+        const selectionResponse = await fetch(`/api/integrations/google/source-selection?organization_id=${encodeURIComponent(organization.id)}`, {
+          headers: { Authorization: `Bearer ${current.access_token}` },
+        })
+        const selectionPayload = await selectionResponse.json().catch(() => ({})) as { selection?: { source_config?: { spreadsheet_id?: string; range?: string; tab_title?: string } } | null }
+        const saved = selectionPayload.selection?.source_config
+        if (selectionResponse.ok && saved?.spreadsheet_id && saved.range && files.some((file) => file.id === saved.spreadsheet_id)) {
+          await inspectSpreadsheet(saved.spreadsheet_id)
+          setRange(saved.range)
+          setNotice(`Restored saved source: ${files.find((file) => file.id === saved.spreadsheet_id)?.name ?? 'Google spreadsheet'} · ${saved.tab_title ?? saved.range}`)
+          setNoticeError(false)
+          return
+        }
+      }
+      setNotice(files.length ? `Found ${files.length} spreadsheet(s). Choose the invoice source below.` : 'No Google spreadsheets were found in this account. Check sharing access or create a spreadsheet first.')
+      setNoticeError(false)
+    } catch (cause) {
+      setNotice(cause instanceof Error ? cause.message : 'Could not discover Google spreadsheets.')
+      setNoticeError(true)
+    } finally {
+      setDiscoveryBusy(false)
+    }
+  }
+
+  async function inspectSpreadsheet(spreadsheetId: string) {
+    setSpreadsheet(spreadsheetId)
+    setSheetTabs([])
+    setRange('')
+    if (!spreadsheetId) return
+    setInspectBusy(true)
+    setNotice('Inspecting spreadsheet tabs and looking for invoice headers…')
+    setNoticeError(false)
+    try {
+      const current = await getFreshSession(session)
+      const query = new URLSearchParams({ organization_id: organization.id, spreadsheet_id: spreadsheetId })
+      const response = await fetch(`/api/integrations/google/inspect?${query.toString()}`, {
+        headers: { Authorization: `Bearer ${current.access_token}` },
+      })
+      const payload = await response.json().catch(() => ({})) as { sheets?: GoogleSheetTab[]; suggested_range?: string | null; title?: string | null; message?: string; error?: string }
+      if (!response.ok) throw new Error(payload.message || payload.error || 'Could not inspect spreadsheet tabs.')
+      const tabs = payload.sheets ?? []
+      setSheetTabs(tabs)
+      const suggested = tabs.find((tab) => tab.likely_invoice_sheet) ?? tabs[0]
+      const selectedRange = suggested?.suggested_range ?? payload.suggested_range ?? ''
+      setRange(selectedRange)
+      setNotice(tabs.some((tab) => tab.likely_invoice_sheet)
+        ? `Found invoice-like headers in “${suggested?.title ?? 'the selected tab'}”. Review the selected tab, then sync.`
+        : 'No tab clearly matches the invoice fields. Choose the closest tab and check its header row before syncing.')
+      setNoticeError(false)
+      if (suggested && selectedRange) {
+        const selectedFile = spreadsheets.find((file) => file.id === spreadsheetId)
+        const saveResponse = await fetch('/api/integrations/google/source-selection', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${current.access_token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ organization_id: organization.id, spreadsheet_id: spreadsheetId, spreadsheet_name: selectedFile?.name ?? String(payload.title ?? 'Google spreadsheet'), tab_title: suggested.title, range: selectedRange }),
+        })
+        const savePayload = await saveResponse.json().catch(() => ({})) as { message?: string; error?: string }
+        if (!saveResponse.ok) throw new Error(savePayload.message || savePayload.error || 'Could not save the selected source.')
+      }
+    } catch (cause) {
+      setNotice(cause instanceof Error ? cause.message : 'Could not inspect spreadsheet tabs.')
+      setNoticeError(true)
+    } finally {
+      setInspectBusy(false)
+    }
+  }
 
   const loadStatus = useCallback(async () => {
     try {
@@ -115,6 +215,7 @@ function GoogleSheetsConnector({ session, organization, onSynced }: { session: S
       const payload = await response.json().catch(() => ({})) as { connection?: GoogleConnectionState; message?: string }
       if (!response.ok) throw new Error(payload.message || (response.status === 503 ? 'Google Sheets server configuration is missing.' : 'Could not check Google Sheets connection.'))
       setConnection(payload.connection ?? { status: 'disconnected' })
+      if (payload.connection?.status === 'connected') void discoverSpreadsheets()
       if (payload.connection?.status === 'connected') {
         try {
           const current = await getFreshSession(session)
@@ -148,7 +249,7 @@ function GoogleSheetsConnector({ session, organization, onSynced }: { session: S
     queueMicrotask(() => {
       void loadStatus()
       if (result === 'connected') {
-        setNotice('Google authorisation succeeded. Enter a spreadsheet ID and run a sync.')
+        setNotice('Google authorisation succeeded. Discovering your spreadsheets…')
         setNoticeError(false)
       } else if (result === 'failed') {
         setNotice('Google authorisation did not complete. Check OAuth settings and try again.')
@@ -236,6 +337,17 @@ function GoogleSheetsConnector({ session, organization, onSynced }: { session: S
     setNotice('')
     try {
       const current = await getFreshSession(session)
+      const selectedFile = spreadsheets.find((file) => file.id === spreadsheetId)
+      const selectedTab = sheetTabs.find((tab) => tab.suggested_range === range)
+      if (selectedFile && selectedTab) {
+        const selectionResponse = await fetch('/api/integrations/google/source-selection', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${current.access_token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ organization_id: organization.id, spreadsheet_id: spreadsheetId, spreadsheet_name: selectedFile.name, tab_title: selectedTab.title, range }),
+        })
+        const selectionPayload = await selectionResponse.json().catch(() => ({})) as { message?: string; error?: string }
+        if (!selectionResponse.ok) throw new Error(selectionPayload.message || selectionPayload.error || 'Could not save the selected source.')
+      }
       const response = await fetch('/api/integrations/google/sync', {
         method: 'POST',
         headers: { Authorization: `Bearer ${current.access_token}`, 'Content-Type': 'application/json' },
@@ -262,11 +374,23 @@ function GoogleSheetsConnector({ session, organization, onSynced }: { session: S
     <p>Read invoice rows from a spreadsheet into this workspace. Access is read-only; Revenue OS will not edit your sheet or send messages.</p>
     {connected && <small>Google account: {connection.provider_account_email || 'Connected account'}{connection.last_successful_sync_at ? ` · Last sync ${new Date(connection.last_successful_sync_at).toLocaleString()}` : ' · No successful sync yet'}</small>}
     {!connected ? <button className="button button-secondary" type="button" onClick={() => void connect()} disabled={busy !== '' || connection.status === 'loading'}>{busy === 'connect' ? 'Opening Google…' : 'Connect Google Sheets'}</button> : <>
-      <label className="field-label" htmlFor="google-spreadsheet">Spreadsheet URL or ID</label>
-      <input id="google-spreadsheet" value={spreadsheet} onChange={(event) => setSpreadsheet(event.target.value)} placeholder="Paste Google Sheets URL or ID" />
-      <label className="field-label" htmlFor="google-range">Invoice range (include header row)</label>
-      <input id="google-range" value={range} onChange={(event) => setRange(event.target.value)} placeholder="A:H or Invoices!A:H" />
-      <button className="button button-secondary" type="button" onClick={() => void sync()} disabled={busy !== ''}>{busy === 'sync' ? 'Syncing invoices…' : 'Sync invoices'}</button>
+      <div className="connection-source-actions">
+        <button className="button button-secondary" type="button" onClick={() => void discoverSpreadsheets()} disabled={busy !== '' || discoveryBusy}>{discoveryBusy ? 'Finding spreadsheets…' : 'Refresh spreadsheet list'}</button>
+      </div>
+      <label className="field-label" htmlFor="google-spreadsheet">Choose a spreadsheet</label>
+      <select id="google-spreadsheet" value={spreadsheet} onChange={(event) => void inspectSpreadsheet(event.target.value)} disabled={discoveryBusy || inspectBusy}>
+        <option value="">{discoveryBusy ? 'Discovering spreadsheets…' : 'Select a Google spreadsheet'}</option>
+        {spreadsheets.map((file) => <option key={file.id} value={file.id}>{file.name}{file.modified_time ? ` · Updated ${new Date(file.modified_time).toLocaleDateString()}` : ''}</option>)}
+      </select>
+      {spreadsheet && <>
+        <label className="field-label" htmlFor="google-sheet-tab">Invoice tab</label>
+        <select id="google-sheet-tab" value={range} onChange={(event) => setRange(event.target.value)} disabled={inspectBusy || sheetTabs.length === 0}>
+          <option value="">{inspectBusy ? 'Inspecting tabs…' : 'Choose a tab'}</option>
+          {sheetTabs.map((tab) => <option key={tab.title} value={tab.suggested_range}>{tab.title}{tab.likely_invoice_sheet ? ' · likely invoices' : ''}</option>)}
+        </select>
+        {sheetTabs.find((tab) => tab.suggested_range === range) && <small>Detected headers: {sheetTabs.find((tab) => tab.suggested_range === range)?.headers.join(', ') || 'No header row detected'}</small>}
+      </>}
+      <button className="button button-secondary" type="button" onClick={() => void sync()} disabled={busy !== '' || inspectBusy || !spreadsheet || !range}>{busy === 'sync' ? 'Syncing invoices…' : 'Sync invoices'}</button>
       <button className="template-link" type="button" onClick={() => void disconnect()} disabled={busy !== ''}>{busy === 'disconnect' ? 'Disconnecting…' : 'Disconnect Google'}</button>
     </>}
     {notice && <p className={noticeError ? 'field-error' : 'brain-note'} role={noticeError ? 'alert' : 'status'}>{notice}</p>}

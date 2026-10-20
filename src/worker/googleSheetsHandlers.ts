@@ -7,7 +7,7 @@ interface Env extends GoogleSheetsOAuthEnv {
 }
 
 type Json = Record<string, unknown>
-const SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly', 'openid', 'email'].join(' ')
+const SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly', 'https://www.googleapis.com/auth/drive.metadata.readonly', 'openid', 'email'].join(' ')
 
 function response(body: Json, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: {
@@ -150,7 +150,7 @@ export async function handleGoogleSheets(request: Request, env: Env): Promise<Re
       })
       const userInfo = userInfoResponse.ok ? await userInfoResponse.json() as Json : {}
       const accountEmail = typeof userInfo.email === 'string' ? userInfo.email.slice(0, 320) : null
-      const scopes = typeof tokens.scope === 'string' ? tokens.scope.split(' ').filter((scope) => scope === 'https://www.googleapis.com/auth/spreadsheets.readonly' || scope === 'openid' || scope === 'email') : []
+      const scopes = typeof tokens.scope === 'string' ? tokens.scope.split(' ').filter((scope) => scope === 'https://www.googleapis.com/auth/spreadsheets.readonly' || scope === 'https://www.googleapis.com/auth/drive.metadata.readonly' || scope === 'openid' || scope === 'email') : []
       if (!scopes.includes('https://www.googleapis.com/auth/spreadsheets.readonly')) {
         return redirect(appRedirect(origin, 'failed'))
       }
@@ -165,6 +165,164 @@ export async function handleGoogleSheets(request: Request, env: Env): Promise<Re
       return redirect(appRedirect(origin, 'connected'))
     } catch {
       return redirect(appRedirect(origin, 'failed'))
+    }
+  }
+
+  if (url.pathname === '/api/integrations/google/discover') {
+    if (request.method !== 'GET') return response({ error: 'method_not_allowed' }, 405)
+    const user = await authenticate(request, env)
+    if (!user) return response({ error: 'unauthorized' }, 401)
+    const organizationId = url.searchParams.get('organization_id')?.trim() ?? ''
+    const pageToken = url.searchParams.get('page_token')?.trim() ?? ''
+    if (!organizationId || organizationId.length > 160) return response({ error: 'organization_required' }, 400)
+    if (pageToken.length > 2048) return response({ error: 'invalid_page_token' }, 400)
+    const member = await membership(env, user.authId, organizationId)
+    if (!member || !['owner', 'admin', 'operator'].includes(member.role)) return response({ error: 'workspace_permission_denied' }, 403)
+    try {
+      const connections = await db(env, `provider_connections?select=status,encrypted_refresh_token,granted_scopes&organization_id=eq.${encodeURIComponent(organizationId)}&provider=eq.google_sheets&limit=1`) as Array<{ status: string; encrypted_refresh_token: string | null; granted_scopes: string[] | null }>
+      const connection = connections[0]
+      if (!connection || connection.status !== 'connected' || !connection.encrypted_refresh_token) return response({ error: 'google_sheets_not_connected', message: 'Connect your Google account before discovering spreadsheets.' }, 409)
+      if (!connection.granted_scopes?.includes('https://www.googleapis.com/auth/drive.metadata.readonly')) {
+        return response({ error: 'google_drive_discovery_scope_missing', message: 'Reconnect Google Sheets to enable spreadsheet discovery. Revenue OS will only read spreadsheet metadata and invoice values.' }, 409)
+      }
+      const refreshToken = await decryptRefreshToken(connection.encrypted_refresh_token, env.GOOGLE_TOKEN_ENCRYPTION_KEY!)
+      const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
+        method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ client_id: env.GOOGLE_CLIENT_ID!, client_secret: env.GOOGLE_CLIENT_SECRET!, refresh_token: refreshToken, grant_type: 'refresh_token' }),
+        signal: AbortSignal.timeout(10000),
+      })
+      const tokenPayload = await tokenResponse.json().catch(() => null) as Json | null
+      const accessToken = tokenPayload && typeof tokenPayload.access_token === 'string' ? tokenPayload.access_token : null
+      if (!tokenResponse.ok || !accessToken) throw new Error('google_token_refresh_failed')
+      const driveUrl = new URL('https://www.googleapis.com/drive/v3/files')
+      driveUrl.searchParams.set('q', "mimeType='application/vnd.google-apps.spreadsheet' and trashed=false")
+      driveUrl.searchParams.set('pageSize', '100')
+      driveUrl.searchParams.set('orderBy', 'modifiedTime desc')
+      driveUrl.searchParams.set('fields', 'nextPageToken,files(id,name,mimeType,modifiedTime,webViewLink)')
+      if (pageToken) driveUrl.searchParams.set('pageToken', pageToken)
+      const driveResponse = await fetch(driveUrl, { headers: { Authorization: `Bearer ${accessToken}` }, signal: AbortSignal.timeout(12000) })
+      const drivePayload = await driveResponse.json().catch(() => null) as Json | null
+      if (!driveResponse.ok || !drivePayload || !Array.isArray(drivePayload.files)) {
+        const code = driveResponse.status === 403 ? 'google_drive_discovery_denied' : 'google_drive_discovery_failed'
+        await db(env, `provider_connections?organization_id=eq.${encodeURIComponent(organizationId)}&provider=eq.google_sheets`, {
+          method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ last_error_code: code, updated_at: new Date().toISOString() }),
+        }).catch(() => undefined)
+        return response({ error: code, message: driveResponse.status === 403 ? 'Google could not list spreadsheets. Reconnect with the requested read-only discovery permission, or check Google Workspace restrictions.' : 'Google spreadsheet discovery failed. Try again shortly.' }, driveResponse.status === 403 ? 403 : 502)
+      }
+      const files = (drivePayload.files as Json[]).flatMap((file) => typeof file.id === 'string' && typeof file.name === 'string' ? [{
+        id: file.id, name: file.name, modified_time: typeof file.modifiedTime === 'string' ? file.modifiedTime : null,
+        web_view_link: typeof file.webViewLink === 'string' ? file.webViewLink : null,
+      }] : [])
+      return response({ files, next_page_token: typeof drivePayload.nextPageToken === 'string' ? drivePayload.nextPageToken : null })
+    } catch (cause) {
+      const code = cause instanceof Error ? cause.message : 'google_drive_discovery_failed'
+      const safeCode = /^[a-z0-9_:-]{1,80}$/.test(code) ? code : 'google_drive_discovery_failed'
+      await db(env, `provider_connections?organization_id=eq.${encodeURIComponent(organizationId)}&provider=eq.google_sheets`, {
+        method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ last_error_code: safeCode, updated_at: new Date().toISOString() }),
+      }).catch(() => undefined)
+      return response({ error: safeCode, message: safeCode === 'google_token_refresh_failed' ? 'Google access has expired or been revoked. Reconnect Google Sheets and try again.' : 'Could not discover spreadsheets from Google. Try again shortly.' }, 502)
+    }
+  }
+
+  if (url.pathname === '/api/integrations/google/source-selection') {
+    const user = await authenticate(request, env)
+    if (!user) return response({ error: 'unauthorized' }, 401)
+    const organizationId = request.method === 'GET'
+      ? (url.searchParams.get('organization_id')?.trim() ?? '')
+      : ''
+    const body = request.method === 'POST' ? await request.json().catch(() => null) as Json | null : null
+    const orgId = organizationId || (typeof body?.organization_id === 'string' ? body.organization_id.trim() : '')
+    if (!orgId || orgId.length > 160) return response({ error: 'organization_required' }, 400)
+    if (request.method !== 'GET' && request.method !== 'POST') return response({ error: 'method_not_allowed' }, 405)
+    const member = await membership(env, user.authId, orgId)
+    if (!member || !['owner', 'admin', 'operator'].includes(member.role)) return response({ error: 'workspace_permission_denied' }, 403)
+    if (request.method === 'GET') {
+      const rows = await db(env, `provider_source_selections?select=source_id,source_name,source_config,updated_at&organization_id=eq.${encodeURIComponent(orgId)}&provider=eq.google_sheets&limit=1`) as Array<{ source_id: string; source_name: string; source_config: Json; updated_at: string }>
+      return response({ selection: rows[0] ?? null })
+    }
+    const spreadsheetId = typeof body?.spreadsheet_id === 'string' ? body.spreadsheet_id.trim() : ''
+    const spreadsheetName = typeof body?.spreadsheet_name === 'string' ? body.spreadsheet_name.trim().slice(0, 300) : ''
+    const range = typeof body?.range === 'string' ? body.range.trim() : ''
+    const tabTitle = typeof body?.tab_title === 'string' ? body.tab_title.trim().slice(0, 200) : ''
+    if (!/^[A-Za-z0-9_-]{10,200}$/.test(spreadsheetId) || !spreadsheetName || !range || range.length > 300 || /[\r\n]/.test(range) || !tabTitle) {
+      return response({ error: 'invalid_source_selection', message: 'Choose a spreadsheet and invoice tab before saving the source.' }, 400)
+    }
+    const savedAt = new Date().toISOString()
+    await db(env, 'provider_source_selections?on_conflict=organization_id,provider', {
+      method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=representation' },
+      body: JSON.stringify({
+        organization_id: orgId, provider: 'google_sheets', source_id: `google_sheets:${spreadsheetId}`,
+        source_name: spreadsheetName, source_config: { spreadsheet_id: spreadsheetId, range, tab_title: tabTitle },
+        updated_at: savedAt,
+      }),
+    })
+    return response({ saved: true, updated_at: savedAt })
+  }
+
+  if (url.pathname === '/api/integrations/google/inspect') {
+    if (request.method !== 'GET') return response({ error: 'method_not_allowed' }, 405)
+    const user = await authenticate(request, env)
+    if (!user) return response({ error: 'unauthorized' }, 401)
+    const organizationId = url.searchParams.get('organization_id')?.trim() ?? ''
+    const spreadsheetId = url.searchParams.get('spreadsheet_id')?.trim() ?? ''
+    if (!organizationId || organizationId.length > 160) return response({ error: 'organization_required' }, 400)
+    if (!/^[A-Za-z0-9_-]{10,200}$/.test(spreadsheetId)) return response({ error: 'invalid_spreadsheet_id' }, 400)
+    const member = await membership(env, user.authId, organizationId)
+    if (!member || !['owner', 'admin', 'operator'].includes(member.role)) return response({ error: 'workspace_permission_denied' }, 403)
+    try {
+      const connections = await db(env, `provider_connections?select=status,encrypted_refresh_token&organization_id=eq.${encodeURIComponent(organizationId)}&provider=eq.google_sheets&limit=1`) as Array<{ status: string; encrypted_refresh_token: string | null }>
+      const connection = connections[0]
+      if (!connection || connection.status !== 'connected' || !connection.encrypted_refresh_token) return response({ error: 'google_sheets_not_connected' }, 409)
+      const refreshToken = await decryptRefreshToken(connection.encrypted_refresh_token, env.GOOGLE_TOKEN_ENCRYPTION_KEY!)
+      const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
+        method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ client_id: env.GOOGLE_CLIENT_ID!, client_secret: env.GOOGLE_CLIENT_SECRET!, refresh_token: refreshToken, grant_type: 'refresh_token' }),
+        signal: AbortSignal.timeout(10000),
+      })
+      const tokenPayload = await tokenResponse.json().catch(() => null) as Json | null
+      const accessToken = tokenPayload && typeof tokenPayload.access_token === 'string' ? tokenPayload.access_token : null
+      if (!tokenResponse.ok || !accessToken) throw new Error('google_token_refresh_failed')
+      const metadataUrl = new URL(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}`)
+      metadataUrl.searchParams.set('fields', 'properties(title),sheets(properties(title,gridProperties(rowCount,columnCount)))')
+      const metadataResponse = await fetch(metadataUrl, { headers: { Authorization: `Bearer ${accessToken}` }, signal: AbortSignal.timeout(12000) })
+      const metadata = await metadataResponse.json().catch(() => null) as Json | null
+      if (!metadataResponse.ok || !metadata || !Array.isArray(metadata.sheets)) {
+        const code = metadataResponse.status === 403 ? 'google_sheet_access_denied' : metadataResponse.status === 404 ? 'google_sheet_not_found' : 'google_sheet_inspect_failed'
+        return response({ error: code, message: code === 'google_sheet_access_denied' ? 'This Google account cannot read the selected spreadsheet. Check sharing access.' : code === 'google_sheet_not_found' ? 'The selected spreadsheet could not be found.' : 'Could not inspect the spreadsheet tabs.' }, metadataResponse.status === 403 ? 403 : metadataResponse.status === 404 ? 404 : 502)
+      }
+      const allSheets = metadata.sheets as Array<{ properties?: { title?: string; gridProperties?: { rowCount?: number; columnCount?: number } } }>
+      const sheets = []
+      for (const sheet of allSheets.slice(0, 30)) {
+        const title = sheet.properties?.title
+        if (typeof title !== 'string' || !title) continue
+        const escapedTitle = "'" + title.replace(/'/g, "''") + "'"
+        const valuesUrl = new URL(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(escapedTitle + '!A1:H5')}`)
+        valuesUrl.searchParams.set('majorDimension', 'ROWS')
+        valuesUrl.searchParams.set('valueRenderOption', 'FORMATTED_VALUE')
+        const valuesResponse = await fetch(valuesUrl, { headers: { Authorization: `Bearer ${accessToken}` }, signal: AbortSignal.timeout(10000) })
+        const valuesPayload = await valuesResponse.json().catch(() => null) as Json | null
+        const values = valuesResponse.ok && Array.isArray(valuesPayload?.values) ? valuesPayload.values as unknown[][] : []
+        const headers = (values[0] ?? []).map((value) => String(value ?? '').trim())
+        const normalized = headers.map((value) => value.toLowerCase().replace(/[^a-z0-9]/g, ''))
+        const has = (...names: string[]) => names.some((name) => normalized.includes(name.replace(/[^a-z0-9]/g, '')))
+        const score = [
+          has('customer_id', 'customerid', 'client_id', 'clientid', 'account_id', 'accountid'),
+          has('customer_name', 'customername', 'client_name', 'clientname', 'customer', 'client', 'account_name', 'accountname', 'name'),
+          has('invoice_number', 'invoicenumber', 'invoice_no', 'invoiceno', 'invoice', 'invoice_id', 'invoiceid', 'reference', 'ref'),
+          has('currency', 'currency_code', 'currencycode', 'ccy'),
+          has('total_amount', 'totalamount', 'invoice_amount', 'invoiceamount', 'amount_due', 'amountdue', 'total'),
+          has('paid_amount', 'paidamount', 'amount_paid', 'amountpaid', 'paid'),
+          has('issued_at', 'issuedat', 'issue_date', 'issuedate', 'invoice_date', 'invoicedate', 'date_issued'),
+          has('due_at', 'dueat', 'due_date', 'duedate', 'payment_due_date', 'deadline'),
+        ].filter(Boolean).length
+        sheets.push({ title, suggested_range: escapedTitle + '!A:H', headers, sample_row_count: Math.max(0, values.length - 1), invoice_header_match_count: score, likely_invoice_sheet: score >= 6 })
+      }
+      const suggested = sheets.filter((sheet) => sheet.likely_invoice_sheet).sort((a, b) => b.invoice_header_match_count - a.invoice_header_match_count)[0]
+      return response({ spreadsheet_id: spreadsheetId, title: typeof (metadata.properties as Json | undefined)?.title === 'string' ? (metadata.properties as Json).title : null, sheets, suggested_range: suggested?.suggested_range ?? sheets[0]?.suggested_range ?? null })
+    } catch (cause) {
+      const code = cause instanceof Error ? cause.message : 'google_sheet_inspect_failed'
+      const safeCode = /^[a-z0-9_:-]{1,80}$/.test(code) ? code : 'google_sheet_inspect_failed'
+      return response({ error: safeCode, message: safeCode === 'google_token_refresh_failed' ? 'Google access has expired or been revoked. Reconnect Google Sheets and try again.' : 'Could not inspect the selected spreadsheet. Check its access and try again.' }, 502)
     }
   }
 

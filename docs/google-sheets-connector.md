@@ -12,7 +12,7 @@ This document separates implemented behavior from configuration and verification
 - The connector can discover spreadsheets visible to the connected account using Drive metadata (file ID, name, modified time, and web link). Discovery is organization-scoped and paginated by the provider API.
 - The Connections UI offers a spreadsheet picker instead of requiring the user to paste an ID. A successful OAuth connection is still distinct from a successful invoice sync.
 - When a spreadsheet is selected, the connector inspects its tabs and first rows, scores header names against known invoice fields, and suggests the most likely invoice tab and range. The user can select another tab if needed.
-- The selected spreadsheet and tab are persisted per workspace in `provider_source_selections` and restored when the connection status loads. The migration must be applied to the target Supabase environment before this persistence endpoint works there.
+- The selected spreadsheet and tab are persisted per workspace in `provider_source_selections` and restored when the connection status loads. The source-selection migration has been applied to the connected Supabase project; the hosted endpoint still needs a real authenticated verification.
 - Invoice rows are validated and persisted through the invoice-import RPC. Repeated imports use a content hash and stable source-row identity.
 - Successful complete snapshots track source/range membership. Missing rows enter a review queue; absence never marks an invoice paid or deletes its history.
 - Owner/admin users can record a decision and note for a missing row. Decisions are audit metadata only; they do not verify payment, close an opportunity, or suppress overdue detection.
@@ -80,7 +80,7 @@ Do not paste secrets into chat, commit them, or place them in `VITE_*` variables
 ## Known limitations
 
 - Google OAuth, spreadsheet discovery, tab inspection, and live spreadsheet sync are not confirmed merely by the code or CI.
-- Source-selection persistence depends on applying `20261020113000_provider_source_selections.sql` to the target Supabase environment. Do not claim it is live until the migration is applied and the hosted flow is tested.
+- Source-selection persistence uses `20261020102327_provider_source_selections.sql`, matching the connected Supabase migration ledger. The schema is present in the connected project, but do not claim the full flow is live until authenticated hosted verification succeeds.
 - Existing OAuth connections created before Drive metadata discovery was added must reconnect once to grant the additional read-only metadata scope.
 - Google token revocation is not implemented; disconnect only removes Revenue OS's stored credential.
 - The review queue is audit-only; review decisions do not yet change overdue-opportunity calculation.

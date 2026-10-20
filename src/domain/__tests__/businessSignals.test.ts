@@ -86,6 +86,20 @@ test('conflicting content quarantines every row sharing an idempotency key', () 
   assert.match(result.conflicts[0].reason, /all rows.*quarantined/)
 })
 
+
+test('conflicts across multiple keys do not accidentally remove unrelated accepted events', () => {
+  const result = classifyBusinessSignalBatch([
+    base({ idempotencyKey: 'key-a' }),
+    base({ idempotencyKey: 'key-b', evidence: { externalRecordId: 'message-b', description: 'Second message' } }),
+    base({ idempotencyKey: 'key-a', summary: 'Conflict for key A' }),
+    base({ idempotencyKey: 'key-b', summary: 'Conflict for key B' }),
+    base({ idempotencyKey: 'key-c', evidence: { externalRecordId: 'message-c', description: 'Third message' } }),
+  ])
+  assert.equal(result.accepted.length, 1)
+  assert.equal(result.accepted[0].idempotencyKey, 'key-c')
+  assert.equal(result.conflicts.length, 2)
+})
+
 test('same provider key from separate organizations does not collide', () => {
   const result = classifyBusinessSignalBatch([
     base({ organizationId: 'org-a' }),

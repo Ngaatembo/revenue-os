@@ -656,10 +656,22 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
       const saved = outcome.duplicate
         ? 'This exact file was already imported. No duplicate invoice records were created.'
         : outcome.acceptedRows + ' invoice record' + (outcome.acceptedRows === 1 ? '' : 's') + ' saved to Supabase.' + (outcome.rejectedRows ? ' ' + outcome.rejectedRows + ' row(s) were skipped (see below).' : '')
+      const now = Date.now()
+      const day = 24 * 60 * 60 * 1000
+      const unpaid = fresh.filter((invoice) => invoice.total.amount > invoice.paid.amount)
+      const overdue = unpaid.filter((invoice) => Date.parse(invoice.dueAt) < now)
+      const dueSoon = unpaid.filter((invoice) => {
+        const dueAt = Date.parse(invoice.dueAt)
+        return dueAt >= now && dueAt <= now + 7 * day
+      })
+      const paid = fresh.length - unpaid.length
+      const findings = ' From the new records: ' + unpaid.length + ' still have a balance, ' +
+        overdue.length + ' are past their due date, ' + dueSoon.length + ' are due within 7 days, and ' +
+        paid + ' are fully paid.'
       const detected = synced
-        ? ' ' + synced.open + ' open overdue opportunit' + (synced.open === 1 ? 'y' : 'ies') + ' saved' + (synced.created ? ' (' + synced.created + ' new)' : '') + '.'
-        : assumptionBps === null ? ' Set a recovery-rate assumption to turn overdue balances into estimates.' : ''
-      setImportNote(saved + detected)
+        ? ' ' + synced.open + ' overdue recovery opportunit' + (synced.open === 1 ? 'y' : 'ies') + ' currently identified' + (synced.created ? ' (' + synced.created + ' new)' : '') + '.'
+        : assumptionBps === null ? ' Set a recovery-rate assumption to calculate estimated recovery value.' : ''
+      setImportNote(saved + findings + detected)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'This file could not be imported.')
     } finally {

@@ -1,6 +1,7 @@
 import type { ResolvedSetting, BrainSettingKey } from '../businessBrain.ts'
 import type { ActionProgress } from '../prioritization.ts'
 import type { Money, RevenueOpportunity } from '../types.ts'
+import type { BusinessSignal } from '../businessSignals.ts'
 import type { Deposit, PaymentReviewItem, Quotation, Task } from '../records.ts'
 
 export type SubjectType = 'invoice' | 'lead' | 'quotation' | 'deposit' | 'task' | 'payment_review' | 'action'
@@ -68,6 +69,8 @@ export type AttentionContext = {
   leads: LeadForAttention[]
   leadActivities: { leadId: string; createdAt: string }[]
   settings: Record<BrainSettingKey, ResolvedSetting>
+  /** Normalized signals derived from the same authorized records; enrich existing findings rather than creating duplicate queue items. */
+  businessSignals?: BusinessSignal[]
 }
 
 export type AttentionRule = { id: string; description: string; run: (context: AttentionContext) => AttentionFinding[] }

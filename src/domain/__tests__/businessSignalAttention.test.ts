@@ -34,7 +34,7 @@ const opportunity = {
 const signal: BusinessSignal = {
   organizationId: 'org-1',
   sourceId: 'sheet-connection-1',
-  provider: 'accounting',
+  provider: 'unknown',
   type: 'invoice_overdue',
   idempotencyKey: 'invoice-overdue:row-42:2026-09-30',
   occurredAt: '2026-09-30T00:00:00.000Z',

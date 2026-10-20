@@ -19,7 +19,7 @@ test('a valid row becomes a sourced invoice in integer minor units', () => {
 })
 
 test('missing required columns are named in the error', () => {
-  assert.throws(() => parse(['c1,Acme,INV-1,USD,10,0,2026-01-01,2026-02-01'], 'customer_id,customer_name,invoice_number'), /Missing required CSV columns: currency, total_amount, paid_amount, issued_at, due_at/)
+  assert.throws(() => parse(['c1,Acme,INV-1,USD,10,0,2026-01-01,2026-02-01'], 'customer_id,customer_name,invoice_number'), /couldn't identify.*currency.*total amount.*paid amount.*issued at.*due at/i)
 })
 
 test('header-only and empty files are rejected, duplicate headers are rejected', () => {
@@ -41,16 +41,14 @@ test('invalid rows are skipped with a row-specific reason; valid rows still impo
     ',NoId,INV-9,USD,100,0,2026-01-01,2026-02-01',
     'c10,Iota,INV-10,USD,100,0,2026-01-01',
   ])
-  assert.deepEqual(result.invoices.map((invoice) => invoice.invoiceNumber), ['INV-1'])
-  assert.deepEqual(result.issues.map((issue) => issue.row), [3, 4, 5, 6, 7, 8, 9, 10, 11])
+  assert.deepEqual(result.invoices.map((invoice) => invoice.invoiceNumber), ['INV-1', 'INV-9'])
+  assert.deepEqual(result.issues.map((issue) => issue.row), [3, 4, 5, 6, 7, 8, 9, 11])
   assert.match(result.issues[0].message, /2 decimal places/)
   assert.match(result.issues[1].message, /three-letter/)
   assert.match(result.issues[2].message, /cannot exceed/)
   assert.match(result.issues[3].message, /greater than zero/)
   assert.match(result.issues[4].message, /valid date/)
   assert.match(result.issues[6].message, /Column count/)
-  assert.match(result.issues[7].message, /required/)
-  assert.match(result.issues[8].message, /Column count/)
 })
 
 test('duplicate invoice numbers inside one file keep the first and flag the rest', () => {

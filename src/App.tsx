@@ -656,10 +656,22 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
       const saved = outcome.duplicate
         ? 'This exact file was already imported. No duplicate invoice records were created.'
         : outcome.acceptedRows + ' invoice record' + (outcome.acceptedRows === 1 ? '' : 's') + ' saved to Supabase.' + (outcome.rejectedRows ? ' ' + outcome.rejectedRows + ' row(s) were skipped (see below).' : '')
+      const now = Date.now()
+      const day = 24 * 60 * 60 * 1000
+      const unpaid = fresh.filter((invoice) => invoice.total.amount > invoice.paid.amount)
+      const overdue = unpaid.filter((invoice) => Date.parse(invoice.dueAt) < now)
+      const dueSoon = unpaid.filter((invoice) => {
+        const dueAt = Date.parse(invoice.dueAt)
+        return dueAt >= now && dueAt <= now + 7 * day
+      })
+      const paid = fresh.length - unpaid.length
+      const findings = ' From the new records: ' + unpaid.length + ' still have a balance, ' +
+        overdue.length + ' are past their due date, ' + dueSoon.length + ' are due within 7 days, and ' +
+        paid + ' are fully paid.'
       const detected = synced
-        ? ' ' + synced.open + ' open overdue opportunit' + (synced.open === 1 ? 'y' : 'ies') + ' saved' + (synced.created ? ' (' + synced.created + ' new)' : '') + '.'
-        : assumptionBps === null ? ' Set a recovery-rate assumption to turn overdue balances into estimates.' : ''
-      setImportNote(saved + detected)
+        ? ' ' + synced.open + ' overdue recovery opportunit' + (synced.open === 1 ? 'y' : 'ies') + ' currently identified' + (synced.created ? ' (' + synced.created + ' new)' : '') + '.'
+        : assumptionBps === null ? ' Set a recovery-rate assumption to calculate estimated recovery value.' : ''
+      setImportNote(saved + findings + detected)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'This file could not be imported.')
     } finally {
@@ -749,8 +761,8 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
         <div className="page-content">
           <div className="page-heading">
             <div><p className="eyebrow">REVENUE OPERATIONS</p><h1>{title}</h1><p className="page-subtitle">Find, act on, and verify revenue opportunities from your business data.</p></div>
-            <button className="button button-primary" onClick={() => fileRef.current?.click()}><Icon name="upload" />Import invoices</button>
-            <input ref={fileRef} className="visually-hidden" type="file" accept=".csv,text/csv" onChange={(event) => void importFile(event.target.files?.[0])} />
+            <button className="button button-primary" onClick={() => fileRef.current?.click()}><Icon name="upload" />Add invoice records</button>
+            <input ref={fileRef} className="visually-hidden" type="file" accept=".csv,text/csv" aria-label="Choose an invoice spreadsheet" onChange={(event) => void importFile(event.target.files?.[0])} />
           </div>
 
           <div className="preview-banner"><span className="preview-dot" />Workspace connected <span className="preview-divider">·</span> Leads, invoice imports and recovery assumptions sync to Supabase. Actions still require manual approval.</div>
@@ -799,7 +811,7 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
                   ) : loadError && invoices.length === 0 ? (
                     <div className="empty-state compact"><h3>Saved invoices could not be loaded</h3><p>Nothing is shown because the records could not be read, not because there are none. Reload the page to try again.</p></div>
                   ) : invoices.length === 0 ? (
-                    <div className="empty-state"><span className="empty-icon"><Icon name="upload" /></span><h3>No invoices imported into this workspace yet</h3><p>Import an invoice CSV to identify overdue invoices. Opportunities, estimated recovery and verified revenue stay empty until real records are imported, and every opportunity links back to its source record.</p><button className="button button-secondary" onClick={() => fileRef.current?.click()}>Choose invoice CSV</button><button className="template-link" onClick={downloadCsvTemplate}>Download blank CSV template</button><a className="text-link" href="#csv-format" onClick={(event) => { event.preventDefault(); setActiveSection('Business Brain') }}>View required columns</a></div>
+                    <div className="empty-state"><span className="empty-icon"><Icon name="upload" /></span><h3>No invoices imported into this workspace yet</h3><p>Add your invoice spreadsheet to identify overdue balances. You do not need to understand the file format. For now, choose a spreadsheet exported as CSV; Revenue OS will explain any information it cannot recognise. Opportunities and recovery estimates appear when the records support them.</p><button className="button button-secondary" onClick={() => fileRef.current?.click()}>Choose invoice spreadsheet</button><button className="template-link" onClick={downloadCsvTemplate}>Download blank CSV template</button><a className="text-link" href="#csv-format" onClick={(event) => { event.preventDefault(); setActiveSection('Business Brain') }}>See what information is needed</a></div>
                   ) : assumptionBps === null ? (
                     <div className="assumption-prompt"><div className="assumption-icon"><Icon name="brain" /></div><div><h3>Set a recovery-rate assumption</h3><p>Estimates are calculated from outstanding invoice balances and this assumption. Choose a rate your team can support with evidence.</p><label htmlFor="recovery-rate">Expected recovery rate</label><form onSubmit={(event) => { event.preventDefault(); void persistRecoveryRate(rateDraft) }}><div className="rate-input-wrap"><input id="recovery-rate" inputMode="decimal" placeholder="e.g. 25" value={rateDraft} onChange={(event) => setRateDraft(event.target.value)} aria-describedby="rate-help"/><span>%</span></div><small id="rate-help">Enter a percentage from 0 to 100. This will be labelled as an estimate.</small>{rateDraft && parseRecoveryRate(rateDraft) === null && <small className="field-error">Enter a valid percentage, such as 25 or 12.5.</small>}<div className="recovery-action-controls"><button className="button button-primary" type="submit" disabled={parseRecoveryRate(rateDraft) === null}>Save rate</button></div></form></div></div>
                   ) : opportunities.length === 0 ? (

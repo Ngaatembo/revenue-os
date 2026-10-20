@@ -543,3 +543,48 @@ a { text-underline-offset: .18em; }
   .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .metric-value { overflow-wrap: anywhere; }
 }
+
+
+/* Mobile usability pass: four predictable destinations, with secondary sections in a real menu. */
+.mobile-more-backdrop { display: none; }
+@media (max-width: 760px) {
+  .page-content { padding: 22px 16px calc(92px + env(safe-area-inset-bottom)); }
+  .page-heading { gap: 12px; margin-bottom: 16px; }
+  .page-heading h1 { font-size: clamp(26px, 7vw, 32px); line-height: 1.12; }
+  .page-heading .eyebrow { margin-bottom: 6px; }
+  .page-subtitle { max-width: 36ch; font-size: 15px; line-height: 1.45; }
+  .page-heading .button { min-height: 46px; }
+  .preview-banner { align-items: flex-start; min-height: 0; padding: 10px 12px; margin-bottom: 16px; line-height: 1.45; }
+  .preview-banner .preview-divider { display: none; }
+  .daily-brief { padding: 16px; margin-bottom: 16px; }
+  .daily-brief-heading { gap: 6px; margin-bottom: 12px; }
+  .daily-brief-heading h2 { font-size: 20px; }
+  .daily-brief-heading p:not(.eyebrow) { font-size: 13px; line-height: 1.5; }
+  .daily-brief-date { padding: 0; }
+  .daily-brief-grid { gap: 0; border-top: 1px solid var(--line); }
+  .daily-brief-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 5px 10px; padding: 13px 0; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: transparent; }
+  .daily-brief-item .daily-brief-kicker, .daily-brief-item > strong, .daily-brief-item p { grid-column: 1; }
+  .daily-brief-item > strong { font-size: 16px; line-height: 1.3; }
+  .daily-brief-item p { font-size: 12px; line-height: 1.45; }
+  .daily-brief-item .template-link { grid-column: 2; grid-row: 1 / span 3; align-self: center; max-width: 112px; padding: 8px 0 8px 8px; margin: 0; font-size: 12px; text-align: right; white-space: normal; }
+  .daily-brief-footnote { margin-top: 12px; padding-top: 10px; }
+  .daily-brief-footnote > span { font-size: 11px; }
+  .metric-grid { margin-bottom: 16px; }
+  .metric-card { padding-block: 12px; }
+  .work-grid { gap: 14px; }
+  .panel { border-radius: 8px; }
+  .mobile-nav { grid-template-columns: repeat(4, minmax(0, 1fr)); min-height: 64px; padding: 5px 8px max(7px, env(safe-area-inset-bottom)); background: var(--surface); backdrop-filter: none; }
+  .mobile-nav button { min-height: 48px; gap: 4px; color: var(--muted); }
+  .mobile-nav button span { max-width: calc(100% - 4px); font-size: 11px; line-height: 1.15; }
+  .mobile-nav svg { width: 20px; height: 20px; }
+  .mobile-nav button.active { color: var(--action); font-weight: 700; background: color-mix(in srgb, var(--action) 8%, transparent); }
+  .mobile-more-backdrop { position: fixed; z-index: 20; inset: 0; display: flex; align-items: flex-end; padding-bottom: calc(76px + env(safe-area-inset-bottom)); background: rgba(22, 32, 27, .28); }
+  .mobile-more-menu { width: 100%; max-height: min(68vh, 520px); overflow-y: auto; padding: 14px 16px 12px; border: 1px solid var(--line); border-bottom: 0; border-radius: 16px 16px 0 0; background: var(--surface); box-shadow: 0 -10px 35px rgba(24, 59, 50, .12); }
+  .mobile-more-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 2px 2px 10px; border-bottom: 1px solid var(--line); }
+  .mobile-more-heading strong { font-size: 16px; color: var(--ink); }
+  .mobile-more-heading button { min-height: 38px; padding: 0 10px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); color: var(--action); font: inherit; font-size: 13px; }
+  .mobile-more-menu > button { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 48px; margin-top: 4px; padding: 0 10px; border: 0; border-radius: 7px; background: transparent; color: var(--ink); font: inherit; font-size: 14px; text-align: left; }
+  .mobile-more-menu > button.active { background: color-mix(in srgb, var(--action) 9%, transparent); color: var(--action); font-weight: 700; }
+  .mobile-more-menu > button svg { width: 20px; height: 20px; flex: 0 0 20px; }
+  .mobile-more-arrow { margin-left: auto; color: var(--muted); font-size: 22px; }
+}

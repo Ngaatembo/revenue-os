@@ -65,6 +65,8 @@ export function googleSheetsSyncErrorMessage(code: string): string {
   if (code === 'no_valid_invoice_rows') return 'The headers were recognised, but no invoice rows were valid. Check customer names, invoice numbers, currency, amounts and dates.'
   if (code === 'invalid_spreadsheet_id' || code === 'google_sheet_not_found') return 'We could not find that spreadsheet. Check that the URL or ID is correct.'
   if (code === 'google_sheet_access_denied') return 'Google could not read this sheet. Make sure the connected Google account has at least Viewer access to it.'
+  if (code === 'google_sheet_invalid_range') return 'Google rejected the selected range. Choose the detected invoice tab again and retry; the tab name and range must match exactly.'
+  if (code === 'google_sheet_rate_limited') return 'Google is temporarily limiting spreadsheet reads. Wait a moment and try syncing again.'
   if (code === 'google_token_refresh_failed') return 'Google access has expired or been revoked. Disconnect Google Sheets, reconnect it, and try again.'
   if (code === 'invalid_range') return 'Enter a valid sheet range, such as Invoices!A:H, including the header row.'
   if (code === 'invoice_import_persist_failed') return 'The sheet was read, but Revenue OS could not save the invoices. No successful sync was recorded; try again shortly.'

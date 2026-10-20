@@ -7,7 +7,7 @@ interface Env extends GoogleSheetsOAuthEnv {
 }
 
 type Json = Record<string, unknown>
-const SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly', 'openid', 'email'].join(' ')
+const SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly', 'https://www.googleapis.com/auth/drive.metadata.readonly', 'openid', 'email'].join(' ')
 
 function response(body: Json, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: {
@@ -150,7 +150,7 @@ export async function handleGoogleSheets(request: Request, env: Env): Promise<Re
       })
       const userInfo = userInfoResponse.ok ? await userInfoResponse.json() as Json : {}
       const accountEmail = typeof userInfo.email === 'string' ? userInfo.email.slice(0, 320) : null
-      const scopes = typeof tokens.scope === 'string' ? tokens.scope.split(' ').filter((scope) => scope === 'https://www.googleapis.com/auth/spreadsheets.readonly' || scope === 'openid' || scope === 'email') : []
+      const scopes = typeof tokens.scope === 'string' ? tokens.scope.split(' ').filter((scope) => scope === 'https://www.googleapis.com/auth/spreadsheets.readonly' || scope === 'https://www.googleapis.com/auth/drive.metadata.readonly' || scope === 'openid' || scope === 'email') : []
       if (!scopes.includes('https://www.googleapis.com/auth/spreadsheets.readonly')) {
         return redirect(appRedirect(origin, 'failed'))
       }
@@ -165,6 +165,62 @@ export async function handleGoogleSheets(request: Request, env: Env): Promise<Re
       return redirect(appRedirect(origin, 'connected'))
     } catch {
       return redirect(appRedirect(origin, 'failed'))
+    }
+  }
+
+  if (url.pathname === '/api/integrations/google/discover') {
+    if (request.method !== 'GET') return response({ error: 'method_not_allowed' }, 405)
+    const user = await authenticate(request, env)
+    if (!user) return response({ error: 'unauthorized' }, 401)
+    const organizationId = url.searchParams.get('organization_id')?.trim() ?? ''
+    const pageToken = url.searchParams.get('page_token')?.trim() ?? ''
+    if (!organizationId || organizationId.length > 160) return response({ error: 'organization_required' }, 400)
+    if (pageToken.length > 2048) return response({ error: 'invalid_page_token' }, 400)
+    const member = await membership(env, user.authId, organizationId)
+    if (!member || !['owner', 'admin', 'operator'].includes(member.role)) return response({ error: 'workspace_permission_denied' }, 403)
+    try {
+      const connections = await db(env, `provider_connections?select=status,encrypted_refresh_token,granted_scopes&organization_id=eq.${encodeURIComponent(organizationId)}&provider=eq.google_sheets&limit=1`) as Array<{ status: string; encrypted_refresh_token: string | null; granted_scopes: string[] | null }>
+      const connection = connections[0]
+      if (!connection || connection.status !== 'connected' || !connection.encrypted_refresh_token) return response({ error: 'google_sheets_not_connected', message: 'Connect your Google account before discovering spreadsheets.' }, 409)
+      if (!connection.granted_scopes?.includes('https://www.googleapis.com/auth/drive.metadata.readonly')) {
+        return response({ error: 'google_drive_discovery_scope_missing', message: 'Reconnect Google Sheets to enable spreadsheet discovery. Revenue OS will only read spreadsheet metadata and invoice values.' }, 409)
+      }
+      const refreshToken = await decryptRefreshToken(connection.encrypted_refresh_token, env.GOOGLE_TOKEN_ENCRYPTION_KEY!)
+      const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
+        method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ client_id: env.GOOGLE_CLIENT_ID!, client_secret: env.GOOGLE_CLIENT_SECRET!, refresh_token: refreshToken, grant_type: 'refresh_token' }),
+        signal: AbortSignal.timeout(10000),
+      })
+      const tokenPayload = await tokenResponse.json().catch(() => null) as Json | null
+      const accessToken = tokenPayload && typeof tokenPayload.access_token === 'string' ? tokenPayload.access_token : null
+      if (!tokenResponse.ok || !accessToken) throw new Error('google_token_refresh_failed')
+      const driveUrl = new URL('https://www.googleapis.com/drive/v3/files')
+      driveUrl.searchParams.set('q', "mimeType='application/vnd.google-apps.spreadsheet' and trashed=false")
+      driveUrl.searchParams.set('pageSize', '100')
+      driveUrl.searchParams.set('orderBy', 'modifiedTime desc')
+      driveUrl.searchParams.set('fields', 'nextPageToken,files(id,name,mimeType,modifiedTime,webViewLink)')
+      if (pageToken) driveUrl.searchParams.set('pageToken', pageToken)
+      const driveResponse = await fetch(driveUrl, { headers: { Authorization: `Bearer ${accessToken}` }, signal: AbortSignal.timeout(12000) })
+      const drivePayload = await driveResponse.json().catch(() => null) as Json | null
+      if (!driveResponse.ok || !drivePayload || !Array.isArray(drivePayload.files)) {
+        const code = driveResponse.status === 403 ? 'google_drive_discovery_denied' : 'google_drive_discovery_failed'
+        await db(env, `provider_connections?organization_id=eq.${encodeURIComponent(organizationId)}&provider=eq.google_sheets`, {
+          method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ last_error_code: code, updated_at: new Date().toISOString() }),
+        }).catch(() => undefined)
+        return response({ error: code, message: driveResponse.status === 403 ? 'Google could not list spreadsheets. Reconnect with the requested read-only discovery permission, or check Google Workspace restrictions.' : 'Google spreadsheet discovery failed. Try again shortly.' }, driveResponse.status === 403 ? 403 : 502)
+      }
+      const files = (drivePayload.files as Json[]).flatMap((file) => typeof file.id === 'string' && typeof file.name === 'string' ? [{
+        id: file.id, name: file.name, modified_time: typeof file.modifiedTime === 'string' ? file.modifiedTime : null,
+        web_view_link: typeof file.webViewLink === 'string' ? file.webViewLink : null,
+      }] : [])
+      return response({ files, next_page_token: typeof drivePayload.nextPageToken === 'string' ? drivePayload.nextPageToken : null })
+    } catch (cause) {
+      const code = cause instanceof Error ? cause.message : 'google_drive_discovery_failed'
+      const safeCode = /^[a-z0-9_:-]{1,80}$/.test(code) ? code : 'google_drive_discovery_failed'
+      await db(env, `provider_connections?organization_id=eq.${encodeURIComponent(organizationId)}&provider=eq.google_sheets`, {
+        method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ last_error_code: safeCode, updated_at: new Date().toISOString() }),
+      }).catch(() => undefined)
+      return response({ error: safeCode, message: safeCode === 'google_token_refresh_failed' ? 'Google access has expired or been revoked. Reconnect Google Sheets and try again.' : 'Could not discover spreadsheets from Google. Try again shortly.' }, 502)
     }
   }
 

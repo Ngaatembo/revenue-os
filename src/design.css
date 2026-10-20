@@ -1,24 +1,28 @@
-/*
- * Revenue OS visual layer. Provisional design tokens (no DESIGN.md existed when written).
- * Loaded after App.css so these rules intentionally win on equal specificity.
- */
+/* Revenue OS — canonical Revenue Desk design system. Loaded after App.css for feature-level components. */
 :root {
-  /* Revenue OS brand system: confident blue, growth green, quiet ledger neutrals. */
-  --page: #f5f8fc; --surface: #ffffff; --sidebar: #f9fbff; --ink: #14233b;
-  --muted: #637187; --line: #dce4ef; --action: #1769e0; --action-hover: #1254b5;
-  --teal: #1769e0; --verified: #15945f; --band-1: #f2c66d; --band-2: #e79b3d;
-  --band-3: #d96b3b; --band-4: #b94040;
-  --money-font: Charter, 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
-  color-scheme: light; font-size: 16px;
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --page: #101722; --surface: #172233; --sidebar: #121d2c; --ink: #e8eef8;
-    --muted: #a4b2c6; --line: #2c3b50; --action: #5b9bff; --action-hover: #80b1ff;
-    --teal: #5b9bff; --verified: #4bd69a; --band-1: #e5bd65; --band-2: #e49b43;
-    --band-3: #e37b51; --band-4: #df6666; color-scheme: dark;
-  }
-  .button-primary { color: #08172b; }
+  color-scheme: light;
+  --page: #f7f5ef;
+  --surface: #fffefa;
+  --surface-soft: #f0f2eb;
+  --sidebar: #183b32;
+  --sidebar-ink: #f5f5ec;
+  --sidebar-muted: #b8c9be;
+  --ink: #202923;
+  --muted: #59665e;
+  --line: #dadfd6;
+  --action: #245b46;
+  --action-hover: #194a38;
+  --teal: #245b46;
+  --verified: #24754e;
+  --warning: #8a4b0b;
+  --critical: #a52f2a;
+  --focus: #2d7c63;
+  --band-1: #e8cf8c;
+  --band-2: #d9a35d;
+  --band-3: #c97b48;
+  --band-4: #b33b35;
+  --money-font: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 16px;
 }
 body { font-size: 14px; line-height: 1.5; }
 .button { min-height: 44px; font-size: 14px; }
@@ -540,6 +544,54 @@ a { text-underline-offset: .18em; }
 @media (max-width: 760px) {
   .sidebar { background: var(--sidebar); }
   .brand-symbol { width: 28px; height: 28px; flex-basis: 28px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; }
+}
+
+
+/* Revenue Desk: coherent global surface, navigation, typography and component states. */
+body { background: var(--page); color: var(--ink); font-size: 14px; line-height: 1.5; }
+.main-area { background: radial-gradient(ellipse at 90% 0%, rgba(232,224,203,.2), transparent 42%), var(--page); }
+.topbar { background: var(--surface); border-bottom-color: var(--line); }
+.sidebar { background: var(--sidebar); border-right-color: rgba(245,245,236,.14); color: var(--sidebar-ink); }
+.sidebar .brand { color: var(--sidebar-ink); }
+.sidebar .brand-light { color: #c7d9cb; }
+.sidebar .nav-label { color: var(--sidebar-muted); }
+.sidebar .nav-item { color: #d5e0d8; }
+.sidebar .nav-item svg { color: #b8c9be; }
+.sidebar .nav-item:hover { background: rgba(245,245,236,.09); color: var(--surface); }
+.sidebar .nav-item.active { color: var(--surface); background: rgba(205,226,208,.14); box-shadow: inset 3px 0 0 #a9c9ad; }
+.sidebar .nav-item.active svg { color: #c6dfc9; }
+.sidebar .nav-count { color: var(--sidebar); background: #d5e6d5; }
+.sidebar .workspace-switcher { background: rgba(255,254,250,.07); border-color: rgba(245,245,236,.18); }
+.sidebar .workspace-copy strong, .sidebar .user-chip strong { color: var(--surface); }
+.sidebar .workspace-copy small, .sidebar .user-chip small, .sidebar .more { color: var(--sidebar-muted); }
+.sidebar .workspace-avatar, .sidebar .user-avatar { color: var(--sidebar); background: #d5e6d5; }
+.sidebar .sidebar-rule { background: rgba(245,245,236,.16); }
+.brand { gap: 11px; }
+.brand-symbol { width: 30px; height: 30px; flex: 0 0 30px; display: block; object-fit: contain; }
+.brand-wordmark { color: var(--sidebar-ink); font-size: 17px; font-weight: 680; letter-spacing: -.45px; line-height: 1; }
+.brand-light { font-weight: 500; letter-spacing: -.25px; }
+.eyebrow { color: var(--muted); font-size: 11px; letter-spacing: .04em; }
+.page-subtitle, .panel-heading p, .brain-note, .empty-state p { color: var(--muted); }
+.button { min-height: 44px; border-radius: 7px; transition: background-color .14s ease, border-color .14s ease, color .14s ease; }
+.button-primary { background: var(--action); color: var(--surface); }
+.button-primary:hover { background: var(--action-hover); }
+.button-secondary { color: var(--action); background: var(--surface); border-color: var(--line); }
+.button-secondary:hover { color: var(--action-hover); background: var(--surface-soft); border-color: #b9c8bb; }
+.panel, .first-run-panel, .daily-brief, .connection-source-card { background-color: var(--surface); border-color: var(--line); box-shadow: none; }
+.metric-value, .opportunity-values strong, .aging-head h2, .aging-legend dd, .verified-outcome-detail strong { font-variant-numeric: tabular-nums lining-nums; }
+.field-error { color: var(--critical); }
+a { text-underline-offset: .18em; }
+.button:focus-visible, .nav-item:focus-visible, .mobile-nav button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-visible, [role="button"]:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+@media (max-width: 760px) {
+  .sidebar { background: var(--sidebar); }
+  .brand-symbol { width: 28px; height: 28px; flex-basis: 28px; }
+  .topbar { padding-inline: 15px; }
+  .page-content { padding: 22px 15px 30px; }
+  .page-heading { align-items: stretch; gap: 15px; }
+  .page-heading > div { min-width: 0; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; }

@@ -19,6 +19,7 @@ import { BusinessBrain } from './BusinessBrain'
 import { actionStatusLabel } from './domain/actions'
 import { AttentionQueue } from './AttentionQueue'
 import { evaluateAttention, summarizeAttention } from './domain/attention/engine'
+import { overdueInvoiceSignals } from './domain/businessSignalAdapters'
 import { resolveAllSettings } from './domain/businessBrain'
 import { deriveRecordFacts, findRecordMismatches, type BrainFact, type StoredFactKind } from './domain/businessBrain'
 import { IssueControls, type ResponseFormValues } from './IssueControls'
@@ -913,8 +914,10 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
 
   const attention = useMemo(() => {
     const asOf = new Date().toISOString()
+    const businessSignals = overdueInvoiceSignals(invoices, organization.id, asOf)
     const evaluated = evaluateAttention({
       asOf,
+      businessSignals,
       opportunities,
       progressByInvoiceId,
       reminderSentAt: new Map(recoveryActions.filter((action) => action.status === 'executed' && action.executedAt).flatMap((action) => {
@@ -934,7 +937,7 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
       },
     })
     return { ...evaluated, summary: summarizeAttention(evaluated.items) }
-  }, [opportunities, progressByInvoiceId, recoveryActions, interactions, leads, leadActivityLog, brainFacts, records.quotations, records.deposits, records.tasks, records.reviews, records.rescheduleCounts, records.actionOwners, invoices])
+  }, [opportunities, progressByInvoiceId, recoveryActions, interactions, leads, leadActivityLog, brainFacts, records.quotations, records.deposits, records.tasks, records.reviews, records.rescheduleCounts, records.actionOwners, invoices, organization.id])
 
   const brain = (() => {
     if (invoicesLoading) return { status: 'LOADING', title: 'Loading workspace data…', detail: 'Checking for saved invoices', note: 'Figures appear once saved records have been read.' }

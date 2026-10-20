@@ -148,7 +148,7 @@ export function classifyBusinessSignalBatch(signals: BusinessSignal[]): SignalBa
   const duplicates: string[] = []
   const conflicts: SignalBatchResult['conflicts'] = []
   const rejected: SignalBatchResult['rejected'] = []
-  const seen = new Map<string, { signal: BusinessSignal; acceptedIndex: number; conflicted: boolean }>()
+  const seen = new Map<string, { signal: BusinessSignal; conflicted: boolean }>()
 
   signals.forEach((signal, index) => {
     const errors = validateBusinessSignal(signal)
@@ -160,8 +160,8 @@ export function classifyBusinessSignalBatch(signals: BusinessSignal[]): SignalBa
     const key = JSON.stringify([signal.organizationId, signal.sourceId, signal.idempotencyKey])
     const previous = seen.get(key)
     if (!previous) {
-      const acceptedIndex = accepted.push(signal) - 1
-      seen.set(key, { signal, acceptedIndex, conflicted: false })
+      accepted.push(signal)
+      seen.set(key, { signal, conflicted: false })
       return
     }
 
@@ -182,11 +182,14 @@ export function classifyBusinessSignalBatch(signals: BusinessSignal[]): SignalBa
     if (sameEvent) {
       duplicates.push(signal.idempotencyKey)
     } else {
-      accepted.splice(previous.acceptedIndex, 1)
       previous.conflicted = true
       conflicts.push({ idempotencyKey: signal.idempotencyKey, reason: 'The same source key describes conflicting signal content; all rows for this key were quarantined for manual review.' })
     }
   })
 
-  return { accepted, duplicates, conflicts, rejected }
+  const safeAccepted = accepted.filter((signal) => {
+    const key = JSON.stringify([signal.organizationId, signal.sourceId, signal.idempotencyKey])
+    return !seen.get(key)?.conflicted
+  })
+  return { accepted: safeAccepted, duplicates, conflicts, rejected }
 }

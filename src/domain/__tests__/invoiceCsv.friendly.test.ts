@@ -16,8 +16,8 @@ test('accepts familiar spreadsheet column names and a missing internal customer 
   assert.equal(result.issues.length, 0)
   assert.equal(result.invoices[0].customerName, 'Mupfumi Hardware')
   assert.equal(result.invoices[0].invoiceNumber, 'INV-104')
-  assert.equal(result.invoices[0].total.minor, 25000)
-  assert.equal(result.invoices[0].paid.minor, 5000)
+  assert.equal(result.invoices[0].total.amount, 25000)
+  assert.equal(result.invoices[0].paid.amount, 5000)
   assert.equal(result.invoices[0].customerId, 'customer:mupfumi-hardware')
 })
 

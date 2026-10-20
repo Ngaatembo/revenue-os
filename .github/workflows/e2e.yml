@@ -1,0 +1,65 @@
+name: Revenue OS browser workflow
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  browser-workflow:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGHOST: localhost
+      PGPORT: "5432"
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      POSTGREST_BIN: /tmp/pgrst/postgrest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install application dependencies
+        run: npm ci
+
+      - name: Install browser-test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+          npm install --no-save --package-lock=false playwright
+          npx playwright install --with-deps chromium
+
+      - name: Install PostgREST
+        run: |
+          mkdir -p /tmp/pgrst
+          curl --fail --location --retry 3 \
+            https://github.com/PostgREST/postgrest/releases/download/v12.2.3/postgrest-v12.2.3-linux-static-x64.tar.xz \
+            --output /tmp/postgrest.tar.xz
+          tar -xJf /tmp/postgrest.tar.xz -C /tmp/pgrst postgrest
+          chmod +x /tmp/pgrst/postgrest
+          /tmp/pgrst/postgrest --version
+
+      - name: Run real-browser workflow against disposable Postgres
+        run: npm run test:e2e

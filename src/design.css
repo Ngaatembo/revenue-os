@@ -438,3 +438,109 @@ tr:last-child td { border-bottom: 0; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; }
 }
+
+/* Revenue Desk design-system foundation. Keep semantic tokens here; components should consume roles, not palette literals. */
+:root {
+  color-scheme: light;
+  --page: #f7f5ef;
+  --surface: #fffefa;
+  --surface-soft: #f0f2eb;
+  --sidebar: #183b32;
+  --sidebar-ink: #f5f5ec;
+  --sidebar-muted: #b8c9be;
+  --ink: #202923;
+  --muted: #657168;
+  --line: #dadfd6;
+  --action: #245b46;
+  --action-hover: #194a38;
+  --teal: #245b46;
+  --verified: #24754e;
+  --warning: #a96316;
+  --critical: #b33b35;
+  --focus: #2d7c63;
+  --band-1: #e8cf8c;
+  --band-2: #d9a35d;
+  --band-3: #c97b48;
+  --band-4: #b33b35;
+  --money-font: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Consolas, monospace;
+  background: var(--page);
+}
+
+/* A quiet paper-like canvas: depth from warm surface shifts, never noisy image grain. */
+body {
+  background-color: var(--page);
+  color: var(--ink);
+}
+.main-area {
+  background:
+    radial-gradient(ellipse at 90% 0%, rgba(232, 224, 203, .22), transparent 42%),
+    var(--page);
+}
+.topbar {
+  background: rgba(255, 254, 250, .92);
+  backdrop-filter: none;
+}
+.sidebar {
+  background: var(--sidebar);
+  border-right-color: rgba(245, 245, 236, .13);
+  color: var(--sidebar-ink);
+}
+.sidebar .brand { color: var(--sidebar-ink); }
+.sidebar .brand-light { color: #c7d9cb; }
+.sidebar .nav-label { color: var(--sidebar-muted); }
+.sidebar .nav-item { color: #d5e0d8; }
+.sidebar .nav-item svg { color: #b8c9be; }
+.sidebar .nav-item:hover { background: rgba(245, 245, 236, .09); color: #fffefa; }
+.sidebar .nav-item.active {
+  color: #fffefa;
+  background: rgba(205, 226, 208, .14);
+  box-shadow: inset 3px 0 0 #a9c9ad;
+}
+.sidebar .nav-item.active svg { color: #c6dfc9; }
+.sidebar .nav-count { color: #183b32; background: #d5e6d5; }
+.sidebar .workspace-switcher { background: rgba(255, 254, 250, .07); border-color: rgba(245, 245, 236, .18); }
+.sidebar .workspace-copy strong { color: #fffefa; }
+.sidebar .workspace-copy small { color: var(--sidebar-muted); }
+.sidebar .workspace-avatar { color: #183b32; background: #d5e6d5; }
+.sidebar .sidebar-rule { background: rgba(245, 245, 236, .16); }
+.sidebar .user-chip strong { color: #fffefa; }
+.sidebar .user-chip small, .sidebar .more { color: var(--sidebar-muted); }
+.sidebar .user-avatar { color: #183b32; background: #d5e6d5; }
+
+.brand { gap: 11px; }
+.brand-symbol { width: 30px; height: 30px; flex: 0 0 30px; display: block; object-fit: contain; }
+.brand-wordmark { color: var(--sidebar-ink); font-size: 17px; font-weight: 680; letter-spacing: -.45px; line-height: 1; }
+.brand-light { font-weight: 500; letter-spacing: -.25px; }
+.auth-brand img { width: 38px; height: 38px; object-fit: contain; flex: 0 0 38px; }
+
+/* Consistent interaction geometry and accessible keyboard focus. */
+.button { min-height: 44px; border-radius: 7px; transition: background-color .14s ease, border-color .14s ease, color .14s ease; }
+.button-primary { background: var(--action); color: #fffefa; }
+.button-primary:hover { background: var(--action-hover); }
+.button-secondary { color: var(--action); background: var(--surface); border-color: var(--line); }
+.button-secondary:hover { color: var(--action-hover); background: var(--surface-soft); border-color: #b9c8bb; }
+.button:focus-visible, .nav-item:focus-visible, .mobile-nav button:focus-visible,
+a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible,
+button:focus-visible, [role="button"]:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 3px;
+}
+.panel, .first-run-panel, .daily-brief, .connection-source-card {
+  background-color: var(--surface);
+  border-color: var(--line);
+  box-shadow: none;
+}
+.panel-heading p, .page-subtitle, .brain-note, .empty-state p { color: var(--muted); }
+.status-pill { border-color: var(--line); }
+.metric-value, .opportunity-values strong, .aging-head h2, .aging-legend dd,
+.verified-outcome-detail strong { font-variant-numeric: tabular-nums lining-nums; }
+.metric-card:nth-child(3) .metric-value { color: var(--verified); }
+.field-error { color: #96332e; }
+a { text-underline-offset: .18em; }
+@media (max-width: 760px) {
+  .sidebar { background: var(--sidebar); }
+  .brand-symbol { width: 28px; height: 28px; flex-basis: 28px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; }
+}

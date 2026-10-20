@@ -79,7 +79,23 @@ const MAX_FILE_BYTES = 10 * 1024 * 1024
 const MAX_ROWS = 50_000
 const MAX_AMOUNT_MINOR = 100_000_000_000 // 1 billion major currency units
 
-function parseRows(text: string): string[][] {
+function detectDelimiter(text: string): string {
+  // Excel exports in some locales use semicolons; tab-separated exports are also common.
+  // Count delimiters in the first non-empty line outside quoted text.
+  const firstLine = text.split(/\r?\n/).find((line) => line.trim().length > 0) ?? ''
+  const counts = new Map([[' ,', 0], [',', 0], [';', 0], ['\t', 0]])
+  let quoted = false
+  for (let i = 0; i < firstLine.length; i += 1) {
+    const char = firstLine[i]
+    if (char === '"' && firstLine[i + 1] === '"') { i += 1; continue }
+    if (char === '"') quoted = !quoted
+    else if (!quoted && counts.has(char)) counts.set(char, (counts.get(char) ?? 0) + 1)
+  }
+  const candidates = [',', ';', '\t']
+  return candidates.sort((a, b) => (counts.get(b) ?? 0) - (counts.get(a) ?? 0))[0]
+}
+
+function parseRows(text: string, delimiter: string): string[][] {
   const rows: string[][] = []
   let row: string[] = []
   let cell = ''
@@ -102,7 +118,7 @@ function parseRows(text: string): string[][] {
     if (char === '"') {
       if (cell.length !== 0) throw new Error('Unexpected quote in an unquoted CSV field.')
       quoted = true
-    } else if (char === ',') {
+    } else if (char === delimiter) {
       row.push(cell)
       cell = ''
     } else if (char === '\n' || char === '\r') {
@@ -154,7 +170,7 @@ export function parseInvoiceCsv(
 
   let rows: string[][]
   try {
-    rows = parseRows(text.replace(/^\uFEFF/, ''))
+    const cleanText = text.replace(/^\uFEFF/, '')\n    rows = parseRows(cleanText, detectDelimiter(cleanText))
   } catch (error) {
     if (error instanceof Error) throw error
     throw new Error('CSV could not be read.', { cause: error })

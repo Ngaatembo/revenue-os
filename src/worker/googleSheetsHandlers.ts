@@ -371,7 +371,11 @@ export async function handleGoogleSheets(request: Request, env: Env): Promise<Re
       const sheetResponse = await fetch(sheetUrl, { headers: { Authorization: `Bearer ${accessToken}` }, signal: AbortSignal.timeout(15000) })
       const sheetPayload = await sheetResponse.json().catch(() => null) as Json | null
       if (!sheetResponse.ok || !sheetPayload || !Array.isArray(sheetPayload.values)) {
-        const reason = sheetResponse.status === 403 ? 'google_sheet_access_denied' : sheetResponse.status === 404 ? 'google_sheet_not_found' : 'google_sheet_read_failed'
+        const reason = sheetResponse.status === 400 ? 'google_sheet_invalid_range'
+          : sheetResponse.status === 403 ? 'google_sheet_access_denied'
+          : sheetResponse.status === 404 ? 'google_sheet_not_found'
+          : sheetResponse.status === 429 ? 'google_sheet_rate_limited'
+          : 'google_sheet_read_failed'
         throw new Error(reason)
       }
       const importedAt = new Date().toISOString()

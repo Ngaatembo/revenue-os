@@ -44,6 +44,17 @@ import './sourceReview.css'
 
 type Section = 'Overview' | 'Urgent' | 'Follow-ups' | 'Opportunities' | 'Lead Recovery' | 'Actions' | 'Outcomes' | 'Business Brain' | 'Connections'
 
+const SECTION_SUBTITLES: Record<Section, string> = {
+  Overview: 'What needs you today, and the money behind it.',
+  Urgent: 'Overdue invoices and leads that need you now, with the evidence behind each.',
+  'Follow-ups': 'Quotations, deposits and tasks waiting on you or your team.',
+  Opportunities: 'Every overdue invoice, ranked, with the next step for each.',
+  'Lead Recovery': 'Enquiries and the follow-ups you promised.',
+  Actions: 'Reminder drafts to review, approve and send yourself.',
+  Outcomes: 'Payments matched to reminders you sent. Verified revenue only.',
+  'Business Brain': 'The facts and assumptions behind every recommendation.',
+  Connections: 'Connect your tools once. Revenue OS keeps itself up to date.',
+}
 const sections: Section[] = ['Overview', 'Urgent', 'Follow-ups', 'Opportunities', 'Lead Recovery', 'Actions', 'Outcomes', 'Business Brain', 'Connections']
 const invoiceCsvHeader = 'customer_id,customer_name,invoice_number,currency,total_amount,paid_amount,issued_at,due_at\n'
 
@@ -1065,13 +1076,14 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
 
       <main className="main-area" id="overview">
         <header className="topbar">
+          <span className="topbar-brand"><img src="/revenue-os-mark.png" alt="" width="26" height="26" /><b>Revenue OS</b></span>
           <div className="breadcrumbs"><span>Workspace</span><span className="crumb-separator">/</span><strong>{activeSection}</strong></div>
           <div className="topbar-right"><span className="connection-state"><i /> Supabase connected</span><button className="button button-secondary" type="button" onClick={onSignOut}>Sign out</button><span className="topbar-avatar">{(session.user.email?.[0] || 'U').toUpperCase()}</span></div>
         </header>
 
         <div className="page-content">
           <div className="page-heading">
-            <div><p className="eyebrow">REVENUE OPERATIONS</p><h1>{title}</h1><p className="page-subtitle">Find, act on, and verify revenue opportunities from your business data.</p></div>
+            <div><p className="eyebrow">REVENUE OPERATIONS</p><h1>{title}</h1><p className="page-subtitle">{SECTION_SUBTITLES[activeSection]}</p></div>
             {activeSection !== 'Connections' && <button className="button button-secondary" onClick={() => fileRef.current?.click()}><Icon name="upload" />Upload invoice file</button>}
             <input ref={fileRef} className="visually-hidden" type="file" accept=".csv,text/csv" aria-label="Choose an invoice spreadsheet" onChange={(event) => void importFile(event.target.files?.[0])} />
           </div>

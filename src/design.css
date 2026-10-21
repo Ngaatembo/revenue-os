@@ -731,3 +731,27 @@ body { background: var(--page); }
 .template-link:hover { color: var(--action-hover); }
 .conversations-panel { padding: 20px; }
 @media (max-width: 560px) { .conversations-panel { padding: 16px; } }
+/* Follow-up tracking controls */
+.track-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.track-actions .button { min-height: 44px; }
+.track-panel { display: grid; gap: 10px; margin-top: 10px; padding: 14px; background: var(--inset); border: 1px solid var(--edge); border-radius: 12px; }
+.track-panel p, .track-panel small { margin: 0; font-size: 14px; line-height: 20px; color: var(--ink); }
+.track-panel small { color: var(--muted); }
+.track-panel label { display: grid; gap: 6px; font-size: 14px; font-weight: 600; color: var(--ink); }
+.track-panel textarea { width: 100%; box-sizing: border-box; padding: 10px 12px; border: 1px solid var(--control-border); border-radius: 8px; background: var(--surface); color: var(--ink); font: inherit; font-size: 15px; }
+.track-panel { grid-auto-flow: row; }
+.track-panel > .button { justify-self: start; }
+.track-buttons { display: flex; flex-wrap: wrap; gap: 8px; }
+.conversation-note { margin: 8px 0 0; padding: 8px 12px; background: var(--inset); border-left: 3px solid var(--action); border-radius: 6px; font-size: 14px; line-height: 20px; color: var(--ink); overflow-wrap: anywhere; }
+.set-aside { margin-top: 16px; border-top: 1px solid var(--edge); padding-top: 12px; }
+.set-aside > summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; font-size: 15px; font-weight: 600; color: var(--ink-strong); }
+.conversation-item.is-set-aside { opacity: .92; }
+@media (max-width: 560px) { .track-actions .button { flex: 1 1 calc(50% - 8px); } .track-actions .track-primary { flex-basis: 100%; } }
+/* Brand in the top bar when the sidebar is hidden (narrow windows and phones) */
+.topbar-brand { display: none; align-items: center; gap: 8px; color: var(--ink-strong); font-size: 15px; }
+.topbar-brand b { font-weight: 800; letter-spacing: -.01em; }
+.topbar-brand::after { content: '/'; margin-left: 4px; color: var(--muted); font-weight: 400; }
+@media (max-width: 760px) {
+  .topbar-brand { display: inline-flex; }
+  .breadcrumbs > span { display: none; }
+}

@@ -213,6 +213,19 @@ try {
     }
   })
 
+  await step('on a phone the Revenue OS logo is in the top bar (the sidebar is hidden) and each page says what it is for', async () => {
+    await nav('Overview')
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.locator('.topbar-brand').waitFor({ state: 'visible', timeout: 5000 })
+    assert((await page.locator('.topbar-brand img').getAttribute('src')) === '/revenue-os-mark.png', 'the approved logo mark is shown')
+    assert((await page.locator('.topbar-brand').innerText()).includes('Revenue OS'), 'the product name is shown')
+    assert(!(await page.locator('.sidebar').isVisible()), 'the sidebar is hidden at phone width')
+    await page.setViewportSize({ width: 1280, height: 900 })
+    assert(!(await page.locator('.topbar-brand').isVisible()), 'the top-bar brand is not duplicated beside the sidebar logo')
+    await nav('Urgent')
+    assert((await page.locator('.page-subtitle').innerText()).includes('Overdue invoices and leads that need you now'), 'Urgent has its own description, not the generic one')
+  })
+
   await step('reminder lifecycle: draft, unowned flag, assign, approve, sent, payment evidence, verified outcome', async () => {
     await nav('Opportunities')
     await page.getByRole('button', { name: /Draft reminder/ }).first().click()

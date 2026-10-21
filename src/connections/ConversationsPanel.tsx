@@ -1,6 +1,14 @@
 import { describeConnection, formatAge, type ConnectionRow } from './catalog.ts'
-import { automatedThreadIds, gmailThreadLink, whoLabel } from './conversationInsights.ts'
+import { automatedThreadIds, whoLabel } from './conversationInsights.ts'
+import { ConversationRow } from './ConversationRow.tsx'
+import type { SetAside } from './tracking.ts'
 import type { ConversationData } from './useConversations.ts'
+
+const dateOnly = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' })
+function setAsideLabel(reason: SetAside['reason'], tracking: SetAside['tracking']): string {
+  if (reason === 'handled') return `Handled ${formatAge(tracking.handled_at)}`
+  return tracking.remind_at ? `Snoozed until ${dateOnly.format(new Date(tracking.remind_at))}` : 'Snoozed'
+}
 
 /** Customer conversations from synchronized email. Facts and inferences are labelled separately. */
 export function ConversationsPanel({ data, gmail, onOpenConnections }: {
@@ -32,16 +40,25 @@ export function ConversationsPanel({ data, gmail, onOpenConnections }: {
       if (rows.length === 0) return null
       return <div className="conversation-group" key={kind} data-group={kind}>
         <h3 className="conversation-group-title">{kind === 'awaiting_reply' ? 'Waiting for your reply' : 'Gone quiet — you wrote last'} <span>{rows.length}</span></h3>
-        <ul className="conversation-list">{rows.map((item) => <li key={item.thread.thread_id} className="conversation-item" data-kind={item.kind}>
-      <div className="conversation-top"><strong>{whoLabel(item.thread)}</strong><span className="connection-pill">{item.kind === 'awaiting_reply' ? 'Waiting for your reply' : 'Gone quiet'}</span></div>
-      <p className="conversation-subject">{item.thread.subject ?? '(no subject)'}</p>
-      <p><span className="tag-observed">Observed</span> {item.observed}</p>
-      <p><span className="tag-inferred">Inferred</span> {item.inference}</p>
-      <p><span className="tag-action">Suggested</span> {item.recommendation}</p>
-      <a className="template-link" href={gmailThreadLink(gmail?.provider_account_email ?? null, item.thread.thread_id)} target="_blank" rel="noreferrer">Open the original email →</a>
-    </li>
-        )}</ul>
+        <ul className="conversation-list">{rows.map((item) => <ConversationRow key={item.thread.thread_id} item={item} data={data} account={gmail?.provider_account_email ?? null} />)}</ul>
       </div>
     })}
+    {data.actionError && <p className="connection-message" role="alert">{data.actionError}</p>}
+    {data.trackingAvailable && data.setAside.length > 0 && <details className="set-aside" data-testid="set-aside">
+      <summary>Handled and snoozed ({data.setAside.length})</summary>
+      <ul className="conversation-list">{data.setAside.map(({ thread, tracking, reason }) => <li key={thread.thread_id} className="conversation-item is-set-aside">
+        <div className="conversation-top"><strong>{whoLabel(thread)}</strong><span className="connection-pill">{setAsideLabel(reason, tracking)}</span></div>
+        <p className="conversation-subject">{thread.subject ?? '(no subject)'}</p>
+        {tracking.note && <p className="conversation-note"><strong>Your note:</strong> {tracking.note}</p>}
+        <div className="track-actions"><button type="button" className="button button-secondary" disabled={data.busyThread === thread.thread_id} onClick={() => void data.actions.reopen(thread.thread_id)}>Reopen</button></div>
+      </li>)}</ul>
+    </details>}
+    {data.trackingAvailable && data.mutedSenders.length > 0 && <details className="set-aside" data-testid="hidden-senders">
+      <summary>Hidden senders ({data.mutedSenders.length})</summary>
+      <ul className="conversation-list">{data.mutedSenders.map((address) => <li key={address} className="conversation-item is-set-aside">
+        <div className="conversation-top"><strong>{address}</strong></div>
+        <div className="track-actions"><button type="button" className="button button-secondary" disabled={data.busyThread === address} onClick={() => void data.actions.unmute(address)}>Unhide</button></div>
+      </li>)}</ul>
+    </details>}
   </section>
 }

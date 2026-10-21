@@ -25,7 +25,7 @@ const contrast = (a: string, b: string) => { const [x, y] = [lum(a), lum(b)].sor
 
 test('brand tokens are the colours sampled from the approved logo', () => {
   assert.equal(light['--brand-navy'], '#01143b'); assert.equal(light['--brand-blue'], '#0064ea'); assert.equal(light['--action'], '#0064ea')
-  assert.equal(light['--action-hover'], '#0053c4'); assert.equal(light['--page'], '#f4f7fc'); assert.equal(light['--sidebar'], '#f9fbff')
+  assert.equal(light['--action-hover'], '#0053c4'); assert.equal(light['--page'], '#eef3fa'); assert.equal(light['--sidebar'], '#f9fbff')
 })
 test('the sidebar is light (not the dark-green drift) and green is reserved for verified success', () => {
   assert.ok(lum(light['--sidebar']!) > 0.9, 'sidebar must be a light surface')

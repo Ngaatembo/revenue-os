@@ -66,3 +66,9 @@ jobs:
 
       - name: Run real-browser workflow against disposable Postgres
         run: npm run test:e2e
+
+      - name: Run connections journey (simulated Google) against disposable Postgres
+        run: npm run test:e2e:connections
+
+      - name: Run connections journey for the initial release scope (WhatsApp migration deferred)
+        run: npm run test:e2e:connections:initial

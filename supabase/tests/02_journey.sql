@@ -35,7 +35,7 @@ reset role;
 -- ---------- Unauthenticated ----------
 set role anon;
 select t.err('anon cannot import invoices', $q$select public.persist_invoice_import(t.o('orga'),'s','s',repeat('a',64),'[]'::jsonb,0)$q$);
-select t.eq('anon sees no invoices', $q$select count(*)::text from public.invoices$q$, '0');
+select t.err('anon cannot read invoices (table grant revoked)', $q$select count(*) from public.invoices$q$, '42501');
 reset role;
 
 -- ---------- Assumption upsert (operator) + role checks ----------

@@ -39,7 +39,7 @@ try {
   server = await startServer({ dist, port: APP_PORT, upstream: `http://127.0.0.1:${API_PORT}` })
   for (let i = 0; i < 50; i += 1) { try { if ((await fetch(`http://127.0.0.1:${API_PORT}/`)).ok) break } catch { /* wait */ } await new Promise((r) => setTimeout(r, 200)) }
 
-  browser = await chromium.launch()
+  browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {})
   const context = await browser.newContext({ viewport: { width: 1280, height: 900 } })
   page = await context.newPage()
   page.on('response', async (response) => { if (response.status() >= 400 && response.url().includes('/rest/v1/')) console.log('HTTP', response.status(), response.request().method(), response.url().replace(BASE, ''), (await response.text().catch(() => '')).slice(0, 160)) })
@@ -52,7 +52,8 @@ try {
 
   await step('signed-in owner gets a workspace', async () => {
     await page.goto(BASE)
-    await page.getByRole('heading', { name: /Overview|Revenue/i }).first().waitFor({ timeout: 20000 })
+    // A brand-new owner with nothing connected lands on Connections (covered in depth by e2e/connections.mjs).
+    await page.getByRole('heading', { name: 'Connect your business once' }).waitFor({ timeout: 20000 })
     assert(sql(`select count(*) from public.organizations`) === '1', 'workspace not created')
   })
   const orgA = () => sql(`select id from public.organizations order by created_at limit 1`)
@@ -238,6 +239,27 @@ try {
     assert(out.counts.every((n) => n === 0), 'B can read A rows: ' + out.counts)
     assert([out.write, out.resolve, out.members].every((s) => s >= 400), 'B could write/read A via RPC: ' + JSON.stringify(out))
     assert(sql(`select count(*) from public.tasks where title='intrusion'`) === '0', 'intrusion row exists')
+  })
+
+  await step('lead recovery: stalled lead is flagged, interaction recorded, next follow-up rescheduled and logged', async () => {
+    await nav('Lead Recovery')
+    const form = page.locator('form.lead-form')
+    await form.getByLabel('Contact name').fill('Tendai M.')
+    await form.getByLabel('Business name').fill('Zeta Guest House')
+    await form.getByLabel('Potential value').fill('300')
+    await form.getByLabel('Next follow-up date').fill(day(-10))
+    await form.getByRole('button', { name: 'Add lead' }).click()
+    await page.getByText('Zeta Guest House').first().waitFor({ timeout: 15000 })
+    assert(sql(`select count(*) from public.sales_leads where business_name='Zeta Guest House'`) === '1', 'lead not saved')
+    await page.getByText(/Stalled \d+d/).first().waitFor({ timeout: 10000 })
+    await page.getByRole('button', { name: 'Recover lead' }).first().click()
+    await page.getByLabel('What happened').selectOption('interested')
+    await page.getByLabel('Interaction notes').fill('Spoke to owner, wants a revised quote')
+    await page.getByLabel('Next follow-up date').last().fill(day(3))
+    await page.getByRole('button', { name: 'Save interaction' }).click()
+    await page.getByText(/Stalled \d+d/).first().waitFor({ state: 'detached', timeout: 15000 })
+    assert(sql(`select count(*) from public.lead_activities where summary like 'Spoke to owner%'`) === '1', 'interaction not logged')
+    assert(sql(`select next_follow_up from public.sales_leads where business_name='Zeta Guest House'`) === day(3), 'follow-up not rescheduled')
   })
 
   await step('phone width: no horizontal scroll on Follow-ups or Urgent', async () => {

@@ -241,7 +241,7 @@ export async function getFreshSession(session: SupabaseSession): Promise<Supabas
   return session
 }
 
-async function apiRequest<T>(session: SupabaseSession, path: string, init: RequestInit = {}): Promise<T> {
+export async function apiRequest<T>(session: SupabaseSession, path: string, init: RequestInit = {}): Promise<T> {
   requireConfig()
   const current = await getFreshSession(session)
   const response = await fetch(`${supabaseUrl}/rest/v1/${path}`, {

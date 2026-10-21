@@ -96,16 +96,27 @@ export default function AuthApp() {
     setError('')
   }
 
-  if (loading) return <main className="auth-page"><div className="auth-card"><div className="auth-brand"><img src="/revenue-os-mark.svg" alt="" /><span>Revenue<span> OS</span></span></div><h1>Opening your workspace</h1><p>Checking your Revenue OS session securely.</p></div></main>
+  if (loading) return <main className="auth-page"><div className="auth-card"><div className="auth-brand"><img src="/revenue-os-mark.png" alt="" /><span>Revenue<span> OS</span></span></div><h1>Opening your workspace</h1><p>Checking your Revenue OS session securely.</p></div></main>
 
-  if (!isSupabaseConfigured()) return <main className="auth-page"><div className="auth-card"><div className="auth-brand"><img src="/revenue-os-mark.svg" alt="" /><span>Revenue<span> OS</span></span></div><p className="auth-eyebrow">REVENUE OPERATIONS</p><h1>Connect your workspace</h1><p>Supabase is ready, but the frontend still needs its public project URL and publishable key at build time.</p><div className="auth-setup"><strong>Required environment variables</strong><code>VITE_SUPABASE_URL</code><code>VITE_SUPABASE_ANON_KEY</code><small>Use the project's publishable/anon key only. Never add a service-role key to frontend variables.</small></div><a href="https://supabase.com/dashboard/project/zivgfvcmposnbwqsudas/settings/api" target="_blank" rel="noreferrer">Open Revenue OS API settings ↗</a></div></main>
+  if (!isSupabaseConfigured()) return <main className="auth-page"><div className="auth-card"><div className="auth-brand"><img src="/revenue-os-mark.png" alt="" /><span>Revenue<span> OS</span></span></div><p className="auth-eyebrow">REVENUE OPERATIONS</p><h1>Connect your workspace</h1><p>Supabase is ready, but the frontend still needs its public project URL and publishable key at build time.</p><div className="auth-setup"><strong>Required environment variables</strong><code>VITE_SUPABASE_URL</code><code>VITE_SUPABASE_ANON_KEY</code><small>Use the project's publishable/anon key only. Never add a service-role key to frontend variables.</small></div><a href="https://supabase.com/dashboard/project/zivgfvcmposnbwqsudas/settings/api" target="_blank" rel="noreferrer">Open Revenue OS API settings ↗</a></div></main>
 
   if (session && organization) return <RevenueWorkspace session={session} organization={organization} onSignOut={() => void handleSignOut()} />
 
   return <main className="auth-page">
+    <div className="auth-shell">
+    <section className="auth-welcome" aria-labelledby="welcome-title" data-testid="auth-welcome">
+      <div className="logo-plate"><img src="/revenue-os-logo.png" alt="Revenue OS — turn opportunities into revenue" width="720" height="445" /></div>
+      <h2 id="welcome-title">Know who owes you, and who is waiting on you.</h2>
+      <p>Revenue OS watches the business tools you already use and tells you what needs your attention — overdue invoices, customers who wrote and heard nothing back, conversations that went quiet — with the original record behind every item.</p>
+      <ol className="welcome-steps">
+        <li><span aria-hidden="true">1</span><div><strong>Connect once</strong><small>Gmail or your invoice spreadsheet. You approve access on Google's own page; Revenue OS only reads.</small></div></li>
+        <li><span aria-hidden="true">2</span><div><strong>It keeps itself up to date</strong><small>The first synchronization runs in the background and so do the checks after it. You can close the app.</small></div></li>
+        <li><span aria-hidden="true">3</span><div><strong>See what needs you</strong><small>Estimates are labelled as estimates. Nothing is ever sent to a customer without you.</small></div></li>
+      </ol>
+      <p className="welcome-fine">Works with Gmail and Google Sheets today. WhatsApp Business needs Meta approval and is not available yet. No account to connect? You can upload an invoice file instead.</p>
+    </section>
     <section className="auth-card">
-      <div className="auth-brand"><img src="/revenue-os-mark.svg" alt="" /><span>Revenue<span> OS</span></span></div>
-      <p className="auth-eyebrow">REVENUE OPERATIONS</p>
+      <p className="auth-eyebrow">GET STARTED</p>
       <h1>{mode === 'signin' ? 'Your business, under control' : 'Create your workspace'}</h1>
       <p className="auth-intro">Sign in with your email. We’ll guide you through connecting the information your business already uses, then surface what needs attention.</p>
       <div className="auth-mode" role="tablist" aria-label="Account access">
@@ -148,5 +159,6 @@ export default function AuthApp() {
       </form>
       <p className="auth-footnote">Your business records are scoped to your workspace. Do not upload client financial data until you have confirmed access and account security.</p>
     </section>
+    </div>
   </main>
 }

@@ -1,7 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" role="img" aria-labelledby="title">
-  <title id="title">Revenue OS mark</title>
-  <rect x="2" y="2" width="60" height="60" rx="15" fill="#183B32"/>
-  <path d="M17 45V19h14.2c7.3 0 11.6 3.7 11.6 10 0 4.8-2.5 8-7 9.3L44 45H33.8l-6.7-5.5h-1.2V45H17Zm8.9-13.1h4.7c3.4 0 5.1-1 5.1-3s-1.7-3-5.1-3h-4.7v6Z" fill="#FFFEFA"/>
-  <path d="M27.5 45.5h5.2l7.5-7.5" stroke="#B7D5B7" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M35.8 38h4.4v4.4" stroke="#B7D5B7" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
-</svg>

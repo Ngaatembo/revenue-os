@@ -10,6 +10,16 @@ import { partitionCrossSourceDuplicates } from './domain/importDuplicates'
 import { detectStalledLeads } from './domain/stalledLeads'
 import { buildRecommendation } from './domain/recommendation'
 import { classifySyncFailure } from './lib/opportunityQueries'
+import { ConnectionsPage } from './connections/ConnectionsPage'
+import { ConversationsPanel } from './connections/ConversationsPanel'
+import { SourceStatusRows } from './connections/SourceStatusRows'
+import { useConnectionStatus } from './connections/useConnectionStatus'
+import { useConversations } from './connections/useConversations'
+import { decideLanding, setupInProgress } from './connections/landing'
+import { freshnessLine } from './connections/catalog'
+import { whoLabel } from './connections/conversationInsights'
+import { NeedsYouBand } from './overview/NeedsYouBand'
+import { buildNeedsYou } from './overview/needsYou'
 import { BILLING_STATUS, checkInvoiceImportSize, checkLeadCapacity, getPlan } from './domain/plans'
 import type { InvoiceEvidence, RevenueOpportunity } from './domain/types'
 import { getFreshSession, createSalesLead, deleteSalesLead, loadInvoices, loadRecoveryRate, loadSalesLeads, persistInvoiceImport, saveRecoveryRate, sha256Hex, updateSalesLead, type RevenueOrganization, type SalesLead, type SupabaseSession, type RecoveryAction, type VerifiedOutcome, loadRecoveryActions, loadVerifiedOutcomes, persistPaymentImport, proposeInvoiceReminder, transitionRecoveryAction, verifyRecoveryOutcome, loadOpenOpportunities, syncOverdueOpportunities, type OpportunitySyncResult, loadLeadActivities, recordLeadActivity, type LeadActivity, type LeadActivityType, loadInvoiceInteractions, loadPaymentEvidence, recordInvoiceResponse, setOpportunityState, type InvoiceInteraction, loadBrainFacts, loadAssumptionHistory, recordBrainFact, retractBrainFact, resolveBrainConflict, type AssumptionChange, loadEvaluationRuns, type EvaluationRun, assignActionOwner, rematchPaymentReview } from './lib/supabaseRest'
@@ -161,6 +171,27 @@ function GoogleSheetsConnector({ session, organization, onSynced }: { session: S
       setNoticeError(true)
     } finally {
       setDiscoveryBusy(false)
+    }
+  }
+
+  /** Choosing a different tab saves it as the source, so the automatic sync follows the owner's choice. */
+  async function chooseTab(value: string) {
+    setRange(value)
+    const tab = sheetTabs.find((candidate) => candidate.suggested_range === value)
+    const file = spreadsheets.find((candidate) => candidate.id === spreadsheet)
+    if (!tab || !file) return
+    try {
+      const current = await getFreshSession(session)
+      const response = await fetch('/api/integrations/google/source-selection', {
+        method: 'POST', headers: { Authorization: `Bearer ${current.access_token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ organization_id: organization.id, spreadsheet_id: spreadsheet, spreadsheet_name: file.name, tab_title: tab.title, range: value }),
+      })
+      if (!response.ok) throw new Error('save_failed')
+      setNotice(`Saved “${tab.title}” as the invoice tab. Revenue OS will check it automatically.`)
+      setNoticeError(false)
+    } catch {
+      setNotice('Could not save that tab as the source. Try choosing it again.')
+      setNoticeError(true)
     }
   }
 
@@ -386,7 +417,7 @@ function GoogleSheetsConnector({ session, organization, onSynced }: { session: S
       </select>
       {spreadsheet && <>
         <label className="field-label" htmlFor="google-sheet-tab">Invoice tab</label>
-        <select id="google-sheet-tab" value={range} onChange={(event) => setRange(event.target.value)} disabled={inspectBusy || sheetTabs.length === 0}>
+        <select id="google-sheet-tab" value={range} onChange={(event) => void chooseTab(event.target.value)} disabled={inspectBusy || sheetTabs.length === 0}>
           <option value="">{inspectBusy ? 'Inspecting tabs…' : 'Choose a tab'}</option>
           {sheetTabs.map((tab) => <option key={tab.title} value={tab.suggested_range}>{tab.title}{tab.likely_invoice_sheet ? ' · likely invoices' : ''}</option>)}
         </select>
@@ -425,7 +456,11 @@ function GoogleSheetsConnector({ session, organization, onSynced }: { session: S
 function App({ session, organization, onSignOut }: { session: SupabaseSession; organization: RevenueOrganization; onSignOut: () => void }) {
   const fileRef = useRef<HTMLInputElement>(null)
   const paymentFileRef = useRef<HTMLInputElement>(null)
-  const [activeSection, setActiveSection] = useState<Section>('Overview')
+  const [activeSection, setActiveSection] = useState<Section>(() => {
+    // Returning from a provider's authorization page must land on Connections so the result is shown.
+    const params = new URLSearchParams(window.location.search)
+    return params.has('connection') || params.has('google_sheets') ? 'Connections' : 'Overview'
+  })
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false)
   const [invoices, setInvoices] = useState<InvoiceEvidence[]>([])
   const [issues, setIssues] = useState<CsvIssue[]>([])
@@ -454,6 +489,9 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
   const [leadActivityLog, setLeadActivityLog] = useState<LeadActivity[]>([])
   const [evaluationRuns, setEvaluationRuns] = useState<EvaluationRun[] | null>(null)
   const records = useBusinessRecords(session, organization.id)
+  const conn = useConnectionStatus(session, organization.id)
+  const gmailRow = conn.rows?.find((row) => row.provider === 'gmail')
+  const conversations = useConversations(session, organization.id, gmailRow)
   const [brainFacts, setBrainFacts] = useState<BrainFact[]>([])
   const [assumptionHistory, setAssumptionHistory] = useState<AssumptionChange[]>([])
   const [brainLoading, setBrainLoading] = useState(true)
@@ -952,13 +990,50 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
     return { status, title: sourceName || 'Saved Supabase invoice records', detail: `${invoices.length} invoice record${invoices.length === 1 ? '' : 's'} · saved in Supabase${saved}`, note }
   })()
 
+  const landingDecided = useRef(false)
+  const landing = decideLanding({ connections: conn.rows, hasRecords: invoices.length > 0 || leads.length > 0 || records.quotations.length > 0 || records.deposits.length > 0 || records.tasks.length > 0, recordsLoading: invoicesLoading || leadLoading || records.loading })
+  useEffect(() => {
+    // Decide once per visit where a signed-in owner starts. Later navigation is theirs to control.
+    if (landing === 'loading' || landingDecided.current) return
+    landingDecided.current = true
+    const returning = new URLSearchParams(window.location.search).has('connection') || new URLSearchParams(window.location.search).has('google_sheets')
+    if (!returning && landing === 'connections') queueMicrotask(() => setActiveSection('Connections'))
+  }, [landing])
+
+  // Background synchronization finished while the app is open: reload the saved invoices without a manual import.
+  const sheetsSyncedAt = conn.rows ? (conn.rows.find((row) => row.provider === 'google_sheets')?.last_successful_sync_at ?? null) : undefined
+  const seenSheetsSync = useRef<string | null | undefined>(undefined)
+  const assumptionRef = useRef(assumptionBps)
+  useEffect(() => { assumptionRef.current = assumptionBps }, [assumptionBps])
+  useEffect(() => {
+    if (sheetsSyncedAt === undefined) return // connection status not loaded yet
+    if (seenSheetsSync.current === undefined) { seenSheetsSync.current = sheetsSyncedAt; return } // first reading is the baseline, not a change
+    if (seenSheetsSync.current === sheetsSyncedAt) return
+    seenSheetsSync.current = sheetsSyncedAt
+    void (async () => {
+      const loaded = await loadInvoices(session, organization.id)
+      setInvoices(loaded); setInvoicesLoading(false)
+      await refreshOpportunities(loaded, assumptionRef.current !== null)
+    })().catch(() => undefined)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sheetsSyncedAt])
+
   const title = activeSection === 'Overview' ? 'Revenue overview' : activeSection
+
+  const needsYou = buildNeedsYou({
+    overdue: rankedOpportunities.filter((ranked) => !ranked.snoozed).map((ranked) => ({ id: ranked.opportunity.id, customer: ranked.opportunity.evidence[0]?.customerName || 'A customer', invoice: ranked.opportunity.evidence[0]?.invoiceNumber || '—', amount: formatMoney(ranked.opportunity.outstanding), lateLabel: ranked.urgencyLabel })),
+    brokenPromises: workflowSummary.brokenPromises,
+    conversationsAwaiting: conversations.insights.filter((item) => item.kind === 'awaiting_reply').map((item) => ({ id: item.thread.thread_id, who: whoLabel(item.thread), subject: item.thread.subject ?? '(no subject)', observed: `wrote ${item.daysSince} day${item.daysSince === 1 ? '' : 's'} ago` })),
+    draftsToReview: summary.actionCounts.proposed,
+    followUpsDue: workflowSummary.followUpsDue,
+  })
+  const lastCheckedAt = (conn.rows ?? []).map((row) => row.last_successful_sync_at).filter((at): at is string => Boolean(at)).sort().pop() ?? new Date().toISOString()
 
   return (
     <div className="app-shell">
       <aside className="sidebar" aria-label="Main navigation">
         <a className="brand" href="#overview" onClick={() => setActiveSection('Overview')}>
-          <img className="brand-symbol" src="/revenue-os-mark.svg" alt="" />
+          <img className="brand-symbol" src="/revenue-os-mark.png" alt="" />
           <span className="brand-wordmark">Revenue<span className="brand-light"> OS</span></span>
         </a>
         <div className="workspace-switcher">
@@ -991,7 +1066,7 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
         <div className="page-content">
           <div className="page-heading">
             <div><p className="eyebrow">REVENUE OPERATIONS</p><h1>{title}</h1><p className="page-subtitle">Find, act on, and verify revenue opportunities from your business data.</p></div>
-            <button className="button button-primary" onClick={() => fileRef.current?.click()}><Icon name="upload" />Add invoice records</button>
+            {activeSection !== 'Connections' && <button className="button button-secondary" onClick={() => fileRef.current?.click()}><Icon name="upload" />Upload invoice file</button>}
             <input ref={fileRef} className="visually-hidden" type="file" accept=".csv,text/csv" aria-label="Choose an invoice spreadsheet" onChange={(event) => void importFile(event.target.files?.[0])} />
           </div>
 
@@ -1019,52 +1094,25 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
           {loadError && <div className="alert alert-error" role="alert"><strong>Could not load your saved data.</strong> {loadError} Your records are not lost; reload the page to try again.</div>}
           {store.note && <div className={'alert ' + (store.noteIsError ? 'alert-error' : 'alert-info')} role={store.noteIsError ? 'alert' : 'status'}>{store.note}</div>}
 
-          {activeSection === 'Overview' && <section className="owner-next-step" aria-labelledby="owner-next-step-title">
-            {invoicesLoading || leadLoading || actionsLoading || records.loading ? <>
-              <div><span className="owner-next-step-label">START HERE</span><h2 id="owner-next-step-title">Checking your saved records</h2><p>We’ll show the next step once your workspace data has loaded.</p></div>
-            </> : loadError || leadError ? <>
-              <div><span className="owner-next-step-label">START HERE</span><h2 id="owner-next-step-title">Some information needs checking</h2><p>We couldn't load all saved data. Review the error message before relying on these totals.</p></div>
-            </> : attention.summary.needingAttention > 0 ? <>
-              <div><span className="owner-next-step-label">START HERE</span><h2 id="owner-next-step-title">{attention.summary.needingAttention} {attention.summary.needingAttention === 1 ? 'item needs' : 'items need'} your attention</h2><p>Review the evidence and recommended next step before contacting anyone.</p></div>
-              <button className="button button-primary" type="button" onClick={() => setActiveSection('Urgent')}>Review urgent items <Icon name="arrow-right" /></button>
-            </> : invoices.length === 0 && leads.length === 0 && records.quotations.length === 0 && records.deposits.length === 0 && records.tasks.length === 0 ? <>
-              <div><span className="owner-next-step-label">START HERE</span><h2 id="owner-next-step-title">Add your first business records</h2><p>Import an invoice CSV or connect a spreadsheet to discover what needs attention.</p></div>
-              <button className="button button-primary" type="button" onClick={() => fileRef.current?.click()}><Icon name="upload" /> Add invoices</button>
-            </> : <>
-              <div><span className="owner-next-step-label">START HERE</span><h2 id="owner-next-step-title">No urgent issues found in the saved records</h2><p>This reflects the information currently available, not background monitoring of every business channel.</p></div>
-              <button className="button button-secondary" type="button" onClick={() => setActiveSection('Follow-ups')}>Review follow-ups <Icon name="arrow-right" /></button>
-            </>}
-          </section>}
 
           {activeSection === 'Overview' || activeSection === 'Opportunities' || activeSection === 'Urgent' ? (
             <>
-              {activeSection === 'Overview' && !invoicesLoading && !leadLoading && !actionsLoading && !records.loading && invoices.length === 0 && leads.length === 0 && records.quotations.length === 0 && records.deposits.length === 0 && records.tasks.length === 0 && records.reviews.length === 0 && <section className="panel first-run-panel" aria-labelledby="first-run-title">
-            <div className="panel-heading"><div><p className="eyebrow">LET'S GET STARTED</p><h2 id="first-run-title">Welcome to Revenue OS</h2><p>Connect the information your business already uses. We’ll organise the records and show you what needs attention. Start with one source; you can add more later.</p></div><span className="status-pill">Setup · 1 of 3</span></div>
-            <div className="first-run-steps">
-              <article className="first-run-step"><span className="first-run-step-number">1</span><div><h3>Connect a data source</h3><p>Use Google Sheets or import an invoice CSV. Google Sheets access is read-only.</p><button className="button button-primary" type="button" onClick={() => setActiveSection('Connections')}>Choose a connection</button></div></article>
-              <article className="first-run-step"><span className="first-run-step-number">2</span><div><h3>Review what we found</h3><p>Revenue OS will show the records it recognised and anything that needs correcting before data is saved.</p><button className="button button-secondary" type="button" onClick={() => fileRef.current?.click()}>Import invoice CSV</button></div></article>
-              <article className="first-run-step"><span className="first-run-step-number">3</span><div><h3>See your priorities</h3><p>Once useful records are saved, your daily brief can highlight overdue balances, follow-ups and work waiting for a decision.</p><span className="first-run-capability">Available after data is added</span></div></article>
-            </div>
-            <div className="first-run-connectors" aria-label="Connection availability"><span><i className="connection-dot" /> Google Sheets · connector in app</span><span><i className="connection-dot connection-dot-muted" /> Email · planned</span><span><i className="connection-dot connection-dot-muted" /> WhatsApp · planned</span></div>
-            <p className="brain-note">We’ll only describe a source as connected after authorization succeeds. Email and WhatsApp are not being read yet, and no customer messages are sent automatically.</p>
+              {activeSection === 'Overview' && !invoicesLoading && !leadLoading && !actionsLoading && !records.loading && invoices.length === 0 && leads.length === 0 && records.quotations.length === 0 && records.deposits.length === 0 && records.tasks.length === 0 && records.reviews.length === 0 && setupInProgress(conn.rows) && conversations.threads === null && <section className="panel first-run-panel" aria-labelledby="first-run-title">
+            <div className="panel-heading"><div><h2 id="first-run-title">Nothing to show yet</h2><p>Connect Gmail or your invoice spreadsheet and Revenue OS fills this page from your own records. Until a source has synchronized there are no figures to show, and none are invented.</p></div></div>
+            <div className="first-run-actions"><button className="button button-primary" type="button" onClick={() => setActiveSection('Connections')}>Connect your tools</button><button className="template-link" type="button" onClick={() => fileRef.current?.click()}>No account to connect? Upload an invoice file</button></div>
           </section>}
-          {activeSection === 'Overview' && <section className="daily-brief panel" aria-labelledby="daily-brief-title">
-                <div className="daily-brief-heading"><div><p className="eyebrow">YOUR BUSINESS AT A GLANCE</p><h2 id="daily-brief-title">Daily brief</h2><p>Built from the records currently saved in this workspace. It refreshes when you open Revenue OS; external services are not yet monitored in the background.</p></div><span className="daily-brief-date">{new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date())}</span></div>
-                {invoicesLoading || leadLoading || actionsLoading ? <p className="daily-brief-loading">Checking saved business records…</p> : <div className="daily-brief-grid">
-                  <article className="daily-brief-item"><span className="daily-brief-kicker">Money to review</span><strong>{opportunities.length} overdue opportunit{opportunities.length === 1 ? 'y' : 'ies'}</strong><p>{opportunities.length ? (rankedOpportunities[0] ? 'Top priority: ' + (rankedOpportunities[0].opportunity.evidence[0]?.customerName || 'customer record') + (rankedOpportunities[0].opportunity.evidence[0]?.invoiceNumber ? ' · invoice ' + rankedOpportunities[0].opportunity.evidence[0].invoiceNumber : '') + '.' : 'Review the overdue invoice list.') : invoices.length ? 'No overdue opportunities are currently detected from saved invoice data.' : 'Import invoice records to identify overdue money.'}</p><button type="button" className="template-link" onClick={() => setActiveSection('Opportunities')}>Review opportunities →</button></article>
-                  <article className="daily-brief-item"><span className="daily-brief-kicker">Customer follow-ups</span><strong>{leads.filter((lead) => !['converted', 'closed'].includes(lead.status) && lead.nextFollowUp <= new Date().toISOString().slice(0, 10)).length} due or overdue</strong><p>{leads.length ? 'Based on saved lead follow-up dates. Check the queue before contacting customers.' : 'Add leads and next-follow-up dates to see which enquiries need attention.'}</p><button type="button" className="template-link" onClick={() => setActiveSection('Lead Recovery')}>Open follow-up queue →</button></article>
-                  <article className="daily-brief-item"><span className="daily-brief-kicker">Waiting for your decision</span><strong>{summary.actionCounts.proposed} draft{summary.actionCounts.proposed === 1 ? '' : 's'} to review</strong><p>{summary.actionCounts.approved} approved reminder{summary.actionCounts.approved === 1 ? '' : 's'} waiting to be sent manually; {summary.awaitingEvidence} sent action{summary.awaitingEvidence === 1 ? '' : 's'} waiting for payment evidence.</p><button type="button" className="template-link" onClick={() => setActiveSection('Actions')}>Review actions →</button></article>
-                  <article className="daily-brief-item"><span className="daily-brief-kicker">Promises and follow-ups</span><strong>{workflowSummary.brokenPromises} broken promise{workflowSummary.brokenPromises === 1 ? '' : 's'} · {workflowSummary.followUpsDue} follow-up{workflowSummary.followUpsDue === 1 ? '' : 's'} due</strong><p>{attention.summary.needingAttention ? attention.summary.needingAttention + ' item' + (attention.summary.needingAttention === 1 ? '' : 's') + ' need you (invoices, leads, quotations, deposits, tasks and payments). ' : 'Nothing needs you right now. '}{workflowSummary.promisesOutstanding.length ? 'Customers have promised ' + workflowSummary.promisesOutstanding.map((total) => formatMoney(total)).join(' · ') + ' (a promise is not money received). ' : ''}{workflowSummary.disputes ? workflowSummary.disputes + ' disputed.' : ''}</p><button type="button" className="template-link" onClick={() => setActiveSection('Urgent')}>Open urgent queue →</button></article>
-                </div>}
-                <div className="daily-brief-footnote"><span><i className={loadError || leadError ? 'connection-dot connection-dot-muted' : 'connection-dot'} />{loadError || leadError ? 'Some saved data could not be loaded; review the error notice in its section.' : 'Using saved workspace records'}</span><button type="button" className="template-link" onClick={() => setActiveSection('Connections')}>Manage data sources →</button></div>
-              </section>}
-              {aging.length > 0 && <AgingStrip aging={aging} />}
+          {activeSection === 'Overview' && <>
+            <NeedsYouBand items={needsYou} loading={invoicesLoading || leadLoading || actionsLoading} checkedAt={lastCheckedAt} onOpen={(target) => { if (target === 'Overview') document.getElementById('conversations')?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' }); else setActiveSection(target) }} />
+            <p className="source-strip"><i className={loadError || leadError ? 'connection-dot connection-dot-muted' : 'connection-dot'} /><span>{loadError || leadError ? 'Some saved data could not be loaded; review the error notice in its section.' : freshnessLine(conn.rows)}</span><button type="button" className="template-link" onClick={() => setActiveSection('Connections')}>Sources</button></p>
+          </>}
               <section className="metric-grid" aria-label="Revenue summary">
                 <article className="metric-card"><div className="metric-top"><span>Open opportunities</span><span className="metric-icon teal"><Icon name="spark" /></span></div><strong className="metric-value">{invoicesLoading ? '…' : invoices.length && assumptionBps !== null ? opportunities.length : '—'}</strong><p>{invoicesLoading ? 'Loading saved invoices…' : invoices.length === 0 ? 'No invoices imported into this workspace yet' : assumptionBps === null ? 'Set a recovery-rate assumption to detect opportunities' : `${opportunities.length} ${store.mode === 'saved' ? 'saved' : 'calculated'} from imported invoice evidence`}</p></article>
                 <article className="metric-card"><div className="metric-top"><span>Estimated recovery</span><span className="metric-icon amber"><Icon name="chart" /></span></div><strong className="metric-value metric-money">{estimatedByCurrency.length === 1 ? formatMoney(estimatedByCurrency[0]) : estimatedByCurrency.length > 1 ? 'Multiple currencies' : '—'}</strong><p>{estimatedByCurrency.length ? <>{estimatedByCurrency.length > 1 && <span className="currency-breakdown">{estimatedByCurrency.map((total) => formatMoney(total)).join(' · ')}<br /></span>}Estimate only · not verified revenue</> : invoicesLoading ? 'Loading…' : invoices.length === 0 ? 'Needs imported invoices and a recovery rate' : assumptionBps === null ? 'Needs a recovery-rate assumption' : 'No overdue balances to estimate'}</p></article>
                 <article className="metric-card"><div className="metric-top"><span>Verified revenue</span><span className="metric-icon green"><Icon name="check" /></span></div><strong className="metric-value metric-money">{summary.verifiedByCurrency.length === 0 ? '—' : summary.verifiedByCurrency.length === 1 ? formatMoney(summary.verifiedByCurrency[0]) : 'Multiple currencies'}</strong><p>{summary.verifiedByCurrency.length > 1 && <span className="currency-breakdown">{summary.verifiedByCurrency.map((total) => formatMoney(total)).join(' · ')}<br /></span>}{summary.verifiedOutcomeCount ? summary.verifiedOutcomeCount + ' payment-matched outcome(s) · observed after a reminder, not proven caused by it' : 'Recorded only when payment evidence is matched'}</p></article>
                 <article className="metric-card"><div className="metric-top"><span>Waiting on you</span><span className="metric-icon amber"><Icon name="check" /></span></div><strong className="metric-value">{actionsLoading ? '—' : summary.needsOwner}</strong><p>{actionsLoading ? 'Loading actions…' : summary.actionCounts.proposed + ' draft(s) to review · ' + summary.actionCounts.approved + ' approved to send · ' + summary.awaitingEvidence + ' sent, awaiting payment evidence'}</p></article>
               </section>
+              {activeSection === 'Overview' && aging.length > 0 && <AgingStrip aging={aging} onOpen={() => setActiveSection('Opportunities')} />}
+              {activeSection === 'Overview' && <ConversationsPanel data={conversations} gmail={gmailRow} onOpenConnections={() => setActiveSection('Connections')} />}
 
               <section className="work-grid">
                 <div className="panel opportunity-panel">
@@ -1139,14 +1187,10 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
             </>
           ) : activeSection === 'Follow-ups' ? <WorkRecords session={session} organizationId={organization.id} records={records} invoices={invoices} reload={records.reload} canWrite /> : activeSection === 'Lead Recovery' ? <LeadRecovery leadCapacity={checkLeadCapacity(plan, leads.filter((lead) => lead.status !== 'converted' && lead.status !== 'closed').length)} leads={leads} setLeads={setLeads} session={session} organization={organization} loading={leadLoading} loadError={leadError} /> : activeSection === 'Actions' ? <RecoveryActions owners={records.actionOwners} members={records.members} onAssign={async (actionId, ownerId) => { try { await assignActionOwner(session, { organizationId: organization.id, actionId, ownerId }); records.reload(); return '' } catch (cause) { return cause instanceof Error ? cause.message : 'Owner not saved.' } }} actions={recoveryActions} invoices={invoices} loading={actionsLoading} busyId={actionBusy} notice={actionNotice} noticeIsError={actionNoticeIsError} onTransition={(action, transition) => void handleActionTransition(action, transition)} /> : activeSection === 'Outcomes' ? <RecoveryOutcomes actions={recoveryActions} invoices={invoices} outcomes={verifiedOutcomes} loading={outcomesLoading} busyId={actionBusy} notice={paymentNotice} noticeIsError={paymentNoticeIsError} issues={paymentIssues} moneyPosition={moneyPosition} promises={promiseRows} fileRef={paymentFileRef} onImport={(file) => void handleImportPayments(file)} onVerify={(action) => void handleVerifyOutcome(action)} /> : activeSection === 'Connections' ? (
             <div className="connections-workspace">
-              <section className="panel"><div className="panel-heading"><div><h2>Connect your business once</h2><p>Choose the systems Revenue OS should read. A connection is only active after authorization and a successful sync.</p></div><span className="status-pill">Connection centre</span></div>
-                <div className="connection-source-grid">
-                  <article className="connection-source-card"><div className="connection-source-top"><span className="source-icon"><Icon name="upload" /></span><span className={invoices.length ? 'connection-pill connection-pill-ready' : 'connection-pill'}>{invoices.length ? 'Data available' : 'No data yet'}</span></div><h3>Invoice CSV</h3><p>Current supported source. Import records to detect overdue balances and estimate possible recovery.</p><small>{invoices.length} invoice record(s) currently loaded · saved records are used where available.</small><button className="button button-secondary" type="button" onClick={() => fileRef.current?.click()}>Import invoices</button></article>
-                  <GoogleSheetsConnector session={session} organization={organization} onSynced={async () => { const loaded = await loadInvoices(session, organization.id); setInvoices(loaded); setInvoicesLoading(false); await refreshOpportunities(loaded, assumptionBps !== null) }} />
-                  <article className="connection-source-card"><div className="connection-source-top"><span className="source-icon"><Icon name="check" /></span><span className="connection-pill">Not connected</span></div><h3>Email and enquiries</h3><p>Future source for detecting unanswered enquiries and commitments that need follow-up.</p><small>No mailbox is currently being read and no messages are sent automatically.</small><button className="button button-secondary" type="button" disabled>Connect email · planned</button></article>
-                </div>
-              </section>
-              <section className="panel"><div className="panel-heading"><div><h2>Monitoring status</h2><p>Clear visibility into what Revenue OS can currently see.</p></div></div><div className="connection-status-list"><div><span><i className="connection-dot" />Workspace database</span><strong>Connected</strong></div><div><span><i className={invoices.length ? 'connection-dot' : 'connection-dot connection-dot-muted'} />Invoice data</span><strong>{invoices.length ? 'Available' : 'Waiting for import'}</strong></div><div><span><i className={leads.length ? 'connection-dot' : 'connection-dot connection-dot-muted'} />Lead data</span><strong>{leads.length ? `${leads.length} saved lead(s)` : 'No saved leads yet'}</strong></div><div><span><i className={evaluationRuns && evaluationRuns[0]?.status === 'ok' ? 'connection-dot' : 'connection-dot connection-dot-muted'} />Automatic overdue check</span><strong>{evaluationRuns === null ? 'Not available yet' : evaluationRuns.length === 0 ? 'Has not run yet' : `${evaluationRuns[0].status === 'ok' ? 'Last ran' : evaluationRuns[0].status === 'skipped' ? 'Skipped' : 'Failed'} ${new Date(evaluationRuns[0].startedAt).toLocaleString()}${evaluationRuns[0].status !== 'ok' && evaluationRuns[0].message ? ' · ' + evaluationRuns[0].message : ''}${staleRun ? ' · older than a day and a half: the daily check may not be running' : ''}`}</strong></div><div><span><i className="connection-dot connection-dot-muted" />Daily business brief</span><strong>Shown when you open the app; not sent</strong></div></div><p className="brain-note">Important: Revenue OS currently works from records already saved in your workspace and can import invoices from CSV. A Google Sheets connector is implemented in the app, but a successful live connection and sync still depend on valid Cloudflare Worker secrets and Google OAuth configuration. Email and WhatsApp are not connected and are not being read. The daily database job depends on the required database migration and hosted scheduling support; it re-checks saved overdue invoices and retries payment matching, but it sends no messages and contacts no customer. Quotation, deposit and task alerts are calculated when you open the app. We will only mark a source connected after authorization and a successful sync.</p></section>
+              <ConnectionsPage session={session} organizationId={organization.id} rows={conn.rows} statusError={conn.error} refresh={conn.refresh} invoiceCount={invoices.length}
+                csvAction={<button className="button button-secondary" type="button" onClick={() => fileRef.current?.click()}>Upload an invoice file</button>} onOpenOverview={() => setActiveSection('Overview')}
+                sheetsControls={<GoogleSheetsConnector session={session} organization={organization} onSynced={async () => { const loaded = await loadInvoices(session, organization.id); setInvoices(loaded); setInvoicesLoading(false); await refreshOpportunities(loaded, assumptionBps !== null) }} />} />
+              <section className="panel"><div className="panel-heading"><div><h2>Monitoring status</h2><p>Clear visibility into what Revenue OS can currently see.</p></div></div><div className="connection-status-list"><div><span><i className="connection-dot" />Workspace database</span><strong>Connected</strong></div><div><span><i className={invoices.length ? 'connection-dot' : 'connection-dot connection-dot-muted'} />Invoice data</span><strong>{invoices.length ? 'Available' : 'Waiting for import'}</strong></div><div><span><i className={leads.length ? 'connection-dot' : 'connection-dot connection-dot-muted'} />Lead data</span><strong>{leads.length ? `${leads.length} saved lead(s)` : 'No saved leads yet'}</strong></div><div><span><i className={evaluationRuns && evaluationRuns[0]?.status === 'ok' ? 'connection-dot' : 'connection-dot connection-dot-muted'} />Automatic overdue check</span><strong>{evaluationRuns === null ? 'Not available yet' : evaluationRuns.length === 0 ? 'Has not run yet' : `${evaluationRuns[0].status === 'ok' ? 'Last ran' : evaluationRuns[0].status === 'skipped' ? 'Skipped' : 'Failed'} ${new Date(evaluationRuns[0].startedAt).toLocaleString()}${evaluationRuns[0].status !== 'ok' && evaluationRuns[0].message ? ' · ' + evaluationRuns[0].message : ''}${staleRun ? ' · older than a day and a half: the daily check may not be running' : ''}`}</strong></div><SourceStatusRows rows={conn.rows} /></div><p className="brain-note">Each line above reads this workspace's saved connection state; nothing is shown as connected unless authorization succeeded and a synchronization has recorded a result. No customer message is ever sent automatically. Quotation, deposit and task alerts are calculated when you open the app; the daily database check re-checks saved overdue invoices and retries payment matching.</p></section>
             </div>
           ) : (
             <BusinessBrain facts={brainFacts} derived={derivedFacts} mismatches={recordMismatches} assumptionBps={assumptionBps} assumptionHistory={assumptionHistory}
@@ -1172,12 +1216,13 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
   )
 }
 
-function AgingStrip({ aging }: { aging: ReturnType<typeof agingSummary> }) {
+function AgingStrip({ aging, onOpen }: { aging: ReturnType<typeof agingSummary>; onOpen: () => void }) {
   return <section className="aging" aria-label="Overdue money by how late it is">
+    <div className="section-label"><h2>Owed to you</h2><button type="button" className="template-link" onClick={onOpen}>See who owes you →</button></div>
     {aging.map((group) => {
       const total = group.total.amount || 1
       return <div className="aging-group" key={group.currency}>
-        <div className="aging-head"><h2>{formatMoney(group.total)} overdue</h2><p>{group.count} invoice{group.count === 1 ? '' : 's'} with an unpaid balance. These are balances, not predictions.</p></div>
+        <div className="aging-head"><h3>{formatMoney(group.total)} overdue</h3><p>{group.count} invoice{group.count === 1 ? '' : 's'} with an unpaid balance. These are balances, not predictions.</p></div>
         <div className="aging-bar" role="img" aria-label={group.bands.map((band) => band.label + ': ' + formatMoney(band.amount)).join(', ')}>
           {group.bands.filter((band) => band.amount.amount > 0).map((band) => <span key={band.band} className={'aging-seg aging-' + band.band} style={{ flexGrow: Math.max(band.amount.amount / total, 0.04) }} />)}
         </div>

@@ -1102,7 +1102,7 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
             <div className="first-run-actions"><button className="button button-primary" type="button" onClick={() => setActiveSection('Connections')}>Connect your tools</button><button className="template-link" type="button" onClick={() => fileRef.current?.click()}>No account to connect? Upload an invoice file</button></div>
           </section>}
           {activeSection === 'Overview' && <>
-            <NeedsYouBand items={needsYou} loading={invoicesLoading || leadLoading || actionsLoading} checkedAt={lastCheckedAt} onOpen={(target) => setActiveSection(target)} />
+            <NeedsYouBand items={needsYou} loading={invoicesLoading || leadLoading || actionsLoading} checkedAt={lastCheckedAt} onOpen={(target) => { if (target === 'Overview') document.getElementById('conversations')?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' }); else setActiveSection(target) }} />
             <p className="source-strip"><i className={loadError || leadError ? 'connection-dot connection-dot-muted' : 'connection-dot'} /><span>{loadError || leadError ? 'Some saved data could not be loaded; review the error notice in its section.' : freshnessLine(conn.rows)}</span><button type="button" className="template-link" onClick={() => setActiveSection('Connections')}>Sources</button></p>
           </>}
               <section className="metric-grid" aria-label="Revenue summary">

@@ -279,7 +279,7 @@ h1, .panel-heading h2, .aging-head h3 { letter-spacing: -.01em; }
 .work-records .attention-card > p { font-size: 13px; }
 .work-records .recovery-action-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
 .work-records .recovery-action-controls .button { min-height: 38px; font-size: 13px; }
-.work-records .inline-select select { min-height: 38px; max-width: 100%; border: 1px solid var(--line); border-radius: 6px; padding: 0 10px; color: var(--ink); background: var(--surface); font: inherit; font-size: 12px; }
+.work-records .inline-select select { min-height: 38px; max-width: 100%; border: 1px solid var(--control-border); border-radius: 6px; padding: 0 10px; color: var(--ink); background: var(--surface); font: inherit; font-size: 12px; }
 .work-records .issue-note { color: var(--muted); font-size: 12px; line-height: 1.6; }
 .work-records .empty-state { margin: 0; padding: 25px 20px; border: 1px dashed var(--line); border-radius: 8px; background: var(--surface); }
 .work-records .empty-state h3 { color: var(--ink); font-size: 15px; }
@@ -366,7 +366,7 @@ button:focus-visible, [role="button"]:focus-visible {
 .metric-value, .opportunity-values strong, .aging-head h3, .aging-legend dd,
 .verified-outcome-detail strong { font-variant-numeric: tabular-nums lining-nums; }
 .metric-card:nth-child(3) .metric-value { color: var(--verified); }
-.field-error { color: #96332e; }
+.field-error { color: var(--critical); }
 a { text-underline-offset: .18em; }
 @media (max-width: 760px) {
   .sidebar { background: var(--sidebar); }
@@ -464,12 +464,12 @@ a { text-underline-offset: .18em; }
 }
 .lead-status-contacted, .lead-status-converted, .action-status-executed,
 .promise-status-kept, .issue-pill-promised, .issue-promise-kept {
-  color: #0e2356;
+  color: var(--ink);
   background: #e9f3e9;
 }
 .lead-status-follow_up, .action-status-approved, .issue-pill-awaiting_response,
 .issue-pill-payment_claimed, .promise-status-partly_kept {
-  color: #7a4b0a;
+  color: var(--warning);
   background: #f8eedb;
 }
 .lead-status-closed, .action-status-cancelled, .action-status-failed,
@@ -493,8 +493,8 @@ a { text-underline-offset: .18em; }
 .money-position dt, .money-position dd { color: var(--ink); }
 .payment-csv-format code { background: var(--surface-soft); border-color: var(--line); }
 .verified-outcome-detail { background: #edf5ed; border-color: #cbdccb; }
-.verified-outcome-detail strong { color: #205b3c; }
-.verified-outcome-detail small, .verified-outcome-detail p { color: #405f4b; }
+.verified-outcome-detail strong { color: var(--verified); }
+.verified-outcome-detail small, .verified-outcome-detail p { color: var(--muted); }
 .brain-note, .functional-note, .lead-disclaimer {
   color: var(--muted);
   background: var(--surface-soft);
@@ -571,7 +571,7 @@ a { text-underline-offset: .18em; }
 .brain-reason-disclosure summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 42px; color: var(--action); font-size: 13px; font-weight: 650; cursor: pointer; }
 .brain-reason-disclosure p { max-width: 56ch; margin: 4px 0 10px; color: var(--muted); font-size: 13px; line-height: 1.5; }
 .brain-reason-disclosure label { display: grid; gap: 6px; color: var(--ink); font-size: 13px; font-weight: 600; }
-.brain-reason-disclosure input { width: 100%; min-height: 44px; box-sizing: border-box; padding: 10px 12px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); color: var(--ink); font: inherit; }
+.brain-reason-disclosure input { width: 100%; min-height: 44px; box-sizing: border-box; padding: 10px 12px; border: 1px solid var(--control-border); border-radius: 7px; background: var(--surface); color: var(--ink); font: inherit; }
 .brain-reason-disclosure input:focus-visible { outline: 3px solid color-mix(in srgb, var(--action) 24%, transparent); outline-offset: 1px; border-color: var(--action); }
 @media (max-width: 760px) { .brain-reason-disclosure { margin-top: 10px; } .brain-reason-disclosure summary { min-height: 46px; } }
 
@@ -655,7 +655,6 @@ h1, h2, h3 { color: var(--ink-strong); }
 .connection-dependency-details p { margin: 8px 0 2px; color: var(--ink); line-height: 1.55; }
 
 /* Overview: lead with action (needs-you band), quiet source strip, separate owed / waiting sections. */
-input:not([type=checkbox]):not([type=radio]), select, textarea { border-color: var(--control-border) !important; }
 .needs-you { margin-bottom: 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 1px 2px rgba(1,20,59,.06), 0 4px 14px rgba(1,20,59,.05); overflow: hidden; }
 .needs-you-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 16px 18px 12px; }
 .needs-you-head h2 { margin: 0; font-size: 18px; letter-spacing: -.01em; color: var(--ink-strong); }

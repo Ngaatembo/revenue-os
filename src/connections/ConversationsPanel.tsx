@@ -10,13 +10,13 @@ export function ConversationsPanel({ data, gmail, onOpenConnections }: {
   const view = describeConnection(gmail)
 
   if (view.state === 'not_connected') {
-    return <section className="panel conversations-panel" aria-labelledby="conversations-title"><h2 id="conversations-title">Customer conversations</h2>
+    return <section id="conversations" className="panel conversations-panel" aria-labelledby="conversations-title"><h2 id="conversations-title">Customer conversations</h2>
       <p>No email is connected, so Revenue OS cannot tell which customers are waiting for you.</p>
       <button className="button button-secondary" type="button" onClick={onOpenConnections}>Connect Gmail</button></section>
   }
   const real = (threads ?? []).filter((t) => !t.all_automated)
   const waiting = insights.filter((i) => i.kind === 'awaiting_reply').length
-  return <section className="panel conversations-panel" aria-labelledby="conversations-title" data-testid="conversations-panel">
+  return <section id="conversations" className="panel conversations-panel" aria-labelledby="conversations-title" data-testid="conversations-panel">
     <div className="panel-heading"><div><h2 id="conversations-title">Customer conversations</h2>
       <p>From {gmail?.provider_account_email ?? 'your mailbox'} · last updated {formatAge(gmail?.last_successful_sync_at ?? null)}</p></div>
       {threads && <span className="status-pill">{waiting} waiting for you</span>}</div>

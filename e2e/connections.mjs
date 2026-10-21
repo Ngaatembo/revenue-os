@@ -188,6 +188,10 @@ try {
     await open.click()
     await page.getByTestId('conversations-panel').waitFor({ timeout: 20000 })
     if (process.env.E2E_SHOTS) await page.screenshot({ path: path.join(process.env.E2E_SHOTS, 'overview.png'), fullPage: true })
+    if (process.env.E2E_SHOTS) {
+      await page.emulateMedia({ colorScheme: 'dark' }); await sleep(500); await page.screenshot({ path: path.join(process.env.E2E_SHOTS, 'overview-dark.png'), fullPage: true }); await page.emulateMedia({ colorScheme: 'light' })
+      await page.setViewportSize({ width: 390, height: 844 }); await sleep(500); await page.screenshot({ path: path.join(process.env.E2E_SHOTS, 'overview-mobile.png'), fullPage: true }); await page.setViewportSize({ width: 1280, height: 900 })
+    }
   })
   await step('stored records are metadata with source references; newsletters are marked automated', async () => {
     assert(sql(`select count(*) from public.communications where is_automated`) === '200', 'newsletters should be flagged automated')
@@ -231,6 +235,7 @@ try {
     assert((await band.getByText('Inferred').count()) > 0, 'a conversation in the needs-you band is labelled Inferred, not presented as fact')
     assert((await page.locator('[data-group=awaiting_reply]').count()) === 1, 'conversations are grouped under "Waiting for your reply"')
     await band.getByText('is waiting for your reply').first().click()
+    await page.waitForFunction(() => { const r = document.getElementById('conversations')?.getBoundingClientRect(); return !!r && r.top >= -2 && r.top < 200 }, null, { timeout: 5000 })
   })
   await step('rate limit: sync pauses with a checkpoint, then resumes without losing or duplicating data', async () => {
     google.state.deliver({ thread: 'new-2', from: 'Tapiwa <tapiwa@buyer.test>', subject: 'Second new enquiry', at: Date.now() - 3 * 86_400_000 })

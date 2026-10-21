@@ -18,7 +18,7 @@ admin -c "do \$\$ begin
   if not exists (select 1 from pg_roles where rolname='service_role') then create role service_role nologin bypassrls; end if; end \$\$"
 sed -e '/^create role /d' supabase/tests/00_supabase_stub.sql | run -f - >/dev/null
 for f in $(ls supabase/migrations/*.sql | sort); do
-  case "$(basename "$f")" in 20261021150000_*|20261021160000_*|20261021170000_*) ;; *) run -f "$f" >/dev/null 2>&1 || { echo "pre-release migration failed: $f"; exit 1; };; esac
+  case "$(basename "$f")" in 20261021150000_*|20261021160000_*|20261021170000_*|20261021180000_*) ;; *) run -f "$f" >/dev/null 2>&1 || { echo "pre-release migration failed: $f"; exit 1; };; esac
 done
 FP=$(mktemp); cat > "$FP" <<'SQL'
 select kind||':'||md5(string_agg(md5(def),',' order by md5(def))) from (

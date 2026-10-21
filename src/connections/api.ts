@@ -1,6 +1,7 @@
 import { apiRequest, getFreshSession, type SupabaseSession } from '../lib/supabaseRest.ts'
 import type { ConnectionRow } from './catalog.ts'
 import type { ConversationThread } from './conversationInsights.ts'
+import type { MutedSender, TrackingRow } from './tracking.ts'
 
 export const loadConnectionStatus = (session: SupabaseSession, organizationId: string) =>
   apiRequest<ConnectionRow[]>(session, 'rpc/list_connection_status', { method: 'POST', body: JSON.stringify({ p_organization_id: organizationId }) })
@@ -53,3 +54,19 @@ export async function loadReadiness(session: SupabaseSession, organizationId: st
   if (!response.ok) throw new Error(response.status === 403 ? 'Only owners and admins can run the setup check.' : response.status === 503 ? 'The server is missing required settings, so the check cannot run: Google connections are not configured.' : 'The setup check failed.')
   return payload as unknown as ReadinessReport
 }
+
+export const loadConversationTracking = (session: SupabaseSession, organizationId: string) => {
+  const params = new URLSearchParams({ select: 'provider,thread_id,status,handled_at,remind_at,note,updated_at', organization_id: `eq.${organizationId}`, limit: '2000' })
+  return apiRequest<TrackingRow[]>(session, `conversation_tracking?${params}`)
+}
+export const loadMutedSenders = (session: SupabaseSession, organizationId: string) => {
+  const params = new URLSearchParams({ select: 'address', organization_id: `eq.${organizationId}`, order: 'address.asc', limit: '1000' })
+  return apiRequest<MutedSender[]>(session, `muted_senders?${params}`)
+}
+export type TrackingAction = 'handled' | 'snooze' | 'reopen' | 'note'
+export const setConversationTracking = (session: SupabaseSession, organizationId: string, threadId: string, action: TrackingAction, options: { remindAt?: string; note?: string } = {}) =>
+  apiRequest<unknown>(session, 'rpc/set_conversation_tracking', { method: 'POST', body: JSON.stringify({ p_org_id: organizationId, p_provider: 'gmail', p_thread_id: threadId, p_action: action, p_remind_at: options.remindAt ?? null, p_note: options.note ?? null }) })
+export const muteSender = (session: SupabaseSession, organizationId: string, address: string) =>
+  apiRequest<unknown>(session, 'rpc/mute_sender', { method: 'POST', body: JSON.stringify({ p_org_id: organizationId, p_address: address }) })
+export const unmuteSender = (session: SupabaseSession, organizationId: string, address: string) =>
+  apiRequest<unknown>(session, 'rpc/unmute_sender', { method: 'POST', body: JSON.stringify({ p_org_id: organizationId, p_address: address }) })

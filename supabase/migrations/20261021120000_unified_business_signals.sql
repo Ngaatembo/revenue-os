@@ -49,11 +49,11 @@ ALTER TABLE public.business_signals ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY business_signals_member_read
     ON public.business_signals FOR SELECT TO authenticated
-    USING (public.is_org_member(organization_id));
+    USING (private.is_org_member(organization_id));
 
 CREATE POLICY business_signals_member_insert
     ON public.business_signals FOR INSERT TO authenticated
-    WITH CHECK (public.has_org_role(organization_id, ARRAY['owner', 'admin', 'operator']));
+    WITH CHECK (private.has_org_role(organization_id, ARRAY['owner', 'admin', 'operator']));
 
 -- Observations are immutable: corrections should arrive as a new event or be
 -- handled through a separately audited review workflow, never silent mutation.

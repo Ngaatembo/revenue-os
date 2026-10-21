@@ -75,6 +75,8 @@ test('insights: recent, automated, replied, very old and one-sided outbound thre
 })
 test('insights: our reply followed by silence becomes gone_quiet; waiting customers sort first', () => {
   const quiet = thread({ thread_id: 'q', last_direction: 'outbound', last_message_at: new Date(now - 8 * day).toISOString(), last_outbound_at: new Date(now - 8 * day).toISOString() })
+  const answeredRecently = thread({ thread_id: 'a', last_direction: 'outbound', last_message_at: new Date(now - 5 * day).toISOString(), last_outbound_at: new Date(now - 5 * day).toISOString() })
+  assert.deepEqual(deriveConversationInsights([answeredRecently], now), [], 'a reply 5 days ago is not yet a stalled conversation')
   const waiting = thread({ thread_id: 'w' })
   const result = deriveConversationInsights([quiet, waiting], now)
   assert.deepEqual(result.map((r) => r.kind), ['awaiting_reply', 'gone_quiet'])

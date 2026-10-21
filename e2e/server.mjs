@@ -4,7 +4,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 
 const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.json': 'application/json', '.png': 'image/png', '.ico': 'image/x-icon' }
-export function startServer({ dist, port, upstream }) {
+export function startServer({ dist, port, upstream, api, authUser }) {
   const server = http.createServer((req, res) => {
     if (req.url.startsWith('/rest/v1/')) {
       const target = new URL(req.url.replace('/rest/v1', ''), upstream)
@@ -12,6 +12,11 @@ export function startServer({ dist, port, upstream }) {
       proxied.on('error', () => { res.writeHead(502); res.end('{"message":"upstream down"}') })
       req.pipe(proxied)
       return
+    }
+    if (api && req.url.startsWith('/api/')) { api(req, res); return }
+    if (authUser && req.url.startsWith('/auth/v1/user')) {
+      const user = authUser(req.headers.authorization)
+      res.writeHead(user ? 200 : 401, { 'content-type': 'application/json' }); res.end(JSON.stringify(user ?? { message: 'invalid' })); return
     }
     if (req.url.startsWith('/auth/v1/')) { res.writeHead(204); res.end(); return }
     let file = path.join(dist, decodeURIComponent(req.url.split('?')[0]))

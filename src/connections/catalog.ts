@@ -22,7 +22,7 @@ export const PROVIDERS: ProviderInfo[] = [
     summary: 'Finds customer enquiries and conversations that have gone quiet.',
     access: ['Sender, recipient, subject, date and a short preview of messages from the last 90 days', 'Whether each message was sent or received', 'New messages afterwards, checked automatically'],
     usedFor: ['Show customers who wrote to you and have not had a reply', 'Show conversations where you replied and the customer went silent', 'Keep a link back to the original email for every item'],
-    dependency: 'Google treats Gmail read access as a sensitive permission. While the Google app is in testing, only accounts added as test users can connect; public use needs Google verification.',
+    dependency: 'Gmail read access is a restricted Google permission. While the Google app is in testing, only accounts added as test users can connect, and Google expires the access about every 7 days, so you will be asked to reconnect weekly. Public use needs Google verification and a security assessment.',
   },
   {
     id: 'google_sheets', name: 'Google Sheets', availability: 'available',
@@ -35,7 +35,7 @@ export const PROVIDERS: ProviderInfo[] = [
     summary: 'Customer messages sent to your business number.',
     access: ['Only messages sent to a number registered on the official WhatsApp Business Platform, received after setup', 'Delivery and read status of messages sent through that number'],
     usedFor: ['Show customer WhatsApp enquiries that need an answer'],
-    dependency: 'The official API needs a Meta Business account, a verified business, an approved app and a phone number registered to the API. It does not read an ordinary personal WhatsApp account or your existing chats. Revenue OS has not been through Meta review, so this cannot be connected yet.',
+    dependency: 'The official API needs a Meta Business account, a verified business, an approved app and a phone number registered to the API. It does not read an ordinary personal WhatsApp account or your existing chats. Some numbers already used in the WhatsApp Business app can be linked alongside the API ("coexistence"), optionally sharing recent history, but that depends on Meta and your country. Revenue OS has not been through Meta review, so this cannot be connected yet.',
   },
   {
     id: 'csv', name: 'Invoice or payment file', availability: 'manual',

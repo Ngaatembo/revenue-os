@@ -32,7 +32,7 @@ export interface ConversationInsight {
 
 const DAY = 86_400_000
 export const AWAITING_REPLY_AFTER_DAYS = 2
-export const GONE_QUIET_AFTER_DAYS = 5
+export const GONE_QUIET_AFTER_DAYS = 7
 export const MAX_AGE_DAYS = 45
 
 export function whoLabel(t: ConversationThread) { return t.counterpart_name || t.counterpart_address || 'A customer' }

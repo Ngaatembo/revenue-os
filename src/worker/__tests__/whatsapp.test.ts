@@ -78,3 +78,11 @@ test('a storage failure returns 500 so Meta retries (storage is idempotent)', as
   const f = withFetch((url) => url.includes('whatsapp_numbers') ? new Response(JSON.stringify([{ organization_id: 'org-1' }])) : new Response('{}', { status: 500 }))
   try { const raw = payload([text('wamid.1', 'x')]); assert.equal((await handleWhatsAppWebhook(post(raw, { 'x-hub-signature-256': sign(raw) }), env)).status, 500) } finally { f.restore() }
 })
+
+test('COMPATIBILITY with the initial release: while WhatsApp is not configured the handler never touches the database, so the deferred migration is not needed', async () => {
+  const f = withFetch(() => { throw new Error('the database must not be contacted') })
+  try {
+    for (const method of ['GET', 'POST']) assert.equal((await handleWhatsAppWebhook(new Request('https://app.test/api/webhooks/whatsapp', { method, body: method === 'POST' ? '{}' : undefined }), { SUPABASE_URL: 'https://db.test', SUPABASE_SERVICE_ROLE_KEY: 'svc' })).status, 404)
+    assert.equal(f.calls.length, 0)
+  } finally { f.restore() }
+})

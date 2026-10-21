@@ -51,6 +51,6 @@ export default {
   /** Cron Trigger: keeps connected sources up to date without the owner doing anything. */
   async scheduled(_event: unknown, env: Env, ctx: { waitUntil(promise: Promise<unknown>): void }): Promise<void> {
     if (!googleSheetsOAuthReady(env)) return
-    ctx.waitUntil(runDueSyncs(env).then((r) => console.log(JSON.stringify({ event: 'scheduled_sync', attempted: r.attempted, outcomes: r.results.map((o) => o.status) }))).catch(() => console.log(JSON.stringify({ event: 'scheduled_sync_failed' }))))
+    ctx.waitUntil(runDueSyncs(env).then((r) => console.log(JSON.stringify({ event: 'scheduled_sync', attempted: r.attempted, outcomes: r.results.map((o) => (o.status === 'synced' ? `synced:${o.insights ?? 'n/a'}` : o.status)) }))).catch(() => console.log(JSON.stringify({ event: 'scheduled_sync_failed' }))))
   },
 }

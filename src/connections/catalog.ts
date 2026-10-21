@@ -97,6 +97,8 @@ export function errorMessage(code: string | null): string | null {
     case 'provider_token_refresh_failed': return 'Revenue OS could not renew its access to Google. It will try again automatically.'
     case 'account_email_missing': return 'The Google account could not be identified. Reconnect to try again.'
     case 'snapshot_rejected_rows': return 'Some rows in the sheet could not be read, so nothing was marked missing. Fix those rows; the next automatic check picks them up.'
+    case 'insight_refresh_failed': return 'Your invoices were imported, but the overdue-opportunity check after it failed. Revenue OS retries it automatically at every check; nothing was lost.'
+    case 'insights_need_recovery_rate': return 'Your invoices were imported. Set a recovery rate in Business Brain so overdue opportunities can be calculated.'
     case 'source_not_selected': return 'Choose the spreadsheet and invoice tab below. Automatic syncing starts as soon as you do.'
     case 'google_sheet_not_found': return 'The selected spreadsheet could not be found. It may have been deleted or moved to the bin.'
     case 'google_sheet_access_denied': return 'This Google account can no longer read the selected spreadsheet. Check that it is still shared with the connected account.'

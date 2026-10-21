@@ -9,9 +9,11 @@ export interface RunnerEnv extends GoogleEnv {
   SYNC_MESSAGE_BUDGET?: string
   SYNC_INTERVAL_MINUTES?: string
 }
+/** What happened to the opportunity refresh that follows a Sheets import. Reported separately from the import itself. */
+export type InsightRefresh = 'refreshed' | 'skipped_no_recovery_rate' | 'failed' | 'not_needed'
 export const SYNCABLE = ['gmail', 'google_sheets'] as const
 export type SyncOutcome =
-  | { status: 'synced'; fetched: number; stored: number; complete: boolean; changed?: boolean }
+  | { status: 'synced'; fetched: number; stored: number; complete: boolean; changed?: boolean; insights?: InsightRefresh }
   | { status: 'rate_limited'; retry_after_seconds: number }
   | { status: 'needs_reauthorization' }
   | { status: 'needs_setup'; reason: 'source_not_selected' }
@@ -38,7 +40,7 @@ interface Claimed {
   sync_cursor: string | null; encrypted_refresh_token: string; provider_account_email: string | null
   consecutive_failures: number; initial_sync_completed_at: string | null; records_synced: number
 }
-interface ProviderRun { complete: boolean; fetched: number; stored: number; records?: number; cursor?: string; warning?: string; changed?: boolean }
+interface ProviderRun { complete: boolean; fetched: number; stored: number; records?: number; cursor?: string; warning?: string; changed?: boolean; insights?: InsightRefresh; needsAttention?: boolean }
 
 async function runGmail(env: RunnerEnv, org: string, c: Claimed, accessToken: string, fetchFn: FetchFn): Promise<ProviderRun> {
   const ownerEmail = c.provider_account_email
@@ -83,8 +85,6 @@ async function runSheets(env: RunnerEnv, org: string, c: Claimed, accessToken: s
         await db(env, 'rpc/complete_source_sync_snapshot', { method: 'POST', body: JSON.stringify({
           p_organization_id: org, p_run_id: runId, p_source_key: sourceId, p_source_range: range, p_spreadsheet_id: spreadsheetId,
           p_content_digest: contentHash, p_invoice_ids: rows.map((row) => row.id), p_accepted_rows: rows.length, p_rejected_rows: rejectedRows }) })
-        await patch(env, org, 'google_sheets', { sync_stage: 'insights' })
-        await db(env, 'rpc/refresh_org_after_sync', { method: 'POST', body: JSON.stringify({ p_org_id: org }) }).catch(() => undefined)
         return { duplicate: Boolean(saved?.duplicate) }
       } catch (cause) {
         await db(env, `source_sync_runs?organization_id=eq.${enc(org)}&id=eq.${enc(runId)}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' },
@@ -97,9 +97,40 @@ async function runSheets(env: RunnerEnv, org: string, c: Claimed, accessToken: s
     await patch(env, org, 'google_sheets', { sync_cursor: JSON.stringify(result.cursor) })
     throw new Error(result.code)
   }
-  const warning = result.rejectedRows > 0 ? 'snapshot_rejected_rows' : undefined
+  // The import itself succeeded (or nothing changed). Now refresh opportunities when new data arrived, or when an
+  // earlier refresh failed and is still owed. The result is reported and recorded, never ignored.
+  const previous = parseSheetsCursor(c.sync_cursor)
+  const owed = Boolean(previous.pendingEvaluation)
+  let insights: InsightRefresh = 'not_needed'
+  let cursor = result.cursor
+  let needsAttention = false
+  if (result.kind === 'imported' || owed) {
+    await patch(env, org, 'google_sheets', { sync_stage: 'insights' })
+    insights = await refreshInsights(env, org)
+    if (insights === 'failed') {
+      const failures = (previous.evaluationFailures ?? 0) + 1
+      cursor = { ...cursor, pendingEvaluation: true, evaluationFailures: failures }
+      needsAttention = failures >= 3
+    } else {
+      cursor = { ...cursor, pendingEvaluation: undefined, evaluationFailures: undefined }
+    }
+  }
+  // One code is stored; the most actionable problem wins.
+  const warning = insights === 'failed' ? 'insight_refresh_failed' : result.rejectedRows > 0 ? 'snapshot_rejected_rows' : insights === 'skipped_no_recovery_rate' ? 'insights_need_recovery_rate' : undefined
   return { complete: true, fetched: result.rows, stored: result.kind === 'imported' ? result.rows : 0, records: result.kind === 'imported' ? result.rows : undefined,
-    cursor: JSON.stringify(result.cursor), warning, changed: result.kind === 'imported' && !result.duplicate }
+    cursor: JSON.stringify(cursor), warning, changed: result.kind === 'imported' && !result.duplicate, insights, needsAttention }
+}
+
+/** Runs the workspace evaluation that turns imported invoices into opportunities. Never throws; failure is a reportable result. */
+async function refreshInsights(env: RunnerEnv, org: string): Promise<InsightRefresh> {
+  try {
+    const result = await db(env, 'rpc/refresh_org_after_sync', { method: 'POST', body: JSON.stringify({ p_org_id: org }) })
+    if (result === 'ok') return 'refreshed'
+    if (result === 'skipped') return 'skipped_no_recovery_rate'
+    return 'failed' // 'failed' (the evaluation logged its own error) or anything unexpected
+  } catch {
+    return 'failed'
+  }
 }
 
 /** Provider-neutral entry point: claim, sync one chunk, checkpoint, record honest state. */
@@ -118,7 +149,7 @@ export async function runConnectionSync(env: RunnerEnv, organizationId: string, 
     const now = new Date()
     if (run.complete) {
       await patch(env, organizationId, provider, {
-        status: 'connected', sync_stage: 'complete', last_successful_sync_at: now.toISOString(), last_error_code: run.warning ?? null,
+        status: run.needsAttention ? 'needs_attention' : 'connected', sync_stage: 'complete', last_successful_sync_at: now.toISOString(), last_error_code: run.warning ?? null,
         consecutive_failures: 0, sync_started_at: null, next_sync_at: new Date(now.getTime() + interval).toISOString(),
         initial_sync_completed_at: connection.initial_sync_completed_at ?? now.toISOString(),
         ...(run.cursor !== undefined ? { sync_cursor: run.cursor } : {}), ...(run.records !== undefined ? { records_synced: run.records } : {}),
@@ -128,7 +159,7 @@ export async function runConnectionSync(env: RunnerEnv, organizationId: string, 
       await patch(env, organizationId, provider, { status: 'connected', sync_stage: 'fetching', sync_started_at: null,
         last_error_code: null, consecutive_failures: 0, next_sync_at: now.toISOString() })
     }
-    return { status: 'synced', fetched: run.fetched, stored: run.stored, complete: run.complete, changed: run.changed }
+    return { status: 'synced', fetched: run.fetched, stored: run.stored, complete: run.complete, changed: run.changed, insights: run.insights }
   } catch (cause) {
     if (cause instanceof RateLimitedError) {
       await patch(env, organizationId, provider, { status: 'connected', sync_stage: 'waiting_rate_limit', sync_started_at: null,

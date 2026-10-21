@@ -9,6 +9,10 @@ export interface SheetsCursor {
   rejectedRows?: number
   /** Deterministic problem found in this version of the file; not retried until the file changes. */
   error?: { modifiedTime: string; code: string }
+  /** The invoices were imported but the opportunity refresh after it failed; retried on every check until it succeeds. */
+  pendingEvaluation?: boolean
+  /** Consecutive failed refresh attempts (three escalate to "needs attention"). */
+  evaluationFailures?: number
 }
 export function parseSheetsCursor(raw: string | null): SheetsCursor {
   if (!raw) return {}

@@ -30,7 +30,8 @@ export function createDatabase(root, db) {
   psql(db, ['-c', `create or replace function auth.uid() returns uuid language sql stable as $$ select coalesce(nullif(current_setting('request.jwt.claim.sub', true), ''), (nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'sub'))::uuid $$`])
   psql(db, ['-c', `create or replace function auth.role() returns text language sql stable as $$ select coalesce(nullif(current_setting('request.jwt.claim.role', true), ''), (nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'role'), 'anon') $$`])
   const dir = path.join(root, 'supabase/migrations')
-  for (const f of fs.readdirSync(dir).filter((n) => n.endsWith('.sql')).sort()) psql(db, ['-f', path.join(dir, f)])
+  const skip = (process.env.E2E_EXCLUDE_MIGRATIONS ?? '').split(',').filter(Boolean)
+  for (const f of fs.readdirSync(dir).filter((n) => n.endsWith('.sql') && !skip.some((prefix) => n.startsWith(prefix))).sort()) psql(db, ['-f', path.join(dir, f)])
 }
 
 export function startPostgrest({ bin, db, port }) {

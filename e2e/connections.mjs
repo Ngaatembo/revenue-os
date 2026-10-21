@@ -21,6 +21,10 @@ const B = { id: '22222222-2222-4222-8222-222222222222', email: 'owner-b@example.
 const b64 = (v) => Buffer.from(JSON.stringify(v)).toString('base64url')
 const mint = (claims) => { const head = b64({ alg: 'HS256', typ: 'JWT' }); const body = b64({ ...claims, iat: Math.floor(Date.now() / 1000), exp: Math.floor(Date.now() / 1000) + 36000 }); return `${head}.${body}.${crypto.createHmac('sha256', SECRET).update(`${head}.${body}`).digest('base64url')}` }
 const SERVICE_KEY = mint({ role: 'service_role', aud: 'authenticated' })
+// RELEASE_SCOPE=initial replays only what the first production release contains: migrations 20261021120000 and 20261021130000.
+// The WhatsApp migration (20261021140000) is deferred, so its table must not exist and the webhook must stay disabled.
+const INITIAL_SCOPE = process.env.RELEASE_SCOPE === 'initial'
+if (INITIAL_SCOPE) process.env.E2E_EXCLUDE_MIGRATIONS = '20261021140000'
 const results = []
 let page
 const step = async (name, fn) => { try { await fn(); results.push({ name, ok: true }); console.log('PASS', name) } catch (e) { results.push({ name, ok: false }); console.log('FAIL', name, '-', String(e.message ?? e).split('\n')[0]); try { await page.screenshot({ path: path.join(os.tmpdir(), `conn-fail-${results.length}.png`), fullPage: true }) } catch { /* ignore */ } } }
@@ -36,7 +40,7 @@ globalThis.fetch = async (input, init) => {
 }
 const env = {
   GOOGLE_CLIENT_ID: 'fake-client', GOOGLE_CLIENT_SECRET: 'fake-secret', GOOGLE_TOKEN_ENCRYPTION_KEY: crypto.randomBytes(32).toString('hex'),
-  APP_ORIGIN: BASE, SUPABASE_URL: BASE, SUPABASE_ANON_KEY: 'e2e-anon-key', SUPABASE_SERVICE_ROLE_KEY: SERVICE_KEY, SYNC_MESSAGE_BUDGET: '100', WHATSAPP_APP_SECRET: 'wa-app-secret-e2e', WHATSAPP_VERIFY_TOKEN: 'wa-verify-e2e',
+  APP_ORIGIN: BASE, SUPABASE_URL: BASE, SUPABASE_ANON_KEY: 'e2e-anon-key', SUPABASE_SERVICE_ROLE_KEY: SERVICE_KEY, SYNC_MESSAGE_BUDGET: '100', ...(INITIAL_SCOPE ? {} : { WHATSAPP_APP_SECRET: 'wa-app-secret-e2e', WHATSAPP_VERIFY_TOKEN: 'wa-verify-e2e' }),
   ASSETS: { fetch: async () => new Response('asset', { status: 404 }) },
 }
 const worker = (await import('../src/worker/index.ts')).default
@@ -340,7 +344,13 @@ try {
     assert(/Background sync: Running/.test(text), 'background sync observed: ' + text)
     for (const secret of ['fake-secret', env.GOOGLE_TOKEN_ENCRYPTION_KEY, SERVICE_KEY, 'rt-secret-value']) assert(!text.includes(secret), 'a secret value leaked into the report')
   })
-  await step('WhatsApp webhook (dormant receiver): signed deliveries are stored once, forged ones are rejected, and the product still marks WhatsApp unavailable', async () => {
+  if (INITIAL_SCOPE) await step('initial release scope: without the deferred WhatsApp migration everything else works and WhatsApp stays off', async () => {
+    assert(sql(`select to_regclass('public.whatsapp_numbers') is null`) === 't', 'the deferred migration must not be applied in the initial scope')
+    assert(sql(`select pg_get_constraintdef(oid) from pg_constraint where conname='communications_provider_check'`).includes("'gmail'") && !sql(`select pg_get_constraintdef(oid) from pg_constraint where conname='communications_provider_check'`).includes('whatsapp'), 'communications accepts gmail only')
+    const attempt = await realFetch(`${BASE}/api/webhooks/whatsapp`, { method: 'POST', body: '{}' })
+    assert(attempt.status === 404, 'webhook is disabled when its settings are absent, got ' + attempt.status)
+  })
+  if (!INITIAL_SCOPE) await step('WhatsApp webhook (dormant receiver): signed deliveries are stored once, forged ones are rejected, and the product still marks WhatsApp unavailable', async () => {
     const orgA = sql(`select organization_id from public.provider_connections where provider='gmail' limit 1`)
     sql(`insert into public.whatsapp_numbers(phone_number_id, organization_id, display_phone_number) values ('109876543210', '${orgA}', '15550001111')`)
     const body = JSON.stringify({ object: 'whatsapp_business_account', entry: [{ id: 'waba', changes: [{ field: 'messages', value: { messaging_product: 'whatsapp',

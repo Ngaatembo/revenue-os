@@ -2,6 +2,8 @@
 
 Nothing in this document has been applied to production. **Production changes need the owner's explicit authorization.**
 
+**Release scope: the initial release is migrations `20261021120000` and `20261021130000`. `20261021140000` (WhatsApp) is deferred until the WhatsApp test starts.** The Worker is compatible with the initial scope (verified: see §2).
+
 ## 1. Exactly what the migrations change
 
 ### `20261021120000_connections_sync_and_communications.sql` (idempotent; re-apply is safe — rehearsed)
@@ -18,12 +20,13 @@ Nothing in this document has been applied to production. **Production changes ne
 ### `20261021130000_sheets_automatic_sync.sql`
 Two service-role-only SECURITY DEFINER functions: `persist_invoice_import_system` (runs the unchanged `persist_invoice_import` as the workspace owner, the same attribution model as `private.run_org_evaluation`) and `refresh_org_after_sync` (runs that existing per-workspace evaluation). No tables.
 
-### `20261021140000_whatsapp_webhook_receiver.sql` (dormant; may be applied later)
+### `20261021140000_whatsapp_webhook_receiver.sql` — DEFERRED (not part of the initial release)
 Widens `communications.provider` to include `whatsapp`; new service-role-only table `whatsapp_numbers`.
 
 ## 2. Compatibility
 - **Old Worker + new schema:** safe. Rehearsal proves a Sheets OAuth flow started before the release still completes, the existing connection/selection/credential are untouched, and old column sets still work.
 - **New Worker/UI + old schema:** *not* safe (status RPC and `communications` missing → Connections shows an error). **Apply migrations first, then deploy.**
+- **Initial scope vs Worker code:** with only `…120000` and `…130000` applied, the Worker needs nothing from the deferred migration: the WhatsApp endpoint returns 404 and never contacts the database while `WHATSAPP_APP_SECRET`/`WHATSAPP_VERIFY_TOKEN` are unset (unit-tested), Gmail/Sheets code never references `whatsapp_numbers`, and the full browser journey, DB tests and migration rehearsal pass without it (CI runs `test:e2e:connections:initial`, `DB_TEST_SCOPE=initial test-db.sh`). **Do not set the two WhatsApp secrets before applying `…140000`** — with the secrets but without the table every signed delivery would answer 500.
 - Landing behaviour for existing users: a workspace that already has records goes straight to Overview. A workspace with an existing `google_sheets` connection and a saved sheet will start **automatic syncing on first cron run after deploy** (intended).
 - The existing Sheets connection currently records `google_sheet_sync_failed` and no successful sync. Automatic sync will retry it; a persisting failure will show with an owner-readable reason.
 
@@ -46,9 +49,9 @@ Widens `communications.provider` to include `whatsapp`; new service-role-only ta
 1. Confirm a recent Supabase backup/PITR point exists (Dashboard → Database → Backups). The migrations are additive, but this is the cheap safety net.
 2. Re-check the constraint list the migration will drop (must be exactly the four listed above):
    `select conname from pg_constraint where conrelid='public.provider_connections'::regclass and contype='c';`
-3. Apply `120000`, then `130000` (and `140000` when ready for the WhatsApp test) with the Supabase migration tool. Each is one transaction.
+3. Take the **data fingerprint** (`scripts/prod-data-fingerprint.sql`; read-only). Apply `120000`, then `130000` with the Supabase migration tool; each is one transaction. **Do not apply `140000`.** The project is on the Supabase **Free** plan, which has no automatic backups; the fingerprint plus the rehearsed rollback are the safety net.
 4. The tool stamps its own version. List migrations, **rename the local file to the stamped version** and commit in the same sitting (project rule).
-5. Verify: `to_regclass('public.communications')` is not null; `select * from public.provider_connections` (via SQL editor) still shows the existing row `connected`; run advisors and confirm no *new* ERROR-level finding.
+5. Re-run the fingerprint: every listed business table must have the same row count and checksum (except changes caused by real users in the interim). Verify: `to_regclass('public.communications')` is not null; `to_regclass('public.whatsapp_numbers')` is **null**; `select * from public.provider_connections` (via SQL editor) still shows the existing row `connected`; run advisors and confirm no *new* ERROR-level finding.
 6. Merge the branch → Cloudflare Workers Builds deploys the Worker with the cron trigger. Confirm Settings → Triggers shows `* * * * *`, `/api/health` is ok, and **Connections → Server setup check** passes.
 7. Watch Worker logs for `scheduled_sync` lines; a connected source should show a fresh "last successful sync" within ~6 minutes.
 
@@ -63,11 +66,11 @@ Verified in the repo by `src/worker/__tests__/deployConfig.test.ts`: cron `* * *
 | `SUPABASE_URL` | var (in `wrangler.jsonc`) | present |
 | `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` | secret | present (guard passes) |
 | `SYNC_MESSAGE_BUDGET`, `SYNC_INTERVAL_MINUTES` | plain vars, now in `wrangler.jsonc` | 100 / 5, shipped with the code so a deploy cannot remove them. |
-| `WHATSAPP_APP_SECRET`, `WHATSAPP_VERIFY_TOKEN` | optional secrets | not set (receiver disabled) |
+| `WHATSAPP_APP_SECRET`, `WHATSAPP_VERIFY_TOKEN` | optional secrets | not set — **leave unset until `20261021140000` is applied** |
 Observed 2026-10-21 against production with unauthenticated requests only: `/api/health` ok; Google routes answer 401 (not 503); `/api/connections/*` is 404 (old Worker deployed; no cron yet).
 
 ## 7. Every remaining external requirement
-1. Owner approval to apply the migrations and merge/deploy.
+1. Owner approval to apply the two initial-release migrations and merge/deploy.
 2. Google Cloud: Gmail API enabled, scopes added, test users, redirect URI (see `gmail-verification-runbook.md`).
 3. **Workers Paid plan.** The free plan's 10 ms CPU per request/cron run and 50 subrequests are very unlikely to fit a sync ([limits](https://developers.cloudflare.com/workers/platform/limits/)); the default budget of 100 assumes the paid plan.
 4. Real authorization run with a test mailbox and a test spreadsheet (synthetic data).
@@ -77,3 +80,6 @@ Observed 2026-10-21 against production with unauthenticated requests only: `/api
 
 ## 8. Review findings fixed before release (commit after `806a655`)
 An independent review of the branch found and I fixed: incremental Gmail sync could stall or skip mail once new mail exceeded the per-run budget (cursor now advances only past fully handled history records); a rejected Google client (wrong/rotated secret) was treated as "owner revoked" and wiped stored credentials (only `invalid_grant` does that now); any workspace member could start an OAuth flow and overwrite the workspace's Gmail/Sheets credential (owner/admin only, re-checked at the callback); sync ran inside the HTTP request and could be cancelled by closing the tab (now `ctx.waitUntil`); "Sync now" could skip a provider rate-limit pause; re-applying the migration silently dropped column-level checks (constraints are now dropped by name); blank rows at a 5,000-row page boundary truncated large sheets; Gmail failures redirected as Sheets failures; the Overview reload effect fired on first load and used a stale assumption; reconnecting a *different* mailbox inherited the old one's counters and threads; quoted display names containing commas lost the sender. Each has a regression test.
+
+## 9. Sheets insight-refresh reporting (added after review)
+`refresh_org_after_sync` is no longer fire-and-forget. A Sheets run now reports the import and the opportunity refresh separately (`synced` + `insights: refreshed | skipped_no_recovery_rate | failed | not_needed`, visible in the scheduled-sync log). A failed refresh records `insight_refresh_failed` (owner-readable message: invoices imported, check will retry), keeps the import success, flags the cursor so the refresh is retried on every check even when the sheet has not changed, and escalates to "Needs attention" after three consecutive failures. "No recovery rate yet" is reported as guidance, not an error. Regression tests: `src/worker/__tests__/runnerInsights.test.ts` (verified to fail against the old behaviour).

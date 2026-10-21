@@ -58,3 +58,5 @@ jobs:
         run: ./scripts/test-db.sh
       - name: Rehearse the release migrations and their rollback on a disposable database
         run: ./scripts/rehearse-migration.sh
+      - name: Initial release scope (without the deferred WhatsApp migration)
+        run: DB_TEST_SCOPE=initial ./scripts/test-db.sh

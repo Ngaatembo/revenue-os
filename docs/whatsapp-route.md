@@ -1,6 +1,6 @@
 # WhatsApp Business — supported route and the smallest real test
 
-Status in the product: **Not available.** The card says so and is not clickable. The receiver code below is dormant (HTTP 404) until configured, and nothing it stores is used for insights yet.
+Status in the product: **Not available.** Its migration (`20261021140000`) is **deferred**: it is not part of the initial Gmail + Sheets release. The card says so and is not clickable. The receiver code below is dormant (HTTP 404) until configured, and nothing it stores is used for insights yet.
 
 ## What the official API can and cannot give us (from Meta-published pages and partner documentation; verify against Meta's current docs)
 - Access is through the **WhatsApp Business Platform (Cloud API)** with a Meta Business account, a WhatsApp Business Account (WABA) and a phone number registered to the API. It does **not** read a personal WhatsApp account, and a number cannot normally be in the ordinary WhatsApp Business app and the API at the same time.
@@ -15,7 +15,7 @@ Replies sent from the phone/app are invisible to the API unless coexistence echo
 ## Smallest practical real test (≈1 hour, free)
 1. <https://developers.facebook.com> → create an app (type *Business*) → add the **WhatsApp** product. Meta provisions a **test phone number** and a temporary token; add your own phone (up to 5 recipients) and verify it by the WhatsApp code.
 2. Record the test number's **Phone number ID** (digits).
-3. In Cloudflare set secrets `WHATSAPP_APP_SECRET` (Meta app → Settings → Basic → App secret) and `WHATSAPP_VERIFY_TOKEN` (any long random string you invent). Deploy.
+3. **Apply the deferred migration `20261021140000_whatsapp_webhook_receiver.sql` first (needs the owner's authorization, like any production change).** Only then, in Cloudflare set secrets `WHATSAPP_APP_SECRET` (Meta app → Settings → Basic → App secret) and `WHATSAPP_VERIFY_TOKEN` (any long random string you invent). Deploy.
 4. In the Meta app → WhatsApp → Configuration: Callback URL `https://revenue-os.ngaatendwew.workers.dev/api/webhooks/whatsapp`, the same verify token → **Verify and save** (Meta calls our GET handshake) → subscribe to the **messages** field.
 5. Register the number to your workspace (operator step, service role; there is deliberately no self-service route):
    `insert into public.whatsapp_numbers(phone_number_id, organization_id, display_phone_number) values ('<PHONE_NUMBER_ID>', '<ORG_ID>', '<display number>');`

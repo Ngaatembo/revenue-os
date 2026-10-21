@@ -17,7 +17,11 @@ psql_admin -c "do \$\$ begin
   if not exists (select 1 from pg_roles where rolname='authenticated') then create role authenticated nologin; end if;
   if not exists (select 1 from pg_roles where rolname='service_role') then create role service_role nologin bypassrls; end if; end \$\$"
 sed -e '/^create role /d' supabase/tests/00_supabase_stub.sql | psql_db -v ON_ERROR_STOP=1 -f -
-for f in supabase/migrations/*.sql; do psql_db -v ON_ERROR_STOP=1 -f "$f" >/dev/null; done
+# DB_TEST_SCOPE=initial replays only the first release (without the deferred WhatsApp migration 20261021140000).
+for f in supabase/migrations/*.sql; do
+  if [ "${DB_TEST_SCOPE:-}" = "initial" ] && [[ "$f" == *20261021140000* ]]; then continue; fi
+  psql_db -v ON_ERROR_STOP=1 -f "$f" >/dev/null
+done
 psql_db -v ON_ERROR_STOP=1 -f supabase/tests/01_harness.sql
 OUT=$(psql_db -f supabase/tests/02_journey.sql 2>&1)
 echo "$OUT" | sed -n '/===== RESULTS =====/,$p'
@@ -39,8 +43,10 @@ OUT10=$(psql_db -f supabase/tests/10_connections_communications.sql 2>&1)
 echo "$OUT10" | sed -n '/===== CONNECTION RESULTS =====/,$p' | grep -E "FAIL|passed|^ +[0-9]+ \|" || true
 OUT11=$(psql_db -f supabase/tests/11_sheets_automatic_sync.sql 2>&1)
 echo "$OUT11" | sed -n '/===== AUTO SYNC RESULTS =====/,$p' | grep -E "FAIL|passed|^ +[0-9]+ \|" || true
-OUT12=$(psql_db -f supabase/tests/12_whatsapp_receiver.sql 2>&1)
-echo "$OUT12" | sed -n '/===== WHATSAPP RESULTS =====/,$p' | grep -E "FAIL|passed|^ +[0-9]+ \|" || true
+if [ "${DB_TEST_SCOPE:-}" != "initial" ]; then
+  OUT12=$(psql_db -f supabase/tests/12_whatsapp_receiver.sql 2>&1)
+  echo "$OUT12" | sed -n '/===== WHATSAPP RESULTS =====/,$p' | grep -E "FAIL|passed|^ +[0-9]+ \|" || true
+fi
 FAILED=$(psql_db -tAc "select count(*) from t.results where not ok")
 if [ "$FAILED" != "0" ]; then echo "DB TESTS FAILED: $FAILED" >&2; exit 1; fi
 echo "DB TESTS PASSED"

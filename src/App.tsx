@@ -370,10 +370,10 @@ function GoogleSheetsConnector({ session, organization, onSynced }: { session: S
 
   const connected = connection.status === 'connected'
   return <article className="connection-source-card">
-    <div className="connection-source-top"><span className="source-icon"><Icon name="grid" /></span><span className={connected ? 'connection-pill connection-pill-ready' : 'connection-pill'}>{connection.status === 'loading' ? 'Checking…' : connected ? 'Authorised' : connection.status === 'unavailable' ? 'Status unavailable' : 'Not connected'}</span></div>
+    <div className="connection-source-top"><span className="source-icon"><Icon name="grid" /></span><span className={connected && connection.last_error_code ? 'connection-pill' : connected && connection.last_successful_sync_at ? 'connection-pill connection-pill-ready' : 'connection-pill'}>{connection.status === 'loading' ? 'Checking…' : connection.status === 'unavailable' ? 'Status unavailable' : !connected ? 'Not connected' : connection.last_error_code ? 'Needs attention' : connection.last_successful_sync_at ? 'Synced' : 'Connected · not synced'}</span></div>
     <h3>Google Sheets</h3>
     <p>Read invoice rows from a spreadsheet into this workspace. Access is read-only; Revenue OS will not edit your sheet or send messages.</p>
-    {connected && <small>Google account: {connection.provider_account_email || 'Connected account'}{connection.last_successful_sync_at ? ` · Last sync ${new Date(connection.last_successful_sync_at).toLocaleString()}` : ' · No successful sync yet'}</small>}
+    {connected && <small>Google account: {connection.provider_account_email || 'Connected account'}{connection.last_successful_sync_at ? ` · Last successful sync ${new Date(connection.last_successful_sync_at).toLocaleString()}` : ' · Authorization is complete, but no successful import is recorded yet'}{connection.last_error_code ? ` · Last sync error: ${connection.last_error_code}` : ''}</small>}
     {!connected ? <button className="button button-secondary" type="button" onClick={() => void connect()} disabled={busy !== '' || connection.status === 'loading'}>{busy === 'connect' ? 'Opening Google…' : 'Connect Google Sheets'}</button> : <>
       <div className="connection-source-actions">
         <button className="button button-secondary" type="button" onClick={() => void connect()} disabled={busy !== '' || discoveryBusy}>{busy === 'connect' ? 'Reconnecting Google…' : 'Reconnect Google permissions'}</button>
@@ -396,7 +396,7 @@ function GoogleSheetsConnector({ session, organization, onSynced }: { session: S
       <button className="template-link" type="button" onClick={() => void disconnect()} disabled={busy !== ''}>{busy === 'disconnect' ? 'Disconnecting…' : 'Disconnect Google'}</button>
     </>}
     {notice && <p className={noticeError ? 'field-error' : 'brain-note'} role={noticeError ? 'alert' : 'status'}>{notice}</p>}
-    {connection.last_error_code && <small>Last sync error: {connection.last_error_code}</small>}
+    {connection.last_error_code && <p className="field-error" role="status">The last recorded sync error needs attention: {connection.last_error_code}. Reconnect permissions if access has changed, or retry the sync after checking the selected spreadsheet.</p>}
     {connected && reviewItems.length > 0 && <section className="source-review-queue" aria-labelledby="source-review-title">
       <div className="panel-heading"><div><h4 id="source-review-title">Rows missing from the sheet</h4><p>These invoices were present in an earlier successful sync but not in the latest complete snapshot. Absence is not proof of payment.</p></div><span className="status-pill">{reviewItems.length} to review</span></div>
       {reviewItems.map((item) => {

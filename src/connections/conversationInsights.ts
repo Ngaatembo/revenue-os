@@ -3,6 +3,8 @@
  * Observed: what the mailbox shows (who wrote last, when). Inferred: that a reply is probably still owed.
  * An inference can be wrong (the reply may have been a phone call), so it is always worded as "no reply recorded".
  */
+import { looksAutomatedAddress, repeatedSystemMail } from './senderAutomation.ts'
+
 export interface ConversationThread {
   provider: string
   thread_id: string
@@ -38,10 +40,17 @@ export const MAX_AGE_DAYS = 45
 
 export function whoLabel(t: ConversationThread) { return t.counterpart_name || t.counterpart_address || 'A customer' }
 
+/** Threads that are machine-generated. Mail stored before a rule existed is re-judged here, so better rules improve what the owner sees at once. */
+export function automatedThreadIds(threads: ConversationThread[]): Set<string> {
+  const systemMail = repeatedSystemMail(threads)
+  return new Set(threads.filter((t) => t.all_automated || looksAutomatedAddress(t.counterpart_address) || systemMail.has(t.thread_id)).map((t) => t.thread_id))
+}
+
 export function deriveConversationInsights(threads: ConversationThread[], now = Date.now()): ConversationInsight[] {
   const out: ConversationInsight[] = []
+  const automated = automatedThreadIds(threads)
   for (const t of threads) {
-    if (t.all_automated) continue
+    if (automated.has(t.thread_id)) continue
     const last = new Date(t.last_message_at).getTime()
     if (!Number.isFinite(last)) continue
     const days = Math.floor((now - last) / DAY)

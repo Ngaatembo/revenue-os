@@ -1,5 +1,5 @@
 import { describeConnection, formatAge, type ConnectionRow } from './catalog.ts'
-import { gmailThreadLink, whoLabel } from './conversationInsights.ts'
+import { automatedThreadIds, gmailThreadLink, whoLabel } from './conversationInsights.ts'
 import type { ConversationData } from './useConversations.ts'
 
 /** Customer conversations from synchronized email. Facts and inferences are labelled separately. */
@@ -14,7 +14,8 @@ export function ConversationsPanel({ data, gmail, onOpenConnections }: {
       <p>No email is connected, so Revenue OS cannot tell which customers are waiting for you.</p>
       <button className="button button-secondary" type="button" onClick={onOpenConnections}>Connect Gmail</button></section>
   }
-  const real = (threads ?? []).filter((t) => !t.all_automated)
+  const automated = automatedThreadIds(threads ?? [])
+  const real = (threads ?? []).filter((t) => !automated.has(t.thread_id))
   const waiting = insights.filter((i) => i.kind === 'awaiting_reply').length
   return <section id="conversations" className="panel conversations-panel" aria-labelledby="conversations-title" data-testid="conversations-panel">
     <div className="panel-heading"><div><h2 id="conversations-title">Customer conversations</h2>
@@ -23,7 +24,7 @@ export function ConversationsPanel({ data, gmail, onOpenConnections }: {
     {view.state === 'syncing' && !view.initialSyncDone && <p className="connection-note" role="status">{view.stage}. Results appear as records are stored{Number(gmail?.records_synced) > 0 ? ` (${Number(gmail?.records_synced).toLocaleString()} so far)` : ''}.</p>}
     {view.message && <p className="connection-message" role="alert">{view.message}</p>}
     {error && <p className="connection-message" role="alert">{error}</p>}
-    {threads && <p className="conversation-facts">Observed: {real.length} customer conversation{real.length === 1 ? '' : 's'} in the last 90 days{threads.length - real.length > 0 ? ` (${threads.length - real.length} automated or newsletter thread${threads.length - real.length === 1 ? '' : 's'} ignored)` : ''}.</p>}
+    {threads && <p className="conversation-facts">Observed: {real.length} customer conversation{real.length === 1 ? '' : 's'} in the last 90 days{threads.length - real.length > 0 ? ` (${threads.length - real.length} automated or notification thread${threads.length - real.length === 1 ? '' : 's'} ignored)` : ''}.</p>}
     {threads && insights.length === 0 && view.initialSyncDone && <div className="empty-state compact"><h3>{real.length === 0 ? 'No customer conversations found' : 'Nobody is waiting on you'}</h3>
       <p>{real.length === 0 ? 'Revenue OS found no non-automated email from the last 90 days. If your sales conversations happen elsewhere, connect that source or import a file.' : 'Every recent customer email either has a reply or is too recent to chase.'}</p></div>}
     {(['awaiting_reply', 'gone_quiet'] as const).map((kind) => {

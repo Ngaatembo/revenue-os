@@ -1,4 +1,5 @@
 import { assertGoogleOk, type FetchFn } from './google.ts'
+import { looksAutomatedAddress } from '../../connections/senderAutomation.ts'
 
 export interface CommunicationRow {
   provider: 'gmail'
@@ -21,7 +22,6 @@ interface GmailMessage {
 
 const GMAIL = 'https://gmail.googleapis.com/gmail/v1/users/me'
 export const BACKFILL_QUERY = 'newer_than:90d -category:promotions -category:social -category:forums -in:spam -in:trash -in:chats'
-const AUTOMATED_SENDER = /(^|[._-])(no-?reply|do-?not-?reply|donotreply|notifications?|mailer-daemon|postmaster|bounce[s]?|newsletter|alerts?)([._-]|@)/i
 
 export function parseAddress(value: string | undefined): { address: string | null; name: string | null } {
   if (!value) return { address: null, name: null }
@@ -51,7 +51,7 @@ export function parseGmailMessage(message: GmailMessage, ownerEmail: string): Co
   const precedence = (headers.get('precedence') ?? '').toLowerCase()
   const autoSubmitted = (headers.get('auto-submitted') ?? 'no').toLowerCase()
   const automated = headers.has('list-unsubscribe') || ['bulk', 'list', 'junk'].includes(precedence)
-    || autoSubmitted !== 'no' || (counterpart.address ? AUTOMATED_SENDER.test(counterpart.address) : false)
+    || autoSubmitted !== 'no' || looksAutomatedAddress(counterpart.address)
   return {
     provider: 'gmail', external_id: message.id.slice(0, 200), thread_id: message.threadId.slice(0, 200),
     direction: outbound ? 'outbound' : 'inbound',

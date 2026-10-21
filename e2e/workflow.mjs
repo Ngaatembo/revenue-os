@@ -190,6 +190,29 @@ try {
     assert(sql(`select status from public.tasks`) === 'done', 'task not completed')
   })
 
+  await step('Overview lists each overdue invoice once, with one primary action and a menu', async () => {
+    await nav('Overview')
+    const band = page.getByTestId('needs-you')
+    await band.getByText('Acme Ltd').first().waitFor({ timeout: 15000 })
+    assert((await page.getByText('Acme Ltd').count()) === 1, 'an invoice customer appears once on Overview')
+    assert((await page.getByRole('heading', { name: 'Priority opportunities' }).count()) === 0, 'the duplicate invoice list is gone from Overview')
+    assert((await band.getByRole('button', { name: 'Draft reminder' }).count()) >= 1, 'each invoice row has a primary Draft reminder button')
+    await band.getByRole('button', { name: /More actions for Acme Ltd/ }).click()
+    await page.getByRole('menuitem', { name: 'Snooze 7 days' }).waitFor({ timeout: 5000 })
+    assert((await page.getByRole('menuitem').count()) === 2, 'the menu holds snooze and record/dismiss')
+    await page.keyboard.press('Escape')
+    assert((await page.getByRole('menuitem').count()) === 0, 'Escape closes the menu')
+    assert((await page.getByTestId('money-summary').getByText('Verified revenue', { exact: true }).count()) === 1, 'verified revenue is shown as its own line')
+    if (process.env.E2E_SHOTS) {
+      const wait = (ms) => new Promise((r) => setTimeout(r, ms)); const shot = (name) => page.screenshot({ path: path.join(process.env.E2E_SHOTS, name), fullPage: true })
+      fs.mkdirSync(process.env.E2E_SHOTS, { recursive: true })
+      await shot('wf-overview.png')
+      await page.emulateMedia({ colorScheme: 'dark' }); await wait(500); await shot('wf-overview-dark.png'); await page.emulateMedia({ colorScheme: 'light' })
+      await page.setViewportSize({ width: 390, height: 844 }); await wait(500); await shot('wf-overview-mobile.png')
+      await page.setViewportSize({ width: 1280, height: 900 })
+    }
+  })
+
   await step('reminder lifecycle: draft, unowned flag, assign, approve, sent, payment evidence, verified outcome', async () => {
     await nav('Opportunities')
     await page.getByRole('button', { name: /Draft reminder/ }).first().click()

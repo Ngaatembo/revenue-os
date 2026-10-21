@@ -19,7 +19,7 @@ Revenue OS helps business owners identify, prioritize, execute, and measure reve
 | Navy | `#01143B` | Headings and the wordmark; body ink is `#0B1B3A` |
 | Growth green | `#128A3D` text / `#23D44F` bars | **Verified** outcomes only (the logo's bars); never decoration or navigation |
 | Muted slate | `#55657F` | Secondary text |
-| Page background | `#F4F7FC` | Main canvas |
+| Page background | `#EEF3FA` | Main canvas |
 | Surface | `#FFFFFF` | Cards and input surfaces |
 | Border | `#DCE4EF` | Dividers and outlines |
 
@@ -48,3 +48,10 @@ Use the existing Inter/system sans-serif stack for interface text. Use the exist
 - Overview order: "Needs you today" band (max 5 ranked rows, Observed/Inferred label, one tap to the list), source strip, summary figures, "Owed to you", then conversations split into "Waiting for your reply" and "Gone quiet".
 - Input and select borders use `--control-border` (#8FA3BF light), because the decorative `--line` hairline is under 3:1.
 - Green stays fill/icon only; azure is never body text.
+
+## Overview v2 (design pass)
+- One place per invoice: the needs-you band is the only list of overdue invoices on Overview; waiting conversations collapse into one summary row that scrolls to the conversations list.
+- Each needs-you row has one primary 48px button (Draft reminder / Review draft / Open) and a 48px menu (Snooze 7 days, Record a response or dismiss).
+- Money: one hero amount per currency, a labelled aging list (colour dot plus text), verified and estimated shown as separate lines and never summed. Zero is "None", unknown is a sentence.
+- Depth from tone: page #EEF3FA, white cards with an `--edge` hairline, `--shadow-1` for cards, `--shadow-2` for the hero only; dark mode lifts by tone, not shadow. No blur, grain or gradients.
+- Text: 14px minimum for anything actionable; control borders `#7C8DA8` (3:1).

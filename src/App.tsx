@@ -19,7 +19,8 @@ import { decideLanding, setupInProgress } from './connections/landing'
 import { freshnessLine } from './connections/catalog'
 import { whoLabel } from './connections/conversationInsights'
 import { NeedsYouBand } from './overview/NeedsYouBand'
-import { buildNeedsYou } from './overview/needsYou'
+import { MoneySummary } from './overview/MoneySummary'
+import { buildNeedsYou, hiddenInvoiceCount, type NeedsYouInput } from './overview/needsYou'
 import { BILLING_STATUS, checkInvoiceImportSize, checkLeadCapacity, getPlan } from './domain/plans'
 import type { InvoiceEvidence, RevenueOpportunity } from './domain/types'
 import { getFreshSession, createSalesLead, deleteSalesLead, loadInvoices, loadRecoveryRate, loadSalesLeads, persistInvoiceImport, saveRecoveryRate, sha256Hex, updateSalesLead, type RevenueOrganization, type SalesLead, type SupabaseSession, type RecoveryAction, type VerifiedOutcome, loadRecoveryActions, loadVerifiedOutcomes, persistPaymentImport, proposeInvoiceReminder, transitionRecoveryAction, verifyRecoveryOutcome, loadOpenOpportunities, syncOverdueOpportunities, type OpportunitySyncResult, loadLeadActivities, recordLeadActivity, type LeadActivity, type LeadActivityType, loadInvoiceInteractions, loadPaymentEvidence, recordInvoiceResponse, setOpportunityState, type InvoiceInteraction, loadBrainFacts, loadAssumptionHistory, recordBrainFact, retractBrainFact, resolveBrainConflict, type AssumptionChange, loadEvaluationRuns, type EvaluationRun, assignActionOwner, rematchPaymentReview } from './lib/supabaseRest'
@@ -1020,13 +1021,18 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
 
   const title = activeSection === 'Overview' ? 'Revenue overview' : activeSection
 
-  const needsYou = buildNeedsYou({
-    overdue: rankedOpportunities.filter((ranked) => !ranked.snoozed).map((ranked) => ({ id: ranked.opportunity.id, customer: ranked.opportunity.evidence[0]?.customerName || 'A customer', invoice: ranked.opportunity.evidence[0]?.invoiceNumber || '—', amount: formatMoney(ranked.opportunity.outstanding), lateLabel: ranked.urgencyLabel })),
+  const needsYouInput: NeedsYouInput = {
+    overdue: rankedOpportunities.filter((ranked) => !ranked.snoozed).map((ranked) => ({ id: ranked.opportunity.id, customer: ranked.opportunity.evidence[0]?.customerName || 'A customer', invoice: ranked.opportunity.evidence[0]?.invoiceNumber || '—', amount: formatMoney(ranked.opportunity.outstanding), lateLabel: ranked.urgencyLabel, progress: progressByInvoiceId.get(ranked.opportunity.evidence[0]?.id) ?? 'none' })),
     brokenPromises: workflowSummary.brokenPromises,
-    conversationsAwaiting: conversations.insights.filter((item) => item.kind === 'awaiting_reply').map((item) => ({ id: item.thread.thread_id, who: whoLabel(item.thread), subject: item.thread.subject ?? '(no subject)', observed: `wrote ${item.daysSince} day${item.daysSince === 1 ? '' : 's'} ago` })),
+    conversationsAwaiting: conversations.insights.filter((item) => item.kind === 'awaiting_reply').map((item) => whoLabel(item.thread)),
     draftsToReview: summary.actionCounts.proposed,
     followUpsDue: workflowSummary.followUpsDue,
-  })
+  }
+  const needsYou = buildNeedsYou(needsYouInput)
+  // On Overview the invoice list lives in the needs-you band; the full panel only shows there when it carries something else (loading, errors, empty, or a rate to set).
+  const showWorkGrid = activeSection !== 'Overview' || invoicesLoading || Boolean(loadError) || invoices.length === 0 || assumptionBps === null || opportunities.length === 0
+  const draftingOpportunityId = rankedOpportunities.find((ranked) => ranked.opportunity.evidence[0]?.id === actionBusy)?.opportunity.id ?? null
+  const scrollToConversations = () => document.getElementById('conversations')?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' })
   const lastCheckedAt = (conn.rows ?? []).map((row) => row.last_successful_sync_at).filter((at): at is string => Boolean(at)).sort().pop() ?? new Date().toISOString()
 
   return (
@@ -1102,19 +1108,23 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
             <div className="first-run-actions"><button className="button button-primary" type="button" onClick={() => setActiveSection('Connections')}>Connect your tools</button><button className="template-link" type="button" onClick={() => fileRef.current?.click()}>No account to connect? Upload an invoice file</button></div>
           </section>}
           {activeSection === 'Overview' && <>
-            <NeedsYouBand items={needsYou} loading={invoicesLoading || leadLoading || actionsLoading} checkedAt={lastCheckedAt} onOpen={(target) => { if (target === 'Overview') document.getElementById('conversations')?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' }); else setActiveSection(target) }} />
+            <NeedsYouBand items={needsYou} loading={invoicesLoading || leadLoading || actionsLoading} checkedAt={lastCheckedAt} hiddenInvoices={hiddenInvoiceCount(needsYouInput)} busyOpportunityId={draftingOpportunityId}
+              onGoto={(target) => { if (target === 'Overview') scrollToConversations(); else setActiveSection(target) }}
+              onDraft={(opportunityId) => { const ranked = rankedOpportunities.find((candidate) => candidate.opportunity.id === opportunityId); if (ranked) void handleProposeReminder(ranked.opportunity) }}
+              onSnooze={(opportunityId) => { const ranked = rankedOpportunities.find((candidate) => candidate.opportunity.id === opportunityId); if (ranked) void handleIssueTransition(ranked.opportunity, 'snooze', { snoozeUntil: new Date(Date.now() + 7 * 86_400_000).toISOString() }) }} />
             <p className="source-strip"><i className={loadError || leadError ? 'connection-dot connection-dot-muted' : 'connection-dot'} /><span>{loadError || leadError ? 'Some saved data could not be loaded; review the error notice in its section.' : freshnessLine(conn.rows)}</span><button type="button" className="template-link" onClick={() => setActiveSection('Connections')}>Sources</button></p>
           </>}
-              <section className="metric-grid" aria-label="Revenue summary">
+              {activeSection !== 'Overview' && <section className="metric-grid" aria-label="Revenue summary">
                 <article className="metric-card"><div className="metric-top"><span>Open opportunities</span><span className="metric-icon teal"><Icon name="spark" /></span></div><strong className="metric-value">{invoicesLoading ? '…' : invoices.length && assumptionBps !== null ? opportunities.length : '—'}</strong><p>{invoicesLoading ? 'Loading saved invoices…' : invoices.length === 0 ? 'No invoices imported into this workspace yet' : assumptionBps === null ? 'Set a recovery-rate assumption to detect opportunities' : `${opportunities.length} ${store.mode === 'saved' ? 'saved' : 'calculated'} from imported invoice evidence`}</p></article>
                 <article className="metric-card"><div className="metric-top"><span>Estimated recovery</span><span className="metric-icon amber"><Icon name="chart" /></span></div><strong className="metric-value metric-money">{estimatedByCurrency.length === 1 ? formatMoney(estimatedByCurrency[0]) : estimatedByCurrency.length > 1 ? 'Multiple currencies' : '—'}</strong><p>{estimatedByCurrency.length ? <>{estimatedByCurrency.length > 1 && <span className="currency-breakdown">{estimatedByCurrency.map((total) => formatMoney(total)).join(' · ')}<br /></span>}Estimate only · not verified revenue</> : invoicesLoading ? 'Loading…' : invoices.length === 0 ? 'Needs imported invoices and a recovery rate' : assumptionBps === null ? 'Needs a recovery-rate assumption' : 'No overdue balances to estimate'}</p></article>
                 <article className="metric-card"><div className="metric-top"><span>Verified revenue</span><span className="metric-icon green"><Icon name="check" /></span></div><strong className="metric-value metric-money">{summary.verifiedByCurrency.length === 0 ? '—' : summary.verifiedByCurrency.length === 1 ? formatMoney(summary.verifiedByCurrency[0]) : 'Multiple currencies'}</strong><p>{summary.verifiedByCurrency.length > 1 && <span className="currency-breakdown">{summary.verifiedByCurrency.map((total) => formatMoney(total)).join(' · ')}<br /></span>}{summary.verifiedOutcomeCount ? summary.verifiedOutcomeCount + ' payment-matched outcome(s) · observed after a reminder, not proven caused by it' : 'Recorded only when payment evidence is matched'}</p></article>
                 <article className="metric-card"><div className="metric-top"><span>Waiting on you</span><span className="metric-icon amber"><Icon name="check" /></span></div><strong className="metric-value">{actionsLoading ? '—' : summary.needsOwner}</strong><p>{actionsLoading ? 'Loading actions…' : summary.actionCounts.proposed + ' draft(s) to review · ' + summary.actionCounts.approved + ' approved to send · ' + summary.awaitingEvidence + ' sent, awaiting payment evidence'}</p></article>
-              </section>
-              {activeSection === 'Overview' && aging.length > 0 && <AgingStrip aging={aging} onOpen={() => setActiveSection('Opportunities')} />}
+              </section>}
+              {activeSection === 'Overview' && <MoneySummary aging={aging} invoicesLoaded={!invoicesLoading} hasInvoices={invoices.length > 0} estimated={estimatedByCurrency} verified={summary.verifiedByCurrency} recoveryRateKnown={assumptionBps !== null} onOpen={() => setActiveSection('Opportunities')} />}
               {activeSection === 'Overview' && <ConversationsPanel data={conversations} gmail={gmailRow} onOpenConnections={() => setActiveSection('Connections')} />}
 
-              <section className="work-grid">
+              {activeSection === 'Overview' && !showWorkGrid && <p className="brain-line" data-testid="brain-line"><span><i className="assumption-dot" />Business Brain · {brain.status}</span><span>{brain.detail}</span><span>Recovery rate {assumptionBps === null ? 'not set' : `${(assumptionBps / 100).toFixed(2).replace(/\.00$/, '')}%`}</span><button type="button" className="template-link" onClick={() => setActiveSection('Business Brain')}>Review assumptions</button></p>}
+              {showWorkGrid && <section className="work-grid">
                 <div className="panel opportunity-panel">
                   <div className="panel-heading"><div><h2>{activeSection === 'Urgent' ? 'Urgent attention queue' : activeSection === 'Opportunities' ? 'Revenue opportunities' : 'Priority opportunities'}</h2><p>{activeSection === 'Urgent' ? 'Overdue invoices and leads that need you now, each with its evidence, why it matters and the next step. Snoozing hides an alert for a while, never the unpaid money.' : 'Based on imported records and your stated assumptions.'}</p></div>{store.syncing ? <span className="status-pill">Refreshing…</span> : (activeSection === 'Urgent' ? attention.summary.needingAttention > 0 : opportunities.length > 0) && <span className="status-pill">{activeSection === 'Urgent' ? attention.summary.needingAttention + ' need you' : opportunities.length + ' open'}</span>}</div>
                   {activeSection === 'Urgent' ? (
@@ -1150,7 +1160,7 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
                   <div className="assumption-row"><span><i className="assumption-dot" />Recovery rate</span><strong>{assumptionBps === null ? 'Not set' : `${(assumptionBps / 100).toFixed(2).replace(/\.00$/, '')}%`}</strong></div>
                   <p className="brain-note">{brain.note}</p>
                 </aside>
-              </section>
+              </section>}
 
               {activeSection === 'Opportunities' && store.dismissed.length > 0 && <section className="panel" aria-labelledby="dismissed-title">
                 <div className="panel-heading"><div><h2 id="dismissed-title">Dismissed issues, still unpaid</h2><p>These are out of your attention queue. Their invoices are still unpaid in your records, so the balances remain in your totals. Reopen one if the situation changes.</p></div><span className="status-pill">{store.dismissed.length}</span></div>
@@ -1214,22 +1224,6 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
       </nav>
     </div>
   )
-}
-
-function AgingStrip({ aging, onOpen }: { aging: ReturnType<typeof agingSummary>; onOpen: () => void }) {
-  return <section className="aging" aria-label="Overdue money by how late it is">
-    <div className="section-label"><h2>Owed to you</h2><button type="button" className="template-link" onClick={onOpen}>See who owes you →</button></div>
-    {aging.map((group) => {
-      const total = group.total.amount || 1
-      return <div className="aging-group" key={group.currency}>
-        <div className="aging-head"><h3>{formatMoney(group.total)} overdue</h3><p>{group.count} invoice{group.count === 1 ? '' : 's'} with an unpaid balance. These are balances, not predictions.</p></div>
-        <div className="aging-bar" role="img" aria-label={group.bands.map((band) => band.label + ': ' + formatMoney(band.amount)).join(', ')}>
-          {group.bands.filter((band) => band.amount.amount > 0).map((band) => <span key={band.band} className={'aging-seg aging-' + band.band} style={{ flexGrow: Math.max(band.amount.amount / total, 0.04) }} />)}
-        </div>
-        <dl className="aging-legend">{group.bands.map((band) => <div key={band.band} className={band.amount.amount === 0 ? 'is-empty' : ''}><dt><i className={'aging-key aging-' + band.band} />{band.label}</dt><dd>{formatMoney(band.amount)}</dd></div>)}</dl>
-      </div>
-    })}
-  </section>
 }
 
 function OpportunityRow({ ranked, rank, progress, onPropose, onViewActions, proposing, controls }: { ranked: RankedOpportunity; rank: number; progress: ActionProgress; onPropose: () => void; onViewActions: () => void; proposing: boolean; controls?: ReactNode }) {

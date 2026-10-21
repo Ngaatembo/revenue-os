@@ -231,10 +231,11 @@ try {
     await page.reload()
     await page.getByTestId('conversations-panel').getByText('Urgent: need 3 pallets').waitFor({ timeout: 20000 })
     const band = page.getByTestId('needs-you')
-    await band.getByText('is waiting for your reply').first().waitFor({ timeout: 20000 })
+    await band.getByText(/customers? (is|are) waiting for your reply/).first().waitFor({ timeout: 20000 })
     assert((await band.getByText('Inferred').count()) > 0, 'a conversation in the needs-you band is labelled Inferred, not presented as fact')
+    assert((await band.getByText('Chipo Dube').count()) === 1, 'each customer appears once in the band (summary row, not one row per thread)')
     assert((await page.locator('[data-group=awaiting_reply]').count()) === 1, 'conversations are grouped under "Waiting for your reply"')
-    await band.getByText('is waiting for your reply').first().click()
+    await band.getByRole('button', { name: 'See who' }).click()
     await page.waitForFunction(() => { const r = document.getElementById('conversations')?.getBoundingClientRect(); return !!r && r.top >= -2 && r.top < 200 }, null, { timeout: 5000 })
   })
   await step('rate limit: sync pauses with a checkpoint, then resumes without losing or duplicating data', async () => {

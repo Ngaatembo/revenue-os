@@ -17,7 +17,7 @@ import { SourceStatusRows } from './connections/SourceStatusRows'
 import { useConnectionStatus } from './connections/useConnectionStatus'
 import { useConversations } from './connections/useConversations'
 import { decideLanding, setupInProgress } from './connections/landing'
-import { freshnessLine } from './connections/catalog'
+import { freshnessLine, sourceWarnings } from './connections/catalog'
 import { whoLabel } from './connections/conversationInsights'
 import { NeedsYouBand } from './overview/NeedsYouBand'
 import { MoneySummary } from './overview/MoneySummary'
@@ -1114,6 +1114,7 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
             <div className="first-run-actions"><button className="button button-primary" type="button" onClick={() => setActiveSection('Connections')}>Connect your tools</button><button className="template-link" type="button" onClick={() => fileRef.current?.click()}>No account to connect? Upload an invoice file</button></div>
           </section>}
           {activeSection === 'Overview' && <>
+            {sourceWarnings(conn.rows).map((warning) => <div key={warning.provider} className="alert alert-info" role="status" data-testid="source-warning"><strong>Some information may be out of date.</strong> {warning.message} <button type="button" className="template-link" onClick={() => setActiveSection('Connections')}>Fix in Connections</button></div>)}
             <NeedsYouBand items={needsYou} loading={invoicesLoading || leadLoading || actionsLoading} checkedAt={lastCheckedAt} hiddenInvoices={hiddenInvoiceCount(needsYouInput)} busyOpportunityId={draftingOpportunityId}
               onGoto={(target) => { if (target === 'Overview') scrollToConversations(); else setActiveSection(target) }}
               onDraft={(opportunityId) => { const ranked = rankedOpportunities.find((candidate) => candidate.opportunity.id === opportunityId); if (ranked) void handleProposeReminder(ranked.opportunity) }}

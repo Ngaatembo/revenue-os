@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { describeConnection, errorMessage, formatAge, freshnessLine, PROVIDERS, type ConnectionRow } from '../catalog.ts'
+import { describeConnection, errorMessage, formatAge, freshnessLine, PROVIDERS, sourceWarnings, STALE_AFTER_HOURS, type ConnectionRow } from '../catalog.ts'
 import { decideLanding, setupInProgress } from '../landing.ts'
 import { deriveConversationInsights, gmailThreadLink, type ConversationThread } from '../conversationInsights.ts'
 
@@ -96,4 +96,42 @@ test('insights: our reply followed by silence becomes gone_quiet; waiting custom
 })
 test('source links point at the original thread', () => {
   assert.equal(gmailThreadLink('o@x.test', 'abc'), 'https://mail.google.com/mail/?authuser=o%40x.test#all/abc')
+})
+
+const NOW = Date.parse('2026-10-21T20:00:00Z')
+const hoursAgo = (h: number) => new Date(NOW - h * 3_600_000).toISOString()
+
+test('the empty-tab Sheets error explains the cause and shows an example header and row', () => {
+  for (const code of ['sheet_needs_header_and_rows', 'no_valid_invoice_rows', 'missing_columns:due_at']) {
+    const text = errorMessage(code)!
+    assert.match(text, /customer_id \| customer_name \| invoice_number \| currency \| total_amount \| paid_amount \| issued_at \| due_at/, code)
+    assert.equal(/_rows$|sheet_needs/.test(text.replace(/customer_id[^.]*due_at/, '')), false, 'no raw internal code in the sentence: ' + code)
+  }
+  assert.match(errorMessage('sheet_needs_header_and_rows')!, /tab you selected/)
+})
+test('a Sheets source that failed before any success is not described as still setting up', () => {
+  const failing = row({ provider: 'google_sheets', status: 'needs_attention', last_error_code: 'sheet_needs_header_and_rows', consecutive_failures: 1 })
+  const line = freshnessLine([failing], NOW)
+  assert.match(line, /has not synchronized successfully yet/); assert.equal(/still setting up/.test(line), false)
+})
+test('a failing source warns that data may be old and never claims that nothing happened', () => {
+  const warnings = sourceWarnings([row({ provider: 'google_sheets', status: 'needs_attention', last_error_code: 'sheet_needs_header_and_rows', last_successful_sync_at: hoursAgo(30) })], NOW)
+  assert.equal(warnings.length, 1)
+  assert.match(warnings[0].message, /last synchronized successfully 1 d ago/); assert.match(warnings[0].message, /may be out of date/)
+  assert.match(warnings[0].message, /does not mean nothing changed/)
+  const never = sourceWarnings([row({ provider: 'google_sheets', status: 'needs_attention', last_error_code: 'no_valid_invoice_rows' })], NOW)
+  assert.match(never[0].message, /has not synchronized successfully yet/)
+})
+test('stale detection: a healthy recent source is silent, an old connected one warns, a source still setting up does not', () => {
+  assert.deepEqual(sourceWarnings([row({ status: 'connected', initial_sync_completed_at: hoursAgo(1), last_successful_sync_at: hoursAgo(1) })], NOW), [])
+  assert.equal(sourceWarnings([row({ status: 'connected', initial_sync_completed_at: hoursAgo(1), last_successful_sync_at: hoursAgo(STALE_AFTER_HOURS + 1) })], NOW).length, 1)
+  assert.deepEqual(sourceWarnings([row({ status: 'connected' })], NOW), [])
+  assert.deepEqual(sourceWarnings([row({ status: 'disconnected' }), row({ provider: 'whatsapp_business', status: 'connected' })], NOW), [])
+  assert.deepEqual(sourceWarnings(null, NOW), [])
+})
+test('a Gmail warning concerns replies, a Sheets warning concerns invoices', () => {
+  const g = sourceWarnings([row({ status: 'error', last_error_code: 'authorization_revoked' })], NOW)[0].message
+  assert.match(g, /waiting for a reply may be missing/)
+  const sh = sourceWarnings([row({ provider: 'google_sheets', status: 'error', last_error_code: 'authorization_revoked' })], NOW)[0].message
+  assert.match(sh, /overdue invoices below/)
 })

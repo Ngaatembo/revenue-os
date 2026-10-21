@@ -488,6 +488,27 @@ try {
     dueNow('google_sheets'); await tick()
     assert(sheetsConn('status') === 'connected' && sheetsConn('last_error_code') === '', 'recovered after the owner fixed the sheet')
   })
+  await step('Sheets: a header-only tab (the live failure) is explained with an example, warns on the Overview that data may be old, changes no invoice, and clears when fixed', async () => {
+    const before = sql(`select count(*) || ':' || coalesce(sum(total_minor),0) || ':' || coalesce(sum(paid_minor),0) from public.invoices`)
+    google.state.sheet.values = [SHEET_HEADER]; google.state.sheet.modifiedTime = '2026-10-21T11:30:00.000Z'
+    dueNow('google_sheets'); await tick()
+    assert(sheetsConn('status') === 'needs_attention' && sheetsConn('last_error_code') === 'sheet_needs_header_and_rows', 'header-only tab flagged, got ' + sheetsConn('status') + ' ' + sheetsConn('last_error_code'))
+    assert(sql(`select count(*) || ':' || coalesce(sum(total_minor),0) || ':' || coalesce(sum(paid_minor),0) from public.invoices`) === before, 'a failed sync must not change, remove or add invoices')
+    await page.reload(); await page.getByRole('button', { name: /^Overview$/ }).first().click()
+    const warning = page.getByTestId('source-warning').first()
+    await warning.waitFor({ timeout: 15000 })
+    const text = await warning.innerText()
+    assert(/Some information may be out of date/.test(text) && /last synchronized successfully/.test(text), 'warning shows the last good sync: ' + text)
+    assert(/customer_id \| customer_name \| invoice_number/.test(text) && /does not mean nothing changed/.test(text), 'warning explains the fix and does not claim nothing happened: ' + text)
+    assert(!/sheet_needs_header_and_rows/.test(text), 'raw internal code must not reach the owner')
+    google.state.sheet.values = [SHEET_HEADER, sheetRow(1, 1001), sheetRow(2), sheetRow(4, 0, -45)]; google.state.sheet.modifiedTime = '2026-10-21T12:00:00.000Z'
+    dueNow('google_sheets'); await tick()
+    assert(sheetsConn('status') === 'connected' && sheetsConn('last_error_code') === '', 'recovered')
+    assert(sql(`select count(*) from public.invoices`) === '4', 'no duplicate invoices after the retry: ' + sql(`select count(*) from public.invoices`))
+    await page.reload(); await page.getByRole('button', { name: /^Overview$/ }).first().click()
+    await page.getByText(/Overdue|Owed to you/).first().waitFor({ timeout: 15000 })
+    assert((await page.getByTestId('source-warning').count()) === 0, 'warning clears after a good sync')
+  })
   await step('Gmail and Sheets together: both stay connected and sync independently; one failing does not affect the other', async () => {
     await page.locator('[data-provider=gmail] [data-x]').count().catch(() => 0)
     for (let i = 0; i < 3; i += 1) { dueNow('google_sheets'); dueNow('gmail') }
@@ -584,6 +605,9 @@ try {
     await page.locator('[data-provider=gmail]').getByRole('button', { name: 'Connect Gmail' }).click()
     for (let i = 0; i < 150 && conn('status') === 'disconnected'; i += 1) await sleep(100)
     await settle()
+    // The browser is still returning from the provider's consent page; wait for it to land before reloading it.
+    await page.locator('[data-provider=gmail]:not([data-state=not_connected])').waitFor({ timeout: 20000 })
+    await page.waitForLoadState('load')
     const orgA = sql(`select organization_id from public.provider_connections where provider='gmail' limit 1`)
     assert(Number(sql(`select count(*) from public.communications where organization_id='${orgA}' and provider='gmail'`)) > 0, 'there is synced mailbox data to delete')
     const thread = sql(`select thread_id from public.communications where organization_id='${orgA}' and provider='gmail' limit 1`)

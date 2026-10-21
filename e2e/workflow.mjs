@@ -259,6 +259,34 @@ try {
     assert(sql(`select coalesce(sum(paid_minor),0) from public.invoices`) === '0', 'invoice balances must stay untouched')
   })
 
+  await step('invoice follow-through: an overdue invoice shows its evidence, a customer payment claim is recorded without marking it paid, and it survives a reload', async () => {
+    const snapshot = () => sql(`select (select count(*) from public.payment_evidence) || ':' || (select count(*) from public.outcomes) || ':' || (select coalesce(sum(paid_minor),0) from public.invoices) || ':' || (select outstanding_minor from public.opportunities where id = (select 'overdue_invoice:' || id from public.invoices where invoice_number='INV-300'))`)
+    const before = snapshot()
+    await nav('Opportunities')
+    const card = page.locator('article', { hasText: 'INV-300' }).first()
+    await card.waitFor({ timeout: 15000 })
+    await card.locator('summary', { hasText: /Why this needs attention/ }).click()
+    assert(/overdue|past due|days/i.test(await card.innerText()), 'the card explains why it needs attention')
+    await card.getByRole('button', { name: 'Record response' }).click()
+    await card.getByLabel('What happened').selectOption('paid_claimed')
+    await card.getByLabel(/Details/).fill('Customer says they paid by bank transfer on Friday')
+    await card.getByRole('button', { name: 'Save response' }).click()
+    await card.getByText('Customer says paid').first().waitFor({ timeout: 15000 })
+    assert(sql(`select count(*) from public.invoice_interactions where interaction_type='paid_claimed'`) === '1', 'the claim is saved as what the customer said')
+    assert(sql(`select workflow_state from public.opportunities where id in (select 'overdue_invoice:' || id from public.invoices where invoice_number='INV-300')`) === 'payment_claimed', 'state is payment_claimed')
+    assert(snapshot() === before, 'a claim must not create payment evidence, an outcome, or change any invoice balance: ' + before + ' -> ' + snapshot())
+    await page.reload()
+    await nav('Opportunities')
+    const again = page.locator('article', { hasText: 'INV-300' }).first()
+    await again.getByText('Customer says paid').first().waitFor({ timeout: 20000 })
+    assert(/250\.00/.test(await again.innerText()), 'the invoice still shows its unpaid balance after reload')
+    await nav('Urgent')
+    const urgent = page.locator('.attention-card, article', { hasText: 'INV-300' }).first()
+    await urgent.waitFor({ timeout: 15000 })
+    assert(/Customer says paid/.test(await urgent.innerText()), 'Urgent still shows the invoice as unpaid with the customer claim recorded: ' + (await urgent.innerText()).slice(0, 400))
+    assert(sql(`select count(*) from public.outcomes where amount_minor = 25000`) === '0', 'no verified outcome from a claim')
+  })
+
   await step('tenant isolation: another workspace cannot read or write A data', async () => {
     const orgId = orgA()
     const jwt = sessionFor(B.id, B.email).access_token
@@ -267,14 +295,17 @@ try {
       const get = async (table) => (await (await fetch(`/rest/v1/${table}?organization_id=eq.${orgId}&select=id`, { headers: h })).json()).length
       const boot = await fetch('/rest/v1/rpc/bootstrap_revenue_os_organization', { method: 'POST', headers: h, body: JSON.stringify({ org_name: 'B org' }) })
       const write = await fetch('/rest/v1/rpc/create_task', { method: 'POST', headers: h, body: JSON.stringify({ p_org_id: orgId, p_id: 'x1', p_title: 'intrusion', p_detail: null, p_due_date: '2099-01-01' }) })
+      const claim = await fetch('/rest/v1/rpc/record_invoice_response', { method: 'POST', headers: h, body: JSON.stringify({ p_org_id: orgId, p_interaction_id: 'x-claim', p_opportunity_id: 'overdue_invoice:any', p_interaction_type: 'paid_claimed', p_summary: 'intrusion', p_promised_amount_minor: null, p_promised_date: null, p_next_follow_up: null }) })
+      const state = await fetch('/rest/v1/rpc/set_opportunity_state', { method: 'POST', headers: h, body: JSON.stringify({ p_org_id: orgId, p_opportunity_id: 'overdue_invoice:any', p_transition: 'dismiss', p_reason: 'intrusion' }) })
       const resolve = await fetch('/rest/v1/rpc/rematch_payment_review', { method: 'POST', headers: h, body: JSON.stringify({ p_org_id: orgId }) })
       const members = await fetch('/rest/v1/rpc/list_workspace_members', { method: 'POST', headers: h, body: JSON.stringify({ p_org_id: orgId }) })
-      return { counts: [await get('quotations'), await get('deposits'), await get('tasks'), await get('payment_review_items'), await get('invoices'), await get('payment_evidence')], boot: boot.status, write: write.status, resolve: resolve.status, members: members.status }
+      return { counts: [await get('quotations'), await get('deposits'), await get('tasks'), await get('payment_review_items'), await get('invoices'), await get('payment_evidence'), await get('opportunities'), await get('invoice_interactions'), await get('actions'), await get('outcomes')], claim: claim.status, state: state.status, boot: boot.status, write: write.status, resolve: resolve.status, members: members.status }
     }, { jwt, orgId })
     assert(out.boot === 200, 'B should get its own workspace: ' + out.boot)
     assert(out.counts.every((n) => n === 0), 'B can read A rows: ' + out.counts)
-    assert([out.write, out.resolve, out.members].every((s) => s >= 400), 'B could write/read A via RPC: ' + JSON.stringify(out))
+    assert([out.write, out.resolve, out.members, out.claim, out.state].every((s) => s >= 400), 'B could write/read A via RPC: ' + JSON.stringify(out))
     assert(sql(`select count(*) from public.tasks where title='intrusion'`) === '0', 'intrusion row exists')
+    assert(sql(`select count(*) from public.invoice_interactions where summary='intrusion'`) === '0', 'intrusion response exists')
   })
 
   await step('lead recovery: stalled lead is flagged, interaction recorded, next follow-up rescheduled and logged', async () => {

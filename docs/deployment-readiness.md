@@ -65,14 +65,14 @@ Verified in the repo by `src/worker/__tests__/deployConfig.test.ts`: cron `* * *
 | `APP_ORIGIN` | secret/var | present; equals `https://revenue-os.ngaatendwew.workers.dev` (callback redirects there) |
 | `SUPABASE_URL` | var (in `wrangler.jsonc`) | present |
 | `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` | secret | present (guard passes) |
-| `SYNC_MESSAGE_BUDGET`, `SYNC_INTERVAL_MINUTES` | plain vars, now in `wrangler.jsonc` | 100 / 5, shipped with the code so a deploy cannot remove them. |
+| `SYNC_MESSAGE_BUDGET`, `SYNC_INTERVAL_MINUTES` | plain vars, in `wrangler.jsonc` | currently 10 / 5 (Free-plan private test), shipped with the code so a deploy cannot remove them. |
 | `WHATSAPP_APP_SECRET`, `WHATSAPP_VERIFY_TOKEN` | optional secrets | not set — **leave unset until `20261021140000` is applied** |
 Observed 2026-10-21 against production with unauthenticated requests only: `/api/health` ok; Google routes answer 401 (not 503); `/api/connections/*` is 404 (old Worker deployed; no cron yet).
 
 ## 7. Every remaining external requirement
 1. Owner approval to apply the two initial-release migrations and merge/deploy.
 2. Google Cloud: Gmail API enabled, scopes added, test users, redirect URI (see `gmail-verification-runbook.md`).
-3. **Workers Paid plan.** The free plan's 10 ms CPU per request/cron run and 50 subrequests are very unlikely to fit a sync ([limits](https://developers.cloudflare.com/workers/platform/limits/)); the default budget of 100 assumes the paid plan.
+3. **Workers Paid plan.** The free plan's 10 ms CPU per request/cron run and 50 subrequests are very unlikely to fit a sync ([limits](https://developers.cloudflare.com/workers/platform/limits/)); the owner chose to try the Free plan first with `SYNC_MESSAGE_BUDGET=10` (commit `f7cbefe`); 100 assumes the paid plan. A CPU-limit failure on Free is a plan limit, not evidence against the design.
 4. Real authorization run with a test mailbox and a test spreadsheet (synthetic data).
 5. Supabase Auth: enable leaked-password protection.
 6. Public launch only: Google OAuth verification + security assessment for `gmail.readonly`.

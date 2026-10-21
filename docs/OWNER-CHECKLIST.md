@@ -21,8 +21,8 @@ Your Supabase organization is on the **Free** plan (verified through the Supabas
 ## A. REQUIRED for the private real-provider test (you + one test mailbox + one test sheet)
 
 **A1. Cloudflare plan (your choice).**
-- *Option 1 (recommended, +$5/month):* **Workers & Pages → Plans → Workers Paid.** Default sync settings (100 emails per run) then work.
-- *Option 2 ($0, riskier):* stay on Free and I lower `SYNC_MESSAGE_BUDGET` to ~10 in `wrangler.jsonc`. A small test mailbox may then sync, but Free allows only 10 ms CPU per run, so runs can be cut off ("exceeded CPU" in Worker logs) — a failed result would not tell us whether the product is wrong. If you pick this, tell me and I will make that one-line change before the release.
+- *Option 1 (recommended, +$5/month):* **Workers & Pages → Plans → Workers Paid.** Raise `SYNC_MESSAGE_BUDGET` in `wrangler.jsonc` to 100 afterwards.
+- *Option 2 ($0, riskier) — **currently selected**: `wrangler.jsonc` already sets `SYNC_MESSAGE_BUDGET` to 10 (commit `f7cbefe`).* A small test mailbox and a small test sheet may sync, but Free allows only 10 ms CPU per run, so runs can be cut off ("exceeded CPU" in Worker logs). If that happens the result says nothing about whether the product is right, and the fix is Option 1. Keep the test sheet to a few rows and the test mailbox small.
 
 **A2. Cloudflare — confirm names (not values).** **Workers & Pages → revenue-os → Settings → Variables and Secrets** must list: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_TOKEN_ENCRYPTION_KEY`, `APP_ORIGIN`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`. (From outside, the deployed Worker already behaves as if all are set and well-formed.) `SUPABASE_URL`, `SYNC_INTERVAL_MINUTES`, `SYNC_MESSAGE_BUDGET` ship in `wrangler.jsonc`. Also confirm **Settings → Build → Git repository** is `Ngaatembo/revenue-os`, production branch `main`.
 

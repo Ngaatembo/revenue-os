@@ -28,7 +28,7 @@ Still to confirm/set:
 |---|---|
 | Cron Trigger `* * * * *` | Ships with the code (`wrangler.jsonc` → `triggers.crons`). After deploy: Cloudflare dashboard → Worker `revenue-os` → **Settings → Triggers → Cron Triggers** must list it. |
 | Workers plan | **Workers Paid is required in practice** (free: 10 ms CPU, 50 subrequests). See `OWNER-CHECKLIST.md` item 1. |
-| `SYNC_MESSAGE_BUDGET`, `SYNC_INTERVAL_MINUTES` | Ship in `wrangler.jsonc` (100 and 5). Change them there, not in the dashboard. |
+| `SYNC_MESSAGE_BUDGET`, `SYNC_INTERVAL_MINUTES` | Ship in `wrangler.jsonc`: currently **10** (chosen for a Workers Free private test) and 5. Change them there, not in the dashboard. |
 
 ## C. Database + deploy (needs your explicit approval)
 
@@ -39,7 +39,7 @@ Follow `docs/deployment-readiness.md` ("Production procedure"). Order: apply mig
 1. Sign in to <https://revenue-os.ngaatendwew.workers.dev> as the owner. Open **Connections → Server setup check → Run setup check**. Every line must show ✓ and the redirect URI must equal the one you registered. "Background sync" will say *Cannot be checked yet* — that is correct.
 2. **Connections → Gmail → Connect Gmail.** Google shows "Google hasn't verified this app" (expected in Testing) → **Advanced → Go to … (unsafe)** → on the permission screen **leave the Gmail read-only box ticked** (Google lets users untick individual permissions; if unticked, Revenue OS stores nothing as connected and says so) → **Continue**.
 3. You return to Revenue OS. Expected: the Gmail card shows *Connection established / Fetching available information / Processing and organizing records* with an indeterminate bar and a real "N records stored so far" count. You may close the tab; it continues.
-4. Wait. Speed is ≈100 emails per minute (budget × one run per minute). A mailbox with 1,000 mails in 90 days takes ≈10 minutes. When done the card says **Initial synchronization complete** and shows the last-sync time.
+4. Wait. Speed is ≈ `SYNC_MESSAGE_BUDGET` emails per minute — **≈10/minute with the current Free-plan setting** (≈100/minute once raised on Paid). A test mailbox with ~50 mails takes about 5 minutes; 1,000 mails would take ≈100 minutes. When done the card says **Initial synchronization complete** and shows the last-sync time.
 5. **Overview → Customer conversations.** Check against the real mailbox: customers who emailed you and got no reply in ≥2 days appear under "Waiting for your reply"; each item's **Open the original email** link must open that exact thread in Gmail. Newsletters/automated mail must not be listed (the line "N automated or newsletter threads ignored" counts them).
 6. **Automatic sync:** from another address send the test mailbox a new email. Within **≈6 minutes** it should be stored (see "Update delay"). It appears in the Overview *list* only after it is ≥2 days old (by design); to see it immediately run the SQL below.
 7. **Revocation:** at <https://myaccount.google.com/permissions> remove Revenue OS. Within ≈6 minutes the Gmail card must show **Reconnect needed**, and already-imported records must remain. Reconnect and confirm no duplicates (SQL below).
@@ -65,7 +65,7 @@ Send me: screenshots of the setup check, the Gmail card at each stage, the Overv
 | Poll interval | A healthy connection is re-checked every **5 minutes** (`SYNC_INTERVAL_MINUTES`). Only changes are fetched (Gmail history), so a quiet mailbox costs one cheap call. |
 | New email → stored | **≤ 5 min + ≤ 1 min cron + seconds of work ≈ 6 min worst case, ~3 min average.** |
 | Stored → visible in an open tab | The app re-reads status every 20 s, so **≤ 20 s** later; a newly opened page shows it immediately. |
-| Initial backfill | ≈100 emails/min at the default budget (≈10 min per 1,000). Raise `SYNC_MESSAGE_BUDGET` on the paid plan. |
+| Initial backfill | ≈ budget emails per minute: **≈10/min with the current setting (≈100 min per 1,000)**; ≈100/min after raising the budget on the Paid plan. Incremental updates are unaffected (a few new emails fit in one run). |
 | Rate limit / failure | Waits the provider's `Retry-After`; failures back off 5 min → 6 h; three failures ⇒ "Needs attention". |
 | Real-time push | Not implemented (needs Gmail Pub/Sub watch + a verified push endpoint). Polling is the supported mechanism. |
 

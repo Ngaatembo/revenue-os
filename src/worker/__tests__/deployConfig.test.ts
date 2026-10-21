@@ -14,10 +14,18 @@ test('the Worker is configured to run background syncs on a Cron Trigger every m
   assert.equal(wrangler.main, 'src/worker/index.ts')
 })
 test('API routes reach the Worker before static assets', () => { assert.ok(wrangler.assets?.run_worker_first?.includes('/api/*')) })
+test('preview deployments use the same sync tuning as production', () => {
+  const previews = (JSON.parse(strip(readFileSync(new URL('../../../wrangler.jsonc', import.meta.url), 'utf8'))) as { previews?: { vars?: Record<string, string> } }).previews?.vars
+  assert.equal(previews?.SYNC_MESSAGE_BUDGET, wrangler.vars?.SYNC_MESSAGE_BUDGET); assert.equal(previews?.SYNC_INTERVAL_MINUTES, wrangler.vars?.SYNC_INTERVAL_MINUTES)
+})
+
 test('no secret value is committed in wrangler.jsonc', () => {
   const raw = readFileSync(new URL('../../../wrangler.jsonc', import.meta.url), 'utf8')
   assert.deepEqual(Object.keys(wrangler.vars ?? {}).sort(), ['SUPABASE_URL', 'SYNC_INTERVAL_MINUTES', 'SYNC_MESSAGE_BUDGET'])
-  assert.equal(wrangler.vars?.SYNC_INTERVAL_MINUTES, '5'); assert.equal(wrangler.vars?.SYNC_MESSAGE_BUDGET, '100')
+  assert.equal(wrangler.vars?.SYNC_INTERVAL_MINUTES, '5')
+  // The runner clamps the budget to 10-500 emails per run; the owner may tune it for their Workers plan (e.g. 10 on Free, 100+ on Paid).
+  const budget = Number(wrangler.vars?.SYNC_MESSAGE_BUDGET)
+  assert.ok(Number.isInteger(budget) && budget >= 10 && budget <= 500, `SYNC_MESSAGE_BUDGET must be an integer from 10 to 500, got ${wrangler.vars?.SYNC_MESSAGE_BUDGET}`)
   assert.equal(/SECRET|SERVICE_ROLE|ENCRYPTION_KEY|CLIENT_ID/i.test(raw.replace(/\/\/.*$/gm, '')), false)
 })
 test('scheduled() does nothing, and does not throw, when the server is not configured', async () => {

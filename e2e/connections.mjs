@@ -226,6 +226,11 @@ try {
     assert(Number(sql(`select count(*) from public.communications`)) === Number(before) + 1, 'a repeat run must not duplicate')
     await page.reload()
     await page.getByTestId('conversations-panel').getByText('Urgent: need 3 pallets').waitFor({ timeout: 20000 })
+    const band = page.getByTestId('needs-you')
+    await band.getByText('is waiting for your reply').first().waitFor({ timeout: 20000 })
+    assert((await band.getByText('Inferred').count()) > 0, 'a conversation in the needs-you band is labelled Inferred, not presented as fact')
+    assert((await page.locator('[data-group=awaiting_reply]').count()) === 1, 'conversations are grouped under "Waiting for your reply"')
+    await band.getByText('is waiting for your reply').first().click()
   })
   await step('rate limit: sync pauses with a checkpoint, then resumes without losing or duplicating data', async () => {
     google.state.deliver({ thread: 'new-2', from: 'Tapiwa <tapiwa@buyer.test>', subject: 'Second new enquiry', at: Date.now() - 3 * 86_400_000 })

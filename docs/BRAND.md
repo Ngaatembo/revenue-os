@@ -43,3 +43,8 @@ Use the existing Inter/system sans-serif stack for interface text. Use the exist
 - CI database migration, tenant-isolation, and journey tests
 - Review light and dark themes at desktop and mobile widths
 - Confirm production deployment separately from successful CI
+
+## Overview and controls (interior pass)
+- Overview order: "Needs you today" band (max 5 ranked rows, Observed/Inferred label, one tap to the list), source strip, summary figures, "Owed to you", then conversations split into "Waiting for your reply" and "Gone quiet".
+- Input and select borders use `--control-border` (#8FA3BF light), because the decorative `--line` hairline is under 3:1.
+- Green stays fill/icon only; azure is never body text.

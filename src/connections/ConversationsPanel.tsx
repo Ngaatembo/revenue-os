@@ -26,13 +26,21 @@ export function ConversationsPanel({ data, gmail, onOpenConnections }: {
     {threads && <p className="conversation-facts">Observed: {real.length} customer conversation{real.length === 1 ? '' : 's'} in the last 90 days{threads.length - real.length > 0 ? ` (${threads.length - real.length} automated or newsletter thread${threads.length - real.length === 1 ? '' : 's'} ignored)` : ''}.</p>}
     {threads && insights.length === 0 && view.initialSyncDone && <div className="empty-state compact"><h3>{real.length === 0 ? 'No customer conversations found' : 'Nobody is waiting on you'}</h3>
       <p>{real.length === 0 ? 'Revenue OS found no non-automated email from the last 90 days. If your sales conversations happen elsewhere, connect that source or import a file.' : 'Every recent customer email either has a reply or is too recent to chase.'}</p></div>}
-    <ul className="conversation-list">{insights.slice(0, 8).map((item) => <li key={item.thread.thread_id} className="conversation-item" data-kind={item.kind}>
+    {(['awaiting_reply', 'gone_quiet'] as const).map((kind) => {
+      const rows = insights.filter((i) => i.kind === kind).slice(0, kind === 'awaiting_reply' ? 8 : 5)
+      if (rows.length === 0) return null
+      return <div className="conversation-group" key={kind} data-group={kind}>
+        <h3 className="conversation-group-title">{kind === 'awaiting_reply' ? 'Waiting for your reply' : 'Gone quiet — you wrote last'} <span>{rows.length}</span></h3>
+        <ul className="conversation-list">{rows.map((item) => <li key={item.thread.thread_id} className="conversation-item" data-kind={item.kind}>
       <div className="conversation-top"><strong>{whoLabel(item.thread)}</strong><span className="connection-pill">{item.kind === 'awaiting_reply' ? 'Waiting for your reply' : 'Gone quiet'}</span></div>
       <p className="conversation-subject">{item.thread.subject ?? '(no subject)'}</p>
       <p><span className="tag-observed">Observed</span> {item.observed}</p>
       <p><span className="tag-inferred">Inferred</span> {item.inference}</p>
       <p><span className="tag-action">Suggested</span> {item.recommendation}</p>
       <a className="template-link" href={gmailThreadLink(gmail?.provider_account_email ?? null, item.thread.thread_id)} target="_blank" rel="noreferrer">Open the original email →</a>
-    </li>)}</ul>
+    </li>
+        )}</ul>
+      </div>
+    })}
   </section>
 }

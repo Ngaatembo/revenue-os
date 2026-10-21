@@ -12,7 +12,7 @@
     "cf:deploy": "npm run build && npx --yes wrangler@4.149.0 deploy",
     "cf:types": "npx --yes wrangler@4.149.0 types",
     "test:e2e": "node e2e/workflow.mjs",
-    "test:domain": "node --experimental-strip-types --test src/domain/__tests__/*.test.ts src/worker/__tests__/*.test.ts src/connections/__tests__/*.test.ts",
+    "test:domain": "node --experimental-strip-types --test src/domain/__tests__/*.test.ts src/worker/__tests__/*.test.ts src/connections/__tests__/*.test.ts src/overview/__tests__/*.test.ts",
     "test:e2e:connections": "node e2e/connections.mjs",
     "test:e2e:connections:initial": "RELEASE_SCOPE=initial node e2e/connections.mjs"
   },

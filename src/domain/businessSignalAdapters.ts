@@ -81,7 +81,7 @@ function assertContext(organizationId: string, sourceId: string, observedAt: str
 
 function normalizeTimestamp(value: string): string | null {
   if (typeof value !== 'string' || !value.trim()) return null
-  const candidate = /^\\d{4}-\\d{2}-\\d{2}$/.test(value) ? `${value}T00:00:00.000Z` : value
+  const candidate = /^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T00:00:00.000Z` : value
   const parsed = Date.parse(candidate)
   return Number.isFinite(parsed) ? new Date(parsed).toISOString() : null
 }

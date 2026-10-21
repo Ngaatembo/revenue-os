@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { SupabaseSession } from '../lib/supabaseRest.ts'
-import { disconnectProvider, startAuthorization, syncNow } from './api.ts'
+import { disconnectProvider, loadReadiness, startAuthorization, syncNow, type ReadinessReport } from './api.ts'
 import { describeConnection, formatAge, PROVIDERS, type ConnectionRow, type ProviderInfo } from './catalog.ts'
 
 type Props = {
@@ -67,6 +67,32 @@ function SheetsAutomaticStatus({ row, busy, onSync }: { row: ConnectionRow | und
   </div>
 }
 
+const CHECK_LABELS: Record<string, string> = {
+  google_client_id: 'Google client ID is set', google_client_secret: 'Google client secret is set', token_encryption_key_valid: 'Token encryption key is set and valid (64 hex characters)',
+  app_origin_matches_this_request: 'APP_ORIGIN matches this site', supabase_url: 'Supabase URL is set', supabase_anon_key: 'Supabase publishable key is set', supabase_service_role_key: 'Supabase service key is set (server only)',
+}
+const BACKGROUND_TEXT: Record<ReadinessReport['background_sync']['status'], string> = {
+  no_connection_to_observe: 'Cannot be checked yet: connect a source first.', waiting_for_first_sync: 'Waiting for the first synchronization to finish.',
+  running: 'Running: a connected source was checked recently without anyone opening the app.', not_observed_recently: 'Not observed recently: check that the Cloudflare cron trigger is deployed (Worker → Settings → Triggers).',
+}
+/** For the person setting up the product: what the deployed server has configured, without ever showing a secret. */
+function SetupCheck({ session, organizationId }: { session: SupabaseSession; organizationId: string }) {
+  const [report, setReport] = useState<ReadinessReport | null>(null)
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+  async function run() { setBusy(true); setError(''); try { setReport(await loadReadiness(session, organizationId)) } catch (cause) { setError(cause instanceof Error ? cause.message : 'The setup check failed.') } finally { setBusy(false) } }
+  return <details className="connection-details setup-check"><summary>Server setup check (for the person setting this up)</summary>
+    <button className="button button-secondary" type="button" disabled={busy} onClick={() => void run()}>{busy ? 'Checking…' : 'Run setup check'}</button>
+    {error && <p className="connection-message" role="alert">{error}</p>}
+    {report && <div data-testid="setup-check-report">
+      <ul>{Object.entries(report.checks).map(([key, ok]) => <li key={key} data-ok={ok}>{ok ? '✓' : '✗'} {CHECK_LABELS[key] ?? key}</li>)}</ul>
+      <p>Register this exact redirect URI in Google Cloud: <code>{report.google_redirect_uri_to_register}</code></p>
+      <p>Checks every {report.sync_interval_minutes} min · up to {report.message_budget_per_run} emails per run</p>
+      <p>Background sync: {BACKGROUND_TEXT[report.background_sync.status]}{report.background_sync.newest_successful_sync_minutes_ago !== null ? ` (last success ${report.background_sync.newest_successful_sync_minutes_ago} min ago)` : ''}</p>
+    </div>}
+  </details>
+}
+
 export function ConnectionsPage({ session, organizationId, rows, statusError, refresh, sheetsControls, csvAction, invoiceCount }: Props) {
   const [busy, setBusy] = useState('')
   const [notice, setNotice] = useState('')
@@ -119,5 +145,6 @@ export function ConnectionsPage({ session, organizationId, rows, statusError, re
           onDisconnect={() => { if (window.confirm('Disconnect Gmail? Revenue OS stops reading the mailbox and removes its stored access. Records already imported are kept.')) void run('disconnect', async () => { await disconnectProvider(session, organizationId, info.id); say('Gmail disconnected. Access was revoked at Google where possible.') }) }} />
       })}
     </div>
+    <SetupCheck session={session} organizationId={organizationId} />
   </section>
 }

@@ -2,9 +2,10 @@ import { googleSheetsOAuthReady, oauthNotConfiguredResponse, type GoogleSheetsOA
 import { handleGoogleSheets } from './googleSheetsHandlers.ts'
 import { handleConnections } from './connections/handlers.ts'
 import { runDueSyncs } from './connections/runner.ts'
+import { handleWhatsAppWebhook, type WhatsAppEnv } from './connections/whatsapp.ts'
 
 interface AssetBinding { fetch(request: Request): Promise<Response> }
-interface Env extends GoogleSheetsOAuthEnv { ASSETS: AssetBinding; SYNC_MESSAGE_BUDGET?: string }
+interface Env extends GoogleSheetsOAuthEnv, WhatsAppEnv { ASSETS: AssetBinding; SYNC_MESSAGE_BUDGET?: string }
 
 function json(body: Record<string, string>, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -35,6 +36,7 @@ export default {
       if (!googleSheetsOAuthReady(env)) return oauthNotConfiguredResponse()
       return handleGoogleSheets(request, env)
     }
+    if (url.pathname === '/api/webhooks/whatsapp') return handleWhatsAppWebhook(request, env)
     if (url.pathname.startsWith('/api/connections/')) {
       if (!googleSheetsOAuthReady(env)) return oauthNotConfiguredResponse()
       return handleConnections(request, env)

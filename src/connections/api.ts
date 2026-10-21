@@ -8,7 +8,7 @@ export const loadConnectionStatus = (session: SupabaseSession, organizationId: s
 export const loadConversationThreads = (session: SupabaseSession, organizationId: string) => {
   const params = new URLSearchParams({
     select: 'provider,thread_id,message_count,last_message_at,last_direction,last_inbound_at,last_outbound_at,counterpart_address,counterpart_name,subject,last_snippet,all_automated',
-    organization_id: `eq.${organizationId}`, order: 'last_message_at.desc', limit: '500',
+    organization_id: `eq.${organizationId}`, provider: 'eq.gmail', order: 'last_message_at.desc', limit: '500',
   })
   return apiRequest<ConversationThread[]>(session, `conversation_threads?${params}`)
 }
@@ -37,4 +37,19 @@ export async function startAuthorization(session: SupabaseSession, organizationI
     throw new Error(payload.message || (response.status === 503 ? 'Google connections are not configured on this server yet, so nothing was connected.' : response.status === 403 ? 'Your role in this workspace cannot connect sources. Ask an owner or admin.' : 'Could not start Google authorization.'))
   }
   return payload.authorization_url
+}
+
+export type ReadinessReport = {
+  checks: Record<string, boolean>
+  google_redirect_uri_to_register: string
+  sync_interval_minutes: number
+  message_budget_per_run: number
+  background_sync: { status: 'no_connection_to_observe' | 'waiting_for_first_sync' | 'running' | 'not_observed_recently'; newest_successful_sync_minutes_ago: number | null; connections_observed: number }
+}
+export async function loadReadiness(session: SupabaseSession, organizationId: string): Promise<ReadinessReport> {
+  const fresh = await getFreshSession(session)
+  const response = await fetch(`/api/connections/readiness?organization_id=${encodeURIComponent(organizationId)}`, { headers: { Authorization: `Bearer ${fresh.access_token}` } })
+  const payload = await response.json().catch(() => ({})) as Record<string, unknown>
+  if (!response.ok) throw new Error(response.status === 403 ? 'Only owners and admins can run the setup check.' : response.status === 503 ? 'The server is missing required settings, so the check cannot run: Google connections are not configured.' : 'The setup check failed.')
+  return payload as unknown as ReadinessReport
 }

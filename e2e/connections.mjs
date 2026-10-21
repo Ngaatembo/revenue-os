@@ -36,7 +36,7 @@ globalThis.fetch = async (input, init) => {
 }
 const env = {
   GOOGLE_CLIENT_ID: 'fake-client', GOOGLE_CLIENT_SECRET: 'fake-secret', GOOGLE_TOKEN_ENCRYPTION_KEY: crypto.randomBytes(32).toString('hex'),
-  APP_ORIGIN: BASE, SUPABASE_URL: BASE, SUPABASE_ANON_KEY: 'e2e-anon-key', SUPABASE_SERVICE_ROLE_KEY: SERVICE_KEY, SYNC_MESSAGE_BUDGET: '100',
+  APP_ORIGIN: BASE, SUPABASE_URL: BASE, SUPABASE_ANON_KEY: 'e2e-anon-key', SUPABASE_SERVICE_ROLE_KEY: SERVICE_KEY, SYNC_MESSAGE_BUDGET: '100', WHATSAPP_APP_SECRET: 'wa-app-secret-e2e', WHATSAPP_VERIFY_TOKEN: 'wa-verify-e2e',
   ASSETS: { fetch: async () => new Response('asset', { status: 404 }) },
 }
 const worker = (await import('../src/worker/index.ts')).default
@@ -313,6 +313,41 @@ try {
     assert(sql(`select count(distinct organization_id) from public.provider_connections where status <> 'disconnected'`) === '1', 'both belong to the same workspace')
   })
 
+  await step('setup check reports configuration without revealing any secret, and shows background sync is running', async () => {
+    await page.reload(); await page.getByRole('button', { name: /^Connections$/ }).first().click()
+    await page.getByText('Server setup check').click()
+    await page.getByRole('button', { name: 'Run setup check' }).click()
+    const report = page.getByTestId('setup-check-report')
+    await report.waitFor({ timeout: 15000 })
+    const text = await report.innerText()
+    assert((await report.locator('[data-ok=false]').count()) === 0, 'all checks should pass in this configuration: ' + text)
+    assert(text.includes(`${BASE}/api/integrations/google/callback`), 'shows the exact redirect URI to register')
+    assert(/Background sync: Running/.test(text), 'background sync observed: ' + text)
+    for (const secret of ['fake-secret', env.GOOGLE_TOKEN_ENCRYPTION_KEY, SERVICE_KEY, 'rt-secret-value']) assert(!text.includes(secret), 'a secret value leaked into the report')
+  })
+  await step('WhatsApp webhook (dormant receiver): signed deliveries are stored once, forged ones are rejected, and the product still marks WhatsApp unavailable', async () => {
+    const orgA = sql(`select organization_id from public.provider_connections where provider='gmail' limit 1`)
+    sql(`insert into public.whatsapp_numbers(phone_number_id, organization_id, display_phone_number) values ('109876543210', '${orgA}', '15550001111')`)
+    const body = JSON.stringify({ object: 'whatsapp_business_account', entry: [{ id: 'waba', changes: [{ field: 'messages', value: { messaging_product: 'whatsapp',
+      metadata: { display_phone_number: '15550001111', phone_number_id: '109876543210' }, contacts: [{ profile: { name: 'Kudzai' }, wa_id: '263771112222' }],
+      messages: [{ from: '263771112222', id: 'wamid.E2E1', timestamp: String(Math.floor(Date.now() / 1000) - 3 * 86400), type: 'text', text: { body: 'Hello, are you open on Saturday? ☕' } }] } }] }] })
+    const sig = 'sha256=' + crypto.createHmac('sha256', 'wa-app-secret-e2e').update(body).digest('hex')
+    const send = (b, signature) => realFetch(`${BASE}/api/webhooks/whatsapp`, { method: 'POST', headers: { 'content-type': 'application/json', ...(signature ? { 'x-hub-signature-256': signature } : {}) }, body: b })
+    const handshake = await realFetch(`${BASE}/api/webhooks/whatsapp?hub.mode=subscribe&hub.verify_token=wa-verify-e2e&hub.challenge=987`)
+    assert(handshake.status === 200 && (await handshake.text()) === '987', 'handshake')
+    assert((await realFetch(`${BASE}/api/webhooks/whatsapp?hub.mode=subscribe&hub.verify_token=wrong&hub.challenge=1`)).status === 403, 'wrong verify token')
+    assert((await send(body)).status === 401 && (await send(body, 'sha256=' + 'a'.repeat(64))).status === 401, 'forged deliveries rejected')
+    assert(sql(`select count(*) from public.communications where provider='whatsapp'`) === '0', 'nothing stored from forged deliveries')
+    assert((await send(body, sig)).status === 200 && (await send(body, sig)).status === 200, 'signed delivery accepted, replay acknowledged')
+    assert(sql(`select count(*) from public.communications where provider='whatsapp' and external_id='wamid.E2E1' and organization_id='${orgA}'`) === '1', 'stored exactly once')
+    const unknown = body.replace('109876543210', '999999999999'); assert((await send(unknown, 'sha256=' + crypto.createHmac('sha256', 'wa-app-secret-e2e').update(unknown).digest('hex'))).status === 200, 'unknown number acknowledged')
+    assert(sql(`select count(*) from public.communications where provider='whatsapp'`) === '1', 'unregistered numbers store nothing')
+    await page.reload(); await page.getByTestId('conversations-panel').waitFor({ timeout: 20000 })
+    assert((await page.getByTestId('conversations-panel').getByText('Kudzai').count()) === 0, 'WhatsApp threads are not turned into "waiting for reply" guesses: their replies are invisible to the API')
+    await page.getByRole('button', { name: /^Connections$/ }).first().click()
+    assert((await page.locator('[data-provider=whatsapp_business]').getAttribute('data-state')) === 'unavailable', 'WhatsApp stays unavailable in the product')
+    assert(sql(`select count(*) from public.communications where provider='whatsapp' and subject is null and snippet like 'Hello%'`) === '1', 'text preview stored, no body column')
+  })
   await step('disconnect revokes at the provider, removes the stored credential and keeps imported records', async () => {
     const kept = sql(`select count(*) from public.communications`)
     await page.reload(); await page.getByRole('button', { name: /^Connections$/ }).first().click()

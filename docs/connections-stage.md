@@ -27,7 +27,7 @@ Verification levels used below: **Implemented** (code exists) · **Locally teste
 2. **Cloudflare cron**: `scheduled()` is called by the test; the deployed trigger has not been observed. Check Worker logs for `scheduled_sync` after deploy.
 3. **Workers limits**: each run is bounded by `SYNC_MESSAGE_BUDGET` (default 100 messages ≈ 100+ subrequests). The free Workers plan allows 50 subrequests per invocation; set the budget to ≤ 40 there. Large mailboxes take many minutes.
 4. **Production database**: migration `20261021120000` is **not applied** to Supabase. It must be applied (owner approval) before deploy; the new UI reads `list_connection_status`, `communications`, `conversation_threads`.
-5. **Google Sheets** remains unproven against real Google (see `google-sheets-connector.md`). Its sync still runs only on demand because the invoice-import RPC needs a user session; automatic Sheets sync needs a service-role import path (next step).
+5. **Google Sheets** automatic sync (below) is simulated-tested only; it remains unproven against real Google (see `google-sheets-connector.md`).
 
 ## External dependencies the owner must resolve
 
@@ -40,3 +40,14 @@ Verification levels used below: **Implemented** (code exists) · **Locally teste
 ## Privacy
 
 Stored per email: id, thread id, direction, counterpart address/name, subject (≤300), Google's snippet (≤200), time, automated flag, mailbox address. No bodies, attachments or recipients lists. Automated/newsletter mail is stored but flagged and excluded from insights.
+
+
+## Update 2 — Sheets automation, readiness, WhatsApp route
+- **Automatic Google Sheets sync** (`connections/sheets.ts`, runner, migration `20261021130000`): authorize once and choose a tab; the shared runner re-checks it every 5 minutes. A single Drive "modified" call detects change; the sheet is re-read (in 5,000-row pages, ≤50,000 rows) only if modified; identical content is never re-imported; a changed snapshot is persisted by the existing import RPC (content-hash de-dup, upsert by invoice id) and reconciled by the existing snapshot finalizer (missing rows go to review, never deleted or assumed paid); opportunities are refreshed by the same evaluation the daily job uses. Owner-fixable problems (missing columns, deleted/unshared sheet) show immediately and are not re-read until the file changes. The Overview refreshes by itself when the sync finishes.
+- **Server setup check** (Connections page, owner/admin): shows which settings exist (booleans only), the exact redirect URI to register, and whether background sync is observed running.
+- **Migration rehearsal and rollback**: `scripts/rehearse-migration.sh`, `supabase/rollbacks/`. See `deployment-readiness.md`.
+- **WhatsApp**: dormant receiver and the smallest real test route: `whatsapp-route.md`.
+- **Real Gmail test procedure and expected delays**: `gmail-verification-runbook.md`.
+
+### Evidence (sandbox, 2026-10-21)
+`npm run test:domain` 241/241 · `scripts/test-db.sh` passes (new suites 10, 11, 12) · `npm run test:e2e:connections` 26/26 · `npm run test:e2e` 17/17 · `scripts/rehearse-migration.sh` PASSED · build and lint clean. All provider behaviour above is **simulated Google**.

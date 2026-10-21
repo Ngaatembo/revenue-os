@@ -56,3 +56,5 @@ jobs:
         uses: actions/checkout@v5
       - name: Replay migrations and run SQL journey and security tests
         run: ./scripts/test-db.sh
+      - name: Rehearse the release migrations and their rollback on a disposable database
+        run: ./scripts/rehearse-migration.sh

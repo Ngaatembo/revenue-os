@@ -163,3 +163,7 @@
 .fallback-import h3 { margin: 0; font-size: 15px; }
 .fallback-import p { margin: 0; color: var(--muted); font-size: 13px; max-width: 70ch; }
 .first-run-actions { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
+.auth-legal { display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; padding: 6px 20px 28px; font-size: 14px; color: var(--muted); }
+.auth-legal a { color: var(--action); font-weight: 600; text-decoration: none; min-height: 24px; }
+.auth-legal a:hover { text-decoration: underline; }
+.welcome-fine a { color: var(--action); font-weight: 600; }

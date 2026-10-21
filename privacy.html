@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Privacy Policy — Revenue OS</title>
+  <meta name="description" content="How Revenue OS handles your information, including exactly what it reads from Gmail and Google Sheets, what it stores, how long, and how to disconnect or delete it." />
+  <link rel="canonical" href="{{SITE_URL}}/privacy" />
+  <meta name="robots" content="index,follow" />
+  <meta name="theme-color" content="#0064ea" />
+  <link rel="icon" type="image/png" sizes="64x64" href="/favicon.png" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <meta property="og:title" content="Privacy Policy — Revenue OS" />
+  <meta property="og:url" content="{{SITE_URL}}/privacy" />
+  <link rel="stylesheet" href="/src/legal/legal.css" />
+</head>
+<body class="legal-body">
+  <a class="legal-skip" href="#content">Skip to the policy</a>
+  <header class="legal-header"><div class="legal-header-inner">
+    <a class="legal-brand" href="/"><img src="/revenue-os-mark.png" alt="" width="32" height="32" />Revenue OS</a>
+    <nav class="legal-nav" aria-label="Site"><a href="/">Home</a><a href="/privacy" aria-current="page">Privacy Policy</a><a href="/terms">Terms of Service</a></nav>
+  </div></header>
+
+  <main id="content" class="legal-main">
+    <h1>Privacy Policy</h1>
+    <p class="legal-meta">Effective date: {{EFFECTIVE_DATE}}</p>
+
+    <div class="legal-summary">
+      <p><strong>In short.</strong> Revenue OS helps owner-run businesses see which customers are waiting for a reply and which invoices are overdue, using the owner's Gmail and Google Sheets. It asks Google for read-only access and never sends, edits or deletes your email or spreadsheets.</p>
+      <p>From Gmail it stores the other person's address and name, the subject, a short preview (up to 200 characters) and dates. It does not request message bodies or attachments. You can disconnect at any time and choose to delete what was already synced. We do not sell your data, show ads, or use Google data to train AI models.</p>
+    </div>
+
+    <nav class="legal-toc" aria-label="Contents"><strong>Contents</strong><ol>
+      <li><a href="#who">Who operates Revenue OS</a></li>
+      <li><a href="#collect">Information we collect</a></li>
+      <li><a href="#google">Google data: exactly what we access and store</a></li>
+      <li><a href="#use">Why we use information</a></li>
+      <li><a href="#limited-use">Google API Services User Data Policy</a></li>
+      <li><a href="#providers">Where information is stored and who processes it</a></li>
+      <li><a href="#security">Token security and access controls</a></li>
+      <li><a href="#retention">How long we keep information</a></li>
+      <li><a href="#disconnect">Disconnecting, revoking and deleting</a></li>
+      <li><a href="#rights">Your requests and choices</a></li>
+      <li><a href="#transfers">International processing</a></li>
+      <li><a href="#incidents">Security incidents</a></li>
+      <li><a href="#children">Children</a></li>
+      <li><a href="#changes">Changes to this policy</a></li>
+      <li><a href="#contact">Contact</a></li>
+    </ol></nav>
+
+    <h2 id="who">1. Who operates Revenue OS</h2>
+    <p>Revenue OS is operated by: <strong>{{OPERATOR_NAME}}</strong>.</p>
+    <p>Postal address: {{POSTAL_ADDRESS}}</p>
+    <p>Contact for privacy questions and requests: {{CONTACT_EMAIL}}</p>
+    <p>When you use Revenue OS for your business, you decide what business information goes into it. For the customer and invoice information you bring into your workspace, you are generally the party responsible for it, and Revenue OS processes it on your behalf to provide the service.</p>
+
+    <h2 id="collect">2. Information we collect</h2>
+    <h3>From you</h3>
+    <ul>
+      <li><strong>Account details:</strong> your email address and, if you give it, your name. If you sign in with an email and password, the password is handled by our authentication provider (Supabase Auth); Revenue OS does not store it itself. You can also sign in with an email link or with Google.</li>
+      <li><strong>Workspace details:</strong> the workspace name, its members and their roles.</li>
+      <li><strong>Business records you add or import:</strong> invoices (customer identifier and name, invoice number, currency, amounts, issue and due dates), payment records you import, leads you enter (name, business, phone or email, source, value, notes), quotations, deposits, tasks, and the notes you write on invoices and conversations.</li>
+      <li><strong>Your follow-up choices:</strong> which conversations you marked handled or snoozed, reminder dates, notes, and email senders you chose to hide.</li>
+      <li><strong>Reminder drafts:</strong> text Revenue OS drafts for you to review. Revenue OS does not send messages to your customers; you send them yourself, outside Revenue OS.</li>
+    </ul>
+    <h3>From Google, when you connect it</h3>
+    <p>See <a href="#google">section 3</a>.</p>
+    <h3>Technical information</h3>
+    <ul>
+      <li>Your sign-in session is kept in your browser's local storage so you stay signed in. Revenue OS does not use advertising cookies and does not load third-party analytics scripts.</li>
+      <li>Our hosting provider (Cloudflare) processes ordinary request information such as IP address and browser type to deliver the service and may keep request logs. Our own background job writes a single log line per run containing counts only (it does not contain email content).</li>
+    </ul>
+
+    <h2 id="google">3. Google data: exactly what we access and store</h2>
+    <p>Revenue OS connects to Google only when an owner or admin of a workspace chooses to connect. Access is read-only. It asks Google for permission through Google's own consent screen, and you can withdraw it at any time (see <a href="#disconnect">section 9</a>).</p>
+
+    <h3>Gmail</h3>
+    <div class="legal-table-wrap"><table>
+      <caption>Gmail access, from the application's code</caption>
+      <tbody>
+        <tr><th scope="row">Permissions requested</th><td><code>https://www.googleapis.com/auth/gmail.readonly</code> (Gmail read-only access), plus <code>openid</code> and <code>email</code> so Revenue OS knows which Google account was connected.</td></tr>
+        <tr><th scope="row">What that permission allows</th><td>Google's read-only Gmail permission is broader than what Revenue OS uses: technically it would allow reading entire messages, attachments and settings. Revenue OS is built not to do that. It cannot send, change, label, archive or delete anything with this permission.</td></tr>
+        <tr><th scope="row">What Revenue OS asks Gmail for</th><td>The connected mailbox's address; a list of message identifiers (for the first sync, messages from the last 90 days, excluding Promotions, Social, Forums, Spam, Trash and chats); then, for each message, only its identifiers, thread identifier, labels, date, a short preview (Gmail's "snippet"), and these headers: From, To, Subject, List-Unsubscribe, Precedence and Auto-Submitted. Afterwards it asks Gmail which new messages arrived and fetches the same fields for them. Drafts, chats, Spam, Trash, Promotions, Social and Forums messages are skipped and nothing is stored from them.</td></tr>
+        <tr><th scope="row">What it stores</th><td>For each message: the other party's email address and display name, the subject (up to 300 characters), the preview (up to 200 characters), the date, whether you sent or received it, a flag for whether it looks automated, the message and thread identifiers, and the connected mailbox's address.</td></tr>
+        <tr><th scope="row">What it does not store or request</th><td>Message bodies, attachments, or the full headers. The List-Unsubscribe, Precedence and Auto-Submitted headers are used only to decide whether a message looks automated; their values are not stored. Because the subject and preview are parts of your emails, they can contain personal or confidential information, and Revenue OS stores them.</td></tr>
+        <tr><th scope="row">What it is used for</th><td>To show which customers wrote and have not had a reply, which conversations went quiet after you wrote last, and a link back to the original email in Gmail.</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>Google Sheets and Google Drive</h3>
+    <div class="legal-table-wrap"><table>
+      <caption>Google Sheets and Drive access, from the application's code</caption>
+      <tbody>
+        <tr><th scope="row">Permissions requested</th><td><code>https://www.googleapis.com/auth/spreadsheets.readonly</code>, <code>https://www.googleapis.com/auth/drive.metadata.readonly</code>, plus <code>openid</code> and <code>email</code>.</td></tr>
+        <tr><th scope="row">What Revenue OS asks Google for</th><td>From Drive, only a list of your spreadsheets (identifier, name, type, last-modified time and link) so you can choose one, and the last-modified time of the chosen spreadsheet to notice changes. From Sheets, the title and tab names of the chosen spreadsheet and the cell values of the tab you select. It cannot read other Drive files and cannot edit anything.</td></tr>
+        <tr><th scope="row">What it stores</th><td>The chosen spreadsheet's identifier, name and tab; the invoice rows imported from it (customer identifier and name, invoice number, currency, amounts, issue and due dates); a fingerprint of the imported content used to avoid duplicates; and synchronisation status.</td></tr>
+        <tr><th scope="row">What it is used for</th><td>To find overdue invoices and keep them up to date without manual uploads.</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>Signing in with Google</h3>
+    <p>If you choose "Continue with Google" to sign in, Google shares your basic profile (name and email address) with our authentication provider so it can create or find your account. This is separate from connecting Gmail or Sheets.</p>
+
+    <h2 id="use">4. Why we use information</h2>
+    <ul>
+      <li>To provide Revenue OS: show who is waiting for a reply, who owes you money, and what you decided to follow up.</li>
+      <li>To keep your workspace up to date by synchronising automatically in the background.</li>
+      <li>To keep your account and workspace secure, and to troubleshoot problems you report.</li>
+      <li>To meet legal obligations.</li>
+    </ul>
+    <p>We do not use your information for advertising, we do not sell it, and we do not build profiles from it.</p>
+
+    <h2 id="limited-use">5. Google API Services User Data Policy</h2>
+    <p>Revenue OS's use and transfer to any other app of information received from Google APIs will adhere to the <a href="https://developers.google.com/terms/api-services-user-data-policy" rel="noopener">Google API Services User Data Policy</a>, including the Limited Use requirements. In particular:</p>
+    <ul>
+      <li>We use Google user data only to provide and improve the user-facing features described in this policy.</li>
+      <li>We do not transfer Google user data to others except as needed to provide those features (for example to the infrastructure providers in <a href="#providers">section 6</a>), to comply with law, or as part of a merger or sale with notice to you.</li>
+      <li>We do not use Google user data for advertising, including retargeting or interest-based advertising.</li>
+      <li>We do not allow people to read your Google user data unless you give specific consent for particular messages, it is necessary for security or to investigate abuse, or the law requires it.</li>
+      <li>We do not use Google user data to develop, improve or train generalised artificial intelligence or machine-learning models. Revenue OS does not currently use any AI model on your data.</li>
+    </ul>
+
+    <h2 id="providers">6. Where information is stored and who processes it</h2>
+    <div class="legal-table-wrap"><table>
+      <caption>Service providers (subprocessors) used today</caption>
+      <thead><tr><th scope="col">Provider</th><th scope="col">What it does for Revenue OS</th><th scope="col">Location</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">Supabase</th><td data-label="What it does for Revenue OS">Database (PostgreSQL) holding all workspace data, and authentication (accounts, sign-in sessions, sign-in emails).</td><td data-label="Location">Database project hosted in West EU (Ireland), AWS region eu-west-1.</td></tr>
+        <tr><th scope="row">Cloudflare</th><td data-label="What it does for Revenue OS">Hosts the application and its background jobs, delivers the website, and keeps request logs.</td><td data-label="Location">Runs on Cloudflare's global network, so requests are handled at locations near the user.</td></tr>
+        <tr><th scope="row">Google</th><td data-label="What it does for Revenue OS">The Gmail, Sheets and Drive services you authorise, and Google sign-in if you choose it.</td><td data-label="Location">As described by Google.</td></tr>
+      </tbody>
+    </table></div>
+    <p>Revenue OS does not currently use an advertising network, an analytics service, or a payment processor. If this changes, this policy will be updated first. Sign-in and confirmation emails are sent through the email service configured in our authentication provider.</p>
+
+    <h2 id="security">7. Token security and access controls</h2>
+    <ul>
+      <li><strong>Google refresh tokens</strong> are encrypted with AES-256-GCM using a key held as a secret in the application's server environment. The key is not stored in the database or sent to browsers. A token is decrypted only inside server code, when a background job or action needs to talk to Google.</li>
+      <li><strong>Where tokens are kept:</strong> the table holding connection credentials has row-level security enforced and grants no access to browsers or signed-in users. Only the server component can read it.</li>
+      <li><strong>Short-lived access tokens</strong> are obtained from Google when needed and are not written to the database.</li>
+      <li><strong>Sign-in handshake:</strong> the one-time state value used while connecting Google is stored hashed and expires after 10 minutes.</li>
+      <li><strong>Workspace isolation:</strong> every workspace's data is protected by database row-level security so one workspace's members cannot read another's.</li>
+      <li><strong>Roles:</strong> only an owner or admin can connect or disconnect a Google account; owners, admins and operators can change follow-up tracking; viewers can only read.</li>
+      <li>Traffic between your browser and Revenue OS uses HTTPS.</li>
+    </ul>
+    <p>No system is perfectly secure, and we do not claim any security certification. We describe only protections that exist in the product today.</p>
+
+    <h2 id="retention">8. How long we keep information</h2>
+    <p>These are the behaviours that actually exist today.</p>
+    <ul>
+      <li><strong>Google access tokens (refresh tokens):</strong> removed from our database immediately when you disconnect, or when Google tells us you revoked access.</li>
+      <li><strong>Synced Gmail information:</strong> kept for as long as the workspace exists, unless you choose "Disconnect and delete synced email data" (section 9) or ask us to delete it. There is no automatic expiry: the first sync reads the last 90 days, and new messages keep being added while Gmail stays connected.</li>
+      <li><strong>Invoices imported from Google Sheets or uploaded files:</strong> kept for as long as the workspace exists. Disconnecting Google Sheets stops further reading but does not delete invoices already imported.</li>
+      <li><strong>Your notes, follow-up marks and other workspace records:</strong> kept for as long as the workspace exists.</li>
+      <li><strong>Sign-in handshake values:</strong> expire after 10 minutes.</li>
+      <li><strong>Provider logs:</strong> kept according to Cloudflare's and Supabase's own settings and policies.</li>
+    </ul>
+    <p>We do not currently run a scheduled job that deletes old data. Deleting a whole workspace or account is done on request (section 10).</p>
+
+    <h2 id="disconnect">9. Disconnecting, revoking and deleting</h2>
+    <ul>
+      <li><strong>Disconnect Gmail (Connections page):</strong> Revenue OS stops reading the mailbox, removes its stored access, and asks Google to revoke the permission. You choose either to keep the information already synced, or to <em>delete the synced email data</em>, which removes the stored messages' details, your follow-up marks and notes on those conversations, and your hidden-sender list for that workspace, and resets the synchronisation so a later reconnection starts afresh.</li>
+      <li><strong>Disconnect Google Sheets:</strong> Revenue OS stops reading the spreadsheet, removes its stored access, and asks Google to revoke the permission. Invoices already imported are kept.</li>
+      <li><strong>Revoke from Google:</strong> you can remove Revenue OS at any time at <a href="https://myaccount.google.com/permissions" rel="noopener">myaccount.google.com/permissions</a>. When Google reports that access was revoked, Revenue OS removes its stored token and shows that you need to reconnect. Information already synced stays until you delete it or ask us to.</li>
+      <li><strong>Revocation by Google:</strong> while the Revenue OS Google app is in testing, Google expires connections about every 7 days and you will be asked to reconnect.</li>
+    </ul>
+
+    <h2 id="rights">10. Your requests and choices</h2>
+    <p>You can ask us to give you a copy of, correct, or delete the information we hold about you or your workspace, or to delete your account and workspace, by contacting us at the address in section 15. Today these requests are handled manually by the operator; there is no self-service export or whole-account deletion in the product yet, and we do not promise a specific response time in this draft. Deleting a workspace also removes the information stored for it in Revenue OS's database. Your emails remain in your Gmail account and your spreadsheets in your Google account, which Revenue OS cannot change.</p>
+    <p>If you are in a place where data-protection law gives you additional rights, you can use them by contacting us. If you are a customer of a business that uses Revenue OS and want information about your own data, please contact that business first.</p>
+
+    <h2 id="transfers">11. International processing</h2>
+    <p>Workspace data is stored by Supabase in Ireland. Cloudflare processes requests on a global network. Google processes data under its own terms. The operator and authorised staff may access information from other countries. We do not make any claim here about compliance with specific cross-border transfer mechanisms.</p>
+
+    <h2 id="incidents">12. Security incidents</h2>
+    <p>If we become aware of a security incident that affects your information, we will tell the affected workspace owner without undue delay, using the contact details on the account. To report a security problem or concern, write to {{CONTACT_EMAIL}}.</p>
+
+    <h2 id="children">13. Children</h2>
+    <p>Revenue OS is a business tool and is not directed at children. If you believe a child has given us information, contact us and we will delete it.</p>
+
+    <h2 id="changes">14. Changes to this policy</h2>
+    <p>When we change this policy we will update the effective date above. For material changes we will tell account owners by email or inside the product before the change takes effect. If we ever want to use Google user data in a new way, we will ask for your consent first.</p>
+
+    <h2 id="contact">15. Contact</h2>
+    <p>{{OPERATOR_NAME}}<br />{{POSTAL_ADDRESS}}<br />{{CONTACT_EMAIL}}</p>
+  </main>
+
+  <footer class="legal-footer"><div class="legal-footer-inner">
+    <span>Revenue OS</span>
+    <span><a href="/">Home</a> · <a href="/privacy">Privacy Policy</a> · <a href="/terms">Terms of Service</a></span>
+  </div></footer>
+</body>
+</html>

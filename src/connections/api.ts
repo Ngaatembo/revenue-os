@@ -28,7 +28,7 @@ async function workerPost(session: SupabaseSession, path: string, body: Record<s
   return payload
 }
 export const syncNow = (session: SupabaseSession, organizationId: string, provider: string) => workerPost(session, '/api/connections/sync', { organization_id: organizationId, provider })
-export const disconnectProvider = (session: SupabaseSession, organizationId: string, provider: string) => workerPost(session, '/api/connections/disconnect', { organization_id: organizationId, provider })
+export const disconnectProvider = (session: SupabaseSession, organizationId: string, provider: string, deleteSyncedData = false) => workerPost(session, '/api/connections/disconnect', { organization_id: organizationId, provider , ...(deleteSyncedData ? { delete_synced_data: true } : {}) })
 
 export async function startAuthorization(session: SupabaseSession, organizationId: string, provider: 'gmail' | 'google_sheets'): Promise<string> {
   const fresh = await getFreshSession(session)

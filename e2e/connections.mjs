@@ -108,6 +108,56 @@ try {
     }
     await anon.close()
   })
+  await step('the Privacy Policy and Terms of Service are public, linked from the homepage, accurate to the requested scopes, and fit a phone screen', async () => {
+    const anon = await browser.newContext({ viewport: { width: 1280, height: 900 } })
+    const p = await anon.newPage()
+    await p.goto(BASE)
+    const links = p.getByTestId('auth-legal-links')
+    await links.getByRole('link', { name: 'Privacy Policy' }).waitFor(); await links.getByRole('link', { name: 'Terms of Service' }).waitFor()
+    await p.getByTestId('welcome-google-note').getByRole('link', { name: /Exactly what it reads and stores/ }).waitFor()
+    // Both pages load without signing in, straight from the server (not the app shell), with their own metadata.
+    for (const [route, title, mustSay] of [['/privacy', 'Privacy Policy — Revenue OS', 'https://www.googleapis.com/auth/gmail.readonly'], ['/terms', 'Terms of Service — Revenue OS', 'does not send messages to your customers']]) {
+      const res = await realFetch(`${BASE}${route}`)
+      const html = await res.text()
+      assert(res.status === 200 && (res.headers.get('content-type') ?? '').includes('text/html'), `${route} is served as a page: ${res.status}`)
+      assert(html.includes(`<title>${title}</title>`) && html.includes(`<link rel="canonical" href="https://revenue-os.ngaatendwew.workers.dev${route}"`) && html.includes('content="index,follow"'), `${route} has its own title, canonical URL and indexing`)
+      assert(!html.includes('id="root"') && !html.includes('<script'), `${route} is a plain page, readable without the app or JavaScript`)
+      assert(html.includes(mustSay), `${route} says what it must`)
+    }
+    // Navigate by clicking, the way a Google reviewer would.
+    await links.getByRole('link', { name: 'Privacy Policy' }).click()
+    await p.getByRole('heading', { level: 1, name: 'Privacy Policy' }).waitFor({ timeout: 10000 })
+    assert(p.url().endsWith('/privacy'), 'the privacy link goes to /privacy')
+    await p.getByRole('navigation', { name: 'Site' }).getByRole('link', { name: 'Terms of Service' }).click()
+    await p.getByRole('heading', { level: 1, name: 'Terms of Service' }).waitFor({ timeout: 10000 })
+    await p.getByRole('navigation', { name: 'Site' }).getByRole('link', { name: 'Home' }).click()
+    await p.getByTestId('auth-welcome').waitFor({ timeout: 10000 })
+    // The scope list on the page matches what the Gmail authorization request really asks Google for.
+    await p.goto(`${BASE}/privacy`)
+    await p.locator('#google').waitFor()
+    const policy = await p.locator('main').innerText()
+    for (const scope of ['gmail.readonly', 'spreadsheets.readonly', 'drive.metadata.readonly']) assert(policy.includes(scope), `the policy lists ${scope}`)
+    assert((await p.getByText(/owner to provide before launch/).count()) >= 3, 'unresolved operator details are visibly marked, not invented')
+    // Phone: no sideways scrolling, text stays readable, tap targets in the nav are tall enough.
+    await p.setViewportSize({ width: 390, height: 844 })
+    for (const route of ['/privacy', '/terms']) {
+      await p.goto(`${BASE}${route}`)
+      const overflow = await p.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
+      assert(overflow <= 1, `${route} has no horizontal page scroll on a phone (overflow ${overflow}px)`)
+      const clipped = await p.locator('.legal-table-wrap').evaluateAll((els) => els.filter((el) => el.scrollWidth - el.clientWidth > 1).length)
+      assert(clipped === 0, `${route}: no table is cut off behind sideways scrolling on a phone (${clipped} clipped)`)
+      const heights = await p.locator('.legal-nav a').evaluateAll((els) => els.map((el) => el.getBoundingClientRect().height))
+      assert(heights.every((h) => h >= 44), `${route} nav links are at least 44px tall: ${heights}`)
+    }
+    if (process.env.E2E_SHOTS) {
+      fs.mkdirSync(process.env.E2E_SHOTS, { recursive: true })
+      await p.goto(`${BASE}/privacy`); await p.screenshot({ path: path.join(process.env.E2E_SHOTS, 'privacy-mobile.png'), fullPage: true })
+      await p.setViewportSize({ width: 1280, height: 900 }); await p.screenshot({ path: path.join(process.env.E2E_SHOTS, 'privacy-desktop.png'), fullPage: true })
+      await p.emulateMedia({ colorScheme: 'dark' }); await sleep(500); await p.screenshot({ path: path.join(process.env.E2E_SHOTS, 'privacy-dark.png'), fullPage: true })
+      await p.goto(BASE); await sleep(500); await p.screenshot({ path: path.join(process.env.E2E_SHOTS, 'home-with-links.png'), fullPage: true })
+    }
+    await anon.close()
+  })
   await step('after signing in, a new owner is taken straight to Connections with honest setup steps and no pop-up', async () => {
     await page.goto(BASE)
     await page.getByRole('heading', { name: 'Connect your business once' }).waitFor({ timeout: 20000 })
@@ -497,7 +547,8 @@ try {
   await step('connecting a different mailbox starts fresh: counters reset and the old mailbox is not shown as the new one', async () => {
     google.state.accountEmail = 'second@shop.test'
     await page.reload(); await page.getByRole('button', { name: /^Connections$/ }).first().click()
-    await page.locator('[data-provider=gmail]').getByRole('button', { name: 'Disconnect' }).click() // switching mailbox = disconnect, then connect the other one
+    await page.locator('[data-provider=gmail]').getByRole('button', { name: 'Disconnect', exact: true }).click() // switching mailbox = disconnect, then connect the other one
+    await page.getByTestId('disconnect-panel').getByRole('button', { name: 'Disconnect and keep synced data' }).click()
     await page.locator('[data-provider=gmail][data-state=not_connected]').waitFor({ timeout: 15000 })
     const grants = google.state.tokenGrants
     await page.locator('[data-provider=gmail]').getByRole('button', { name: 'Connect Gmail' }).click()
@@ -514,7 +565,8 @@ try {
   await step('disconnect revokes at the provider, removes the stored credential and keeps imported records', async () => {
     const kept = sql(`select count(*) from public.communications`)
     await page.reload(); await page.getByRole('button', { name: /^Connections$/ }).first().click()
-    await page.locator('[data-provider=gmail]').getByRole('button', { name: 'Disconnect' }).click()
+    await page.locator('[data-provider=gmail]').getByRole('button', { name: 'Disconnect', exact: true }).click()
+    await page.getByTestId('disconnect-panel').getByRole('button', { name: 'Disconnect and keep synced data' }).click()
     await page.locator('[data-provider=gmail][data-state=not_connected]').waitFor({ timeout: 15000 })
     assert(google.state.revokeCalls === 2, 'each disconnect revoked the token at the provider')
     assert(conn('status') === 'disconnected' && conn('encrypted_refresh_token') === '', 'credential removed')
@@ -526,6 +578,42 @@ try {
     await page.locator('[data-provider=gmail]').getByRole('button', { name: 'Connect Gmail' }).click()
     await page.getByText(/authorization did not complete, so nothing was connected/).waitFor({ timeout: 20000 })
     assert(conn('status') === 'disconnected', 'must remain disconnected')
+  })
+  await step('disconnect with "delete synced email data" removes the mailbox data, tracking, mutes and counters, and touches nothing else', async () => {
+    google.state.forceScope = null
+    await page.locator('[data-provider=gmail]').getByRole('button', { name: 'Connect Gmail' }).click()
+    for (let i = 0; i < 150 && conn('status') === 'disconnected'; i += 1) await sleep(100)
+    await settle()
+    const orgA = sql(`select organization_id from public.provider_connections where provider='gmail' limit 1`)
+    assert(Number(sql(`select count(*) from public.communications where organization_id='${orgA}' and provider='gmail'`)) > 0, 'there is synced mailbox data to delete')
+    const thread = sql(`select thread_id from public.communications where organization_id='${orgA}' and provider='gmail' limit 1`)
+    sql(`insert into public.conversation_tracking(organization_id,provider,thread_id,status,handled_at,note) values ('${orgA}','gmail','${thread}','handled',now(),'private note')`)
+    sql(`insert into public.muted_senders(organization_id,address) values ('${orgA}','noise@vendor.test')`)
+    const otherData = sql(`select (select count(*) from public.communications where organization_id <> '${orgA}')::text || ':' || (select count(*) from public.invoices)::text`)
+    const revokesBefore = google.state.revokeCalls
+    await page.reload(); await page.getByRole('button', { name: /^Connections$/ }).first().click()
+    await page.locator('[data-provider=gmail]').getByRole('button', { name: 'Disconnect', exact: true }).click()
+    await page.getByTestId('disconnect-panel').getByRole('button', { name: 'Disconnect and delete synced email data' }).click()
+    await page.locator('[data-provider=gmail][data-state=not_connected]').waitFor({ timeout: 15000 })
+    assert(sql(`select count(*) from public.communications where organization_id='${orgA}' and provider='gmail'`) === '0', 'synced email data deleted')
+    assert(sql(`select count(*) from public.conversation_tracking where organization_id='${orgA}'`) === '0', 'follow-up marks and notes deleted')
+    assert(sql(`select count(*) from public.muted_senders where organization_id='${orgA}'`) === '0', 'muted senders deleted')
+    assert(conn('status') === 'disconnected' && conn('encrypted_refresh_token') === '', 'credential removed')
+    assert(conn('records_synced') === '0' && conn('initial_sync_completed_at') === '' && conn('sync_cursor') === '', 'counters and cursor reset so a reconnect starts clean')
+    assert(google.state.revokeCalls === revokesBefore + 1, 'the token was revoked at Google')
+    assert(sql(`select (select count(*) from public.communications where organization_id <> '${orgA}')::text || ':' || (select count(*) from public.invoices)::text`) === otherData, 'other workspaces and imported invoices untouched')
+  })
+  await step('deleting synced data is only offered for Gmail; a Google Sheets disconnect revokes at Google and keeps imported invoices', async () => {
+    const orgA = sql(`select organization_id from public.provider_connections where provider='gmail' limit 1`)
+    const bad = await realFetch(`${BASE}/api/connections/disconnect`, { method: 'POST', headers: { Authorization: `Bearer ${sessionFor(A.id, A.email).access_token}`, apikey: 'k', 'content-type': 'application/json' }, body: JSON.stringify({ organization_id: orgA, provider: 'google_sheets', delete_synced_data: true }) })
+    assert(bad.status === 400, 'a Sheets disconnect cannot be asked to delete data: ' + bad.status)
+    const invoices = sql(`select count(*) from public.invoices`)
+    const revokesBefore = google.state.revokeCalls
+    await page.getByRole('button', { name: 'Disconnect Google' }).first().click()
+    await page.locator('[data-provider=google_sheets][data-state=not_connected]').waitFor({ timeout: 15000 })
+    assert(google.state.revokeCalls === revokesBefore + 1, 'Sheets disconnect also revoked the token at Google')
+    assert(sql(`select encrypted_refresh_token from public.provider_connections where provider='google_sheets' limit 1`) === '', 'Sheets credential removed')
+    assert(sql(`select count(*) from public.invoices`) === invoices, 'imported invoices kept')
   })
 } catch (error) {
   console.error('E2E SETUP ERROR', error)

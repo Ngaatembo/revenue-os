@@ -114,6 +114,7 @@ export default function AuthApp() {
         <li><span aria-hidden="true">3</span><div><strong>See what needs you</strong><small>Estimates are labelled as estimates. Nothing is ever sent to a customer without you.</small></div></li>
       </ol>
       <p className="welcome-fine">Works with Gmail and Google Sheets today. WhatsApp Business needs Meta approval and is not available yet. No account to connect? You can upload an invoice file instead.</p>
+      <p className="welcome-fine" data-testid="welcome-google-note">If you connect Gmail, Revenue OS asks Google for read-only access, stores the other person's address, the subject, a short preview and the dates of messages (not message bodies or attachments), and never sends, changes or deletes your email. You can disconnect and delete what was synced at any time. <a href="/privacy#google">Exactly what it reads and stores</a>.</p>
     </section>
     <section className="auth-card">
       <p className="auth-eyebrow">GET STARTED</p>
@@ -160,5 +161,6 @@ export default function AuthApp() {
       <p className="auth-footnote">Your business records are scoped to your workspace. Do not upload client financial data until you have confirmed access and account security.</p>
     </section>
     </div>
+    <footer className="auth-legal" data-testid="auth-legal-links"><a href="/privacy">Privacy Policy</a><span aria-hidden="true">·</span><a href="/terms">Terms of Service</a></footer>
   </main>
 }

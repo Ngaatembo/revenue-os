@@ -161,3 +161,11 @@ test('rate limiting surfaces a typed error and keeps rows already saved', async 
 test('cursor parsing tolerates garbage', () => {
   assert.deepEqual(parseCursor(null), {}); assert.deepEqual(parseCursor('{not json'), {}); assert.deepEqual(parseCursor('123'), {})
 })
+
+test('messages in spam, trash, promotions, social or forums are never stored, matching what the first sync excludes', () => {
+  for (const label of ['SPAM', 'TRASH', 'CATEGORY_PROMOTIONS', 'CATEGORY_SOCIAL', 'CATEGORY_FORUMS']) {
+    assert.equal(parseGmailMessage(msg(1, { labelIds: ['INBOX', label] }), OWNER), null, label)
+  }
+  assert.ok(parseGmailMessage(msg(2, { labelIds: ['INBOX', 'CATEGORY_PRIMARY'] }), OWNER), 'primary mail is still stored')
+  assert.ok(parseGmailMessage(msg(3, { labelIds: ['INBOX', 'CATEGORY_UPDATES'] }), OWNER), 'updates are stored (flagged automated by the sender rules, not excluded)')
+})

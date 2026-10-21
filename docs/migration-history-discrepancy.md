@@ -72,3 +72,18 @@ Two earlier local files were renamed to match hosted versions:
 
 Membership security expectations remain: owners/admins may leave a workspace, cannot rejoin themselves,
 nobody may change their own role, and the last owner cannot be removed.
+
+
+## Resolution — 2026-10-21
+
+Compared a fresh local database built from every file in `supabase/migrations/` against the hosted schema
+(public and private schemas): columns, constraints, indexes, policies, triggers, RLS flags, table and function
+grants, and function bodies. All matched, with two cosmetic exceptions: hosted function bodies use CRLF line
+endings, and `complete_source_sync_snapshot` differs only by a local variable that does not change behaviour.
+The `revenue-os-daily-evaluation` cron job (`30 5 * * *`) matches `20261019220000`.
+
+The four versions `20261019200000`, `20261019210000`, `20261019220000` and `20261020100000` were then added to
+`supabase_migrations.schema_migrations` as ledger-only rows (statement body states they were not re-executed).
+They were deliberately **not** re-applied: re-running them could re-grant table access that
+`20261020163000_tighten_data_api_grants` removed. Local files for all 28 hosted versions now exist, including
+`20261020163000`, recovered from the hosted ledger.

@@ -27,6 +27,9 @@ jobs:
         run: npm ci
       - name: Type-check and build
         run: npm run build
+
+      - name: Scan the browser bundle for server-only secrets
+        run: npm run check:bundle
       - name: Domain tests
         run: npm run test:domain
       - name: Lint

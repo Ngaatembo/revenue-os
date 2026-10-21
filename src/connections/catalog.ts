@@ -20,14 +20,14 @@ export const PROVIDERS: ProviderInfo[] = [
   {
     id: 'gmail', name: 'Gmail (business email)', availability: 'available',
     summary: 'Finds customer enquiries and conversations that have gone quiet.',
-    access: ['Sender, recipient, subject, date and a short preview of messages from the last 90 days', 'Whether each message was sent or received', 'New messages afterwards, checked automatically'],
+    access: ['Sender, recipient, subject, date and a short preview of messages from the last 90 days', 'Whether each message was sent or received', 'New messages afterwards, checked automatically', 'Google calls this permission “read-only Gmail access”, which technically allows reading whole messages. Revenue OS asks Gmail only for message headers and a short preview, and does not request message bodies or attachments.'],
     usedFor: ['Show customers who wrote to you and have not had a reply', 'Show conversations where you replied and the customer went silent', 'Keep a link back to the original email for every item'],
     dependency: 'Gmail read access is a restricted Google permission. While the Google app is in testing, only accounts added as test users can connect, and Google expires the access about every 7 days, so you will be asked to reconnect weekly. Public use needs Google verification and a security assessment.',
   },
   {
     id: 'google_sheets', name: 'Google Sheets', availability: 'available',
     summary: 'Reads your invoice spreadsheet so overdue balances are found automatically.',
-    access: ['Spreadsheet names (to let you choose one)', 'The values in the invoice tab you select — read only'],
+    access: ['Spreadsheet names and last-modified times (to let you choose one)', 'The values in the invoice tab you select — read only. Revenue OS never edits your spreadsheet.'],
     usedFor: ['Detect overdue invoices and estimate possible recovery', 'Notice when a row disappears from the sheet and ask you what happened'],
   },
   {

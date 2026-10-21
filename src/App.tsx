@@ -10,6 +10,7 @@ import { partitionCrossSourceDuplicates } from './domain/importDuplicates'
 import { detectStalledLeads } from './domain/stalledLeads'
 import { buildRecommendation } from './domain/recommendation'
 import { classifySyncFailure } from './lib/opportunityQueries'
+import { disconnectProvider } from './connections/api'
 import { ConnectionsPage } from './connections/ConnectionsPage'
 import { ConversationsPanel } from './connections/ConversationsPanel'
 import { SourceStatusRows } from './connections/SourceStatusRows'
@@ -324,16 +325,9 @@ function GoogleSheetsConnector({ session, organization, onSynced }: { session: S
     setBusy('disconnect')
     setNotice('')
     try {
-      const current = await getFreshSession(session)
-      const response = await fetch('/api/integrations/google/disconnect', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${current.access_token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ organization_id: organization.id }),
-      })
-      const payload = await response.json().catch(() => ({})) as { message?: string }
-      if (!response.ok) throw new Error(payload.message || 'Could not disconnect Google Sheets.')
+      await disconnectProvider(session, organization.id, 'google_sheets')
       setConnection({ status: 'disconnected' })
-      setNotice('Google Sheets has been disconnected.')
+      setNotice('Google Sheets has been disconnected. Access was revoked at Google where possible. Invoices already imported are kept.')
       setNoticeError(false)
     } catch (cause) {
       setNotice(cause instanceof Error ? cause.message : 'Could not disconnect Google Sheets.')
@@ -1220,7 +1214,7 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
               onRecord={handleRecordFact} onRetract={handleRetractFact} onResolve={handleResolveConflict} onSaveRecoveryRate={handleSaveRecoveryRate} />
           )}
 
-          <footer className="page-footer"><span>Revenue OS</span><span>Estimates and verified revenue are kept separate.</span></footer>
+          <footer className="page-footer"><span>Revenue OS · <a href="/privacy">Privacy Policy</a> · <a href="/terms">Terms of Service</a></span><span>Estimates and verified revenue are kept separate.</span></footer>
         </div>
       </main>
 

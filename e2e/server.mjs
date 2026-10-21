@@ -20,6 +20,8 @@ export function startServer({ dist, port, upstream, api, authUser }) {
     }
     if (req.url.startsWith('/auth/v1/')) { res.writeHead(204); res.end(); return }
     let file = path.join(dist, decodeURIComponent(req.url.split('?')[0]))
+    // Like Cloudflare static assets: /privacy serves privacy.html; unknown paths fall back to the app.
+    if (file.startsWith(dist) && !path.extname(file) && fs.existsSync(`${file}.html`)) file = `${file}.html`
     if (!file.startsWith(dist) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) file = path.join(dist, 'index.html')
     res.writeHead(200, { 'content-type': types[path.extname(file)] ?? 'application/octet-stream' })
     fs.createReadStream(file).pipe(res)

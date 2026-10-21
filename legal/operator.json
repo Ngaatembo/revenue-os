@@ -1,0 +1,9 @@
+{
+  "_comment": "Single source for the operator details shown on /privacy and /terms. null means NOT YET PROVIDED: the pages show a visible 'owner to provide' marker. Run `npm run check:legal` before submitting to Google. Never invent values here.",
+  "siteUrl": "https://revenue-os.ngaatendwew.workers.dev",
+  "operatorName": null,
+  "contactEmail": null,
+  "postalAddress": null,
+  "effectiveDate": "2026-10-21",
+  "effectiveDateLabel": "21 October 2026 (draft, to be confirmed at launch)"
+}

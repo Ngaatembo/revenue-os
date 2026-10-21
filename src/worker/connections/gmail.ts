@@ -21,6 +21,7 @@ interface GmailMessage {
 }
 
 const GMAIL = 'https://gmail.googleapis.com/gmail/v1/users/me'
+export const EXCLUDED_LABELS = ['SPAM', 'TRASH', 'CATEGORY_PROMOTIONS', 'CATEGORY_SOCIAL', 'CATEGORY_FORUMS']
 export const BACKFILL_QUERY = 'newer_than:90d -category:promotions -category:social -category:forums -in:spam -in:trash -in:chats'
 
 export function parseAddress(value: string | undefined): { address: string | null; name: string | null } {
@@ -40,6 +41,9 @@ export function parseGmailMessage(message: GmailMessage, ownerEmail: string): Co
   if (!message.id || !message.threadId || !message.internalDate) return null
   const labels = message.labelIds ?? []
   if (labels.includes('DRAFT') || labels.includes('CHAT')) return null
+  // The first sync already excludes these with a search filter (BACKFILL_QUERY); later messages arrive through the history API,
+  // which cannot filter, so the same exclusions are applied here and nothing from them is stored.
+  if (EXCLUDED_LABELS.some((label) => labels.includes(label))) return null
   const headers = new Map<string, string>()
   for (const h of message.payload?.headers ?? []) if (h.name && h.value !== undefined) headers.set(h.name.toLowerCase(), h.value)
   const owner = ownerEmail.toLowerCase()

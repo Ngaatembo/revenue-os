@@ -755,3 +755,7 @@ body { background: var(--page); }
   .topbar-brand { display: inline-flex; }
   .breadcrumbs > span { display: none; }
 }
+.disconnect-panel { display: grid; gap: 10px; margin-top: 12px; padding: 14px; background: var(--inset); border: 1px solid var(--edge); border-radius: 12px; }
+.disconnect-panel p { margin: 0; font-size: 14px; line-height: 20px; color: var(--ink); }
+.google-disclosure { margin: 12px 0 0; padding: 12px 14px; background: var(--inset); border: 1px solid var(--edge); border-radius: 12px; font-size: 14px; line-height: 20px; color: var(--ink); }
+.google-disclosure a, .page-footer a { color: var(--action); font-weight: 600; }

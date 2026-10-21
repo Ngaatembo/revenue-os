@@ -33,13 +33,27 @@ export async function handleConnections(request: Request, env: Env, ctx?: Execut
 
   if (url.pathname === '/api/connections/disconnect') {
     if (!member || !['owner', 'admin'].includes(member.role)) return response({ error: 'workspace_admin_required' }, 403)
-    const rows = await db(env, `provider_connections?select=encrypted_refresh_token&organization_id=eq.${encodeURIComponent(organizationId)}&provider=eq.${provider}&limit=1`) as Array<{ encrypted_refresh_token: string | null }>
+    // Optional: also delete what this connection synced. Only Gmail supports it (imported invoices are the business's own records and stay).
+    const deleteSynced = body?.delete_synced_data === true
+    if (deleteSynced && provider !== 'gmail') return response({ error: 'delete_synced_data_not_supported' }, 400)
+    const org = encodeURIComponent(organizationId)
+    if (deleteSynced) {
+      // Deleted first: if this fails nothing has been revoked yet and the owner can simply try again.
+      try {
+        for (const path of [`communications?organization_id=eq.${org}&provider=eq.gmail`, `conversation_tracking?organization_id=eq.${org}&provider=eq.gmail`, `muted_senders?organization_id=eq.${org}`]) {
+          await db(env, path, { method: 'DELETE', headers: { Prefer: 'return=minimal' } })
+        }
+      } catch { return response({ error: 'delete_synced_data_failed' }, 500) }
+    }
+    const rows = await db(env, `provider_connections?select=encrypted_refresh_token&organization_id=eq.${org}&provider=eq.${provider}&limit=1`) as Array<{ encrypted_refresh_token: string | null }>
     const revoked = rows[0]?.encrypted_refresh_token ? await revokeGoogleToken(rows[0].encrypted_refresh_token, env.GOOGLE_TOKEN_ENCRYPTION_KEY!) : false
-    await db(env, `provider_connections?organization_id=eq.${encodeURIComponent(organizationId)}&provider=eq.${provider}`, {
+    await db(env, `provider_connections?organization_id=eq.${org}&provider=eq.${provider}`, {
       method: 'PATCH', headers: { Prefer: 'return=minimal' },
-      body: JSON.stringify({ status: 'disconnected', encrypted_refresh_token: null, granted_scopes: [], sync_stage: null, sync_started_at: null, next_sync_at: null, updated_at: new Date().toISOString() }),
+      body: JSON.stringify({ status: 'disconnected', encrypted_refresh_token: null, granted_scopes: [], sync_stage: null, sync_started_at: null, next_sync_at: null, updated_at: new Date().toISOString(),
+        // With the synced data gone, a later reconnect starts a clean first sync instead of resuming from a cursor.
+        ...(deleteSynced ? { sync_cursor: null, records_synced: 0, initial_sync_completed_at: null, last_successful_sync_at: null } : {}) }),
     })
-    return response({ status: 'disconnected', provider_revoked: revoked })
+    return response({ status: 'disconnected', provider_revoked: revoked, synced_data_deleted: deleteSynced })
   }
   return response({ error: 'not_found' }, 404)
 }

@@ -20,8 +20,9 @@ type Props = {
 
 function ProviderCard({ info, row, busy, onConnect, onSync, onDisconnect, extra }: {
   info: ProviderInfo; row: ConnectionRow | undefined; busy: string
-  onConnect: () => void; onSync: () => void; onDisconnect: () => void; extra?: ReactNode
+  onConnect: () => void; onSync: () => void; onDisconnect: (deleteSyncedData: boolean) => void; extra?: ReactNode
 }) {
+  const [confirmingDisconnect, setConfirmingDisconnect] = useState(false)
   const view = describeConnection(row)
   const unavailable = info.availability === 'external_approval_required'
   const manual = info.availability === 'manual'
@@ -51,8 +52,16 @@ function ProviderCard({ info, row, busy, onConnect, onSync, onDisconnect, extra 
       {manual && info.id === 'csv' && null}
       {!unavailable && !manual && (view.action === 'connect' || view.action === 'reconnect') && <button className="button button-primary" type="button" disabled={busy !== ''} onClick={onConnect}>{busy === 'connect' ? 'Opening Google…' : view.action === 'reconnect' ? `Reconnect ${info.name.split(' ')[0]}` : `Connect ${info.name.split(' ')[0]}`}</button>}
       {!unavailable && !manual && view.action === 'sync_now' && info.id === 'gmail' && <button className="button button-secondary" type="button" disabled={busy !== ''} onClick={onSync}>{busy === 'sync' ? 'Starting…' : 'Sync now'}</button>}
-      {!unavailable && !manual && view.state !== 'not_connected' && info.id === 'gmail' && <button className="template-link" type="button" disabled={busy !== ''} onClick={onDisconnect}>Disconnect</button>}
+      {!unavailable && !manual && view.state !== 'not_connected' && info.id === 'gmail' && <button className="template-link" type="button" disabled={busy !== ''} onClick={() => setConfirmingDisconnect(true)}>Disconnect</button>}
     </div>
+    {confirmingDisconnect && <div className="disconnect-panel" role="group" aria-label="Disconnect Gmail" data-testid="disconnect-panel">
+      <p><strong>Disconnect Gmail?</strong> Revenue OS stops reading the mailbox, removes its stored access and asks Google to revoke it. Choose what happens to the email information it already saved (sender, subject, a short preview and dates, plus your follow-up marks and notes):</p>
+      <div className="track-buttons">
+        <button type="button" className="button button-secondary" disabled={busy !== ''} onClick={() => { setConfirmingDisconnect(false); onDisconnect(false) }}>Disconnect and keep synced data</button>
+        <button type="button" className="button button-primary" disabled={busy !== ''} onClick={() => { setConfirmingDisconnect(false); onDisconnect(true) }}>Disconnect and delete synced email data</button>
+        <button type="button" className="button button-quiet" onClick={() => setConfirmingDisconnect(false)}>Cancel</button>
+      </div>
+    </div>}
   </article>
 }
 
@@ -150,7 +159,8 @@ export function ConnectionsPage({ session, organizationId, rows, statusError, re
 
   return <section className="panel connections-page" aria-labelledby="connections-title">
     <div className="panel-heading"><div><h2 id="connections-title">Connect your business once</h2>
-      <p>Revenue OS reads the tools you already use, keeps them up to date, and shows what needs your attention. A source only shows as connected after you authorize it, and nothing is sent to your customers.</p></div></div>
+      <p>Revenue OS reads the tools you already use, keeps them up to date, and shows what needs your attention. A source only shows as connected after you authorize it, and nothing is sent to your customers.</p>
+      <p className="google-disclosure" data-testid="google-disclosure">Before you connect Google: Revenue OS asks for read-only access. From Gmail it stores the other person's address and name, the subject, a short preview and dates, never message bodies or attachments. You can disconnect, and delete what was synced, at any time. Revenue OS's use and transfer to any other app of information received from Google APIs will adhere to the <a href="https://developers.google.com/terms/api-services-user-data-policy" target="_blank" rel="noopener noreferrer">Google API Services User Data Policy</a>, including the Limited Use requirements. Read the <a href="/privacy" target="_blank" rel="noopener">Privacy Policy</a> and <a href="/terms" target="_blank" rel="noopener">Terms of Service</a>.</p></div></div>
     {startedIncomplete && <SetupSteps rows={rows} onOpenOverview={onOpenOverview} />}
     {statusError && <p className="connection-message" role="alert">Connection status could not be loaded: {statusError}</p>}
     {notice && <p className={noticeIsError ? 'connection-message' : 'connection-note'} role={noticeIsError ? 'alert' : 'status'}>{notice}</p>}
@@ -164,7 +174,7 @@ export function ConnectionsPage({ session, organizationId, rows, statusError, re
         return <ProviderCard key={info.id} info={info} row={row} busy={busy}
           onConnect={() => void run('connect', async () => { window.location.assign(await startAuthorization(session, organizationId, info.id === 'gmail' ? 'gmail' : 'google_sheets')) })}
           onSync={() => void run('sync', async () => { await syncNow(session, organizationId, info.id); say('Synchronization started.') })}
-          onDisconnect={() => { if (window.confirm('Disconnect Gmail? Revenue OS stops reading the mailbox and removes its stored access. Records already imported are kept.')) void run('disconnect', async () => { await disconnectProvider(session, organizationId, info.id); say('Gmail disconnected. Access was revoked at Google where possible.') }) }} />
+          onDisconnect={(deleteSyncedData) => void run('disconnect', async () => { await disconnectProvider(session, organizationId, info.id, deleteSyncedData); say(deleteSyncedData ? 'Gmail disconnected and the synced email data was deleted. Access was revoked at Google where possible.' : 'Gmail disconnected. Access was revoked at Google where possible. Synced email data was kept.') })} />
       })}
     </div>
     <section className="fallback-import" aria-labelledby="fallback-title" data-provider="csv" data-state="manual">

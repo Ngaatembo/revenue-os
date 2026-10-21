@@ -12,7 +12,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createDatabase, query, SECRET, sessionFor, startPostgrest } from './stack.mjs'
 import { startServer } from './server.mjs'
-import { createFakeGoogle, GOOGLE_HOSTS, OWNER } from './fakeGoogle.mjs'
+import { createFakeGoogle, GOOGLE_HOSTS, OWNER, SHEET_HEADER, sheetRow } from './fakeGoogle.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const DB = 'ros_e2e_conn', API_PORT = 3102, APP_PORT = 4181, BASE = `http://127.0.0.1:${APP_PORT}`
@@ -50,7 +50,10 @@ async function api(req, res) {
 const authUser = (header) => { try { const p = JSON.parse(Buffer.from(String(header).replace(/^Bearer /, '').split('.')[1], 'base64url').toString()); return p.sub ? { id: p.sub, email: p.email } : null } catch { return null } }
 /** What Cloudflare's cron does once a minute. */
 const tick = async () => { const pending = []; await worker.scheduled({}, env, { waitUntil: (p) => pending.push(p) }); await Promise.all(pending) }
-const conn = (field) => sql(`select ${field} from public.provider_connections where provider='gmail' limit 1`)
+const connOf = (provider) => (field) => sql(`select ${field} from public.provider_connections where provider='${provider}' limit 1`)
+const conn = connOf('gmail')
+const sheetsConn = connOf('google_sheets')
+const dueNow = (provider) => sql(`update public.provider_connections set next_sync_at = now() - interval '1 second' where provider='${provider}'`)
 
 let postgrest, server, browser
 try {
@@ -71,6 +74,7 @@ try {
   // Google's consent page is replaced by an immediate approval that redirects to our real callback with the real state.
   await page.route('https://accounts.google.com/**', async (route) => {
     const u = new URL(route.request().url())
+    if (!google.state.forceScope) google.state.scopeGranted = u.searchParams.get('scope')
     const target = new URL(u.searchParams.get('redirect_uri')); target.searchParams.set('code', 'fake-code'); target.searchParams.set('state', u.searchParams.get('state'))
     await route.fulfill({ status: 302, headers: { location: target.toString() } })
   })
@@ -238,6 +242,77 @@ try {
     assert((await p2.getByText('Quote request').count()) === 0, "B must not see A's mail")
     await ctx2.close()
   })
+
+  // ---------------- Google Sheets: authorize once, then everything is automatic ----------------
+  await step('Sheets: authorize once, choose the invoice tab, and the first import happens without pressing sync', async () => {
+    sql(`insert into public.assumptions(organization_id,id,assumption_key,value_bps,updated_by) select organization_id,'recovery-rate','recovery_rate',3000,user_id from public.memberships where role='owner' and organization_id=(select organization_id from public.provider_connections where provider='gmail') limit 1`)
+    await page.reload(); await page.getByRole('button', { name: /^Connections$/ }).first().click()
+    await page.getByRole('button', { name: 'Connect Google Sheets' }).click()
+    await page.getByLabel('Choose a spreadsheet').waitFor({ timeout: 25000 })
+    assert(sheetsConn('status') === 'connected' && sheetsConn('encrypted_refresh_token') !== '', 'sheets connection stored')
+    assert(sql(`select count(*) from public.invoices`) === '0', 'nothing is imported just because access was granted')
+    await page.getByLabel('Choose a spreadsheet').selectOption({ label: 'Invoices 2026 · Updated ' + new Date('2026-10-21T08:00:00.000Z').toLocaleDateString() })
+    await page.getByTestId('sheets-auto-status').waitFor()
+    for (let i = 0; i < 8 && sql(`select count(*) from public.invoices`) === '0'; i += 1) { await sleep(500); await tick() }
+    assert(sql(`select count(*) from public.invoices`) === '3', 'three invoices imported automatically, got ' + sql(`select count(*) from public.invoices`))
+    assert(sheetsConn('status') === 'connected' && sheetsConn('last_error_code') === '' && sheetsConn('initial_sync_completed_at') !== '' && sheetsConn('records_synced') === '3', 'sheets connection reports a clean first sync')
+  })
+  await step('Sheets: an unchanged sheet is not re-imported or re-read on later checks', async () => {
+    const reads = google.state.sheet.reads, runs = sql(`select count(*) from public.source_sync_runs`)
+    for (let i = 0; i < 3; i += 1) { dueNow('google_sheets'); await tick() }
+    assert(google.state.sheet.reads === reads, 'values must not be re-read while the file is unchanged')
+    assert(sql(`select count(*) from public.source_sync_runs`) === runs, 'no new sync run rows while nothing changed')
+    assert(sql(`select count(*) from public.invoices`) === '3', 'no duplicates')
+  })
+  await step('Sheets: a changed spreadsheet reaches the database and the Overview with no manual import', async () => {
+    await page.getByRole('button', { name: /^Overview$/ }).first().click()
+    // The owner edits their spreadsheet: one invoice is fully paid, one new overdue invoice is added.
+    google.state.sheet.values = [SHEET_HEADER, sheetRow(1, 1001), sheetRow(2), sheetRow(3), sheetRow(4, 0, -45)]
+    google.state.sheet.modifiedTime = '2026-10-21T09:30:00.000Z'
+    dueNow('google_sheets'); await tick()
+    assert(sql(`select count(*) from public.invoices`) === '4', 'new invoice stored')
+    assert(sql(`select paid_minor from public.invoices where invoice_number='SINV-1'`) === '100100', 'payment recorded in the sheet reached the database')
+    assert(sql(`select count(*) from public.invoices where invoice_number='SINV-1'`) === '1', 'updated in place, not duplicated')
+    assert(Number(sql(`select count(*) from public.opportunities where status='open'`)) >= 3, 'opportunities refreshed by the sync itself')
+    // No reload and no click: the open page notices the finished background sync and shows the new invoice.
+    await page.getByText(/4 invoice records · saved in Supabase/).first().waitFor({ timeout: 45000 })
+    assert((await page.getByText(/3 invoice records · saved in Supabase/).count()) === 0, 'stale count must be gone')
+  })
+  await step('Sheets: removing a row marks it for review instead of deleting or assuming payment', async () => {
+    google.state.sheet.values = [SHEET_HEADER, sheetRow(1, 1001), sheetRow(2), sheetRow(4, 0, -45)]
+    google.state.sheet.modifiedTime = '2026-10-21T10:00:00.000Z'
+    dueNow('google_sheets'); await tick()
+    assert(sql(`select count(*) from public.invoices`) === '4', 'invoice history is kept')
+    assert(sql(`select count(*) from public.source_sync_memberships where review_state='missing_from_source_pending_review'`) === '1', 'missing row queued for the owner to review')
+  })
+  await step('Sheets: a broken sheet is reported with a fix the owner can act on, then recovers when fixed', async () => {
+    google.state.sheet.values = [['name', 'amount'], ['a', 1]]; google.state.sheet.modifiedTime = '2026-10-21T10:30:00.000Z'
+    dueNow('google_sheets'); await tick()
+    assert(sheetsConn('status') === 'needs_attention' && sheetsConn('last_error_code').startsWith('missing_columns:'), 'owner-fixable problem flagged, got ' + sheetsConn('status') + ' ' + sheetsConn('last_error_code'))
+    assert(sql(`select count(*) from public.invoices`) === '4', 'previously synced data is kept')
+    const reads = google.state.sheet.reads; dueNow('google_sheets'); await tick()
+    assert(google.state.sheet.reads === reads, 'the broken version is not re-read every poll')
+    await page.reload(); await page.getByRole('button', { name: /^Connections$/ }).first().click()
+    await page.getByTestId('sheets-auto-status').getByText(/missing these invoice columns/).waitFor({ timeout: 15000 })
+    google.state.sheet.values = [SHEET_HEADER, sheetRow(1, 1001), sheetRow(2), sheetRow(4, 0, -45)]; google.state.sheet.modifiedTime = '2026-10-21T11:00:00.000Z'
+    dueNow('google_sheets'); await tick()
+    assert(sheetsConn('status') === 'connected' && sheetsConn('last_error_code') === '', 'recovered after the owner fixed the sheet')
+  })
+  await step('Gmail and Sheets together: both stay connected and sync independently; one failing does not affect the other', async () => {
+    await page.locator('[data-provider=gmail] [data-x]').count().catch(() => 0)
+    for (let i = 0; i < 3; i += 1) { dueNow('google_sheets'); dueNow('gmail') }
+    const real = google.handle
+    google.handle = async (r) => (new URL(r.url).host === 'sheets.googleapis.com' || new URL(r.url).pathname.startsWith('/drive/') ? new Response('{}', { status: 500 }) : real(r))
+    google.state.deliver({ thread: 'together-1', from: 'Both <both@buyer.test>', subject: 'Both sources running', at: Date.now() - 3 * 86_400_000 })
+    dueNow('google_sheets'); dueNow('gmail'); await tick()
+    google.handle = real
+    assert(sql(`select count(*) from public.communications where thread_id='together-1'`) === '1', 'gmail still synced while sheets was failing')
+    assert(sheetsConn('consecutive_failures') === '1' && conn('consecutive_failures') === '0', 'only sheets recorded a failure')
+    dueNow('google_sheets'); sql(`update public.provider_connections set next_sync_at = now() - interval '1 second' where provider='google_sheets'`); await tick()
+    assert(sheetsConn('status') !== 'disconnected', 'sheets still connected')
+    assert(sql(`select count(distinct organization_id) from public.provider_connections where status <> 'disconnected'`) === '1', 'both belong to the same workspace')
+  })
+
   await step('disconnect revokes at the provider, removes the stored credential and keeps imported records', async () => {
     const kept = sql(`select count(*) from public.communications`)
     await page.reload(); await page.getByRole('button', { name: /^Connections$/ }).first().click()
@@ -249,7 +324,7 @@ try {
     await tick(); assert(conn('status') === 'disconnected', 'scheduler leaves disconnected sources alone')
   })
   await step('declining permission stores nothing as connected', async () => {
-    google.state.scopeGranted = 'openid email'
+    google.state.forceScope = 'openid email'
     await page.locator('[data-provider=gmail]').getByRole('button', { name: 'Connect Gmail' }).click()
     await page.getByText(/authorization did not complete, so nothing was connected/).waitFor({ timeout: 20000 })
     assert(conn('status') === 'disconnected', 'must remain disconnected')

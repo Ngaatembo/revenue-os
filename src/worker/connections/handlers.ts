@@ -22,7 +22,6 @@ export async function handleConnections(request: Request, env: Env): Promise<Res
 
   if (url.pathname === '/api/connections/sync') {
     if (!member || !['owner', 'admin', 'operator'].includes(member.role)) return response({ error: 'workspace_permission_denied' }, 403)
-    if (provider !== 'gmail') return response({ error: 'provider_not_syncable', message: 'Google Sheets is synced from its own card.' }, 400)
     const outcome = await runConnectionSync(env, organizationId, provider, { force: true })
     return response({ outcome })
   }

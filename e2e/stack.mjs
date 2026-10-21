@@ -28,6 +28,7 @@ export function createDatabase(root, db) {
   psql(db, ['-f', '-'], stub)
   // Supabase's real auth.uid() reads the JWT claims JSON that PostgREST sets.
   psql(db, ['-c', `create or replace function auth.uid() returns uuid language sql stable as $$ select coalesce(nullif(current_setting('request.jwt.claim.sub', true), ''), (nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'sub'))::uuid $$`])
+  psql(db, ['-c', `create or replace function auth.role() returns text language sql stable as $$ select coalesce(nullif(current_setting('request.jwt.claim.role', true), ''), (nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'role'), 'anon') $$`])
   const dir = path.join(root, 'supabase/migrations')
   for (const f of fs.readdirSync(dir).filter((n) => n.endsWith('.sql')).sort()) psql(db, ['-f', path.join(dir, f)])
 }

@@ -268,6 +268,11 @@ export async function handleGoogleSheets(request: Request, env: Env): Promise<Re
         updated_at: savedAt,
       }),
     })
+    // A new or changed source is picked up by the automatic sync right away instead of waiting out the interval.
+    await db(env, `provider_connections?organization_id=eq.${encodeURIComponent(orgId)}&provider=eq.google_sheets`, {
+      method: 'PATCH', headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({ sync_cursor: null, next_sync_at: null, last_error_code: null, updated_at: savedAt }),
+    }).catch(() => undefined)
     return response({ saved: true, updated_at: savedAt })
   }
 

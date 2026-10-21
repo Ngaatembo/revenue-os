@@ -54,6 +54,19 @@ function ProviderCard({ info, row, busy, onConnect, onSync, onDisconnect, extra 
   </article>
 }
 
+function SheetsAutomaticStatus({ row, busy, onSync }: { row: ConnectionRow | undefined; busy: string; onSync: () => void }) {
+  const view = describeConnection(row)
+  if (view.state === 'not_connected') return null
+  return <div className="sync-stage sheets-auto-status" role="status" aria-live="polite" data-testid="sheets-auto-status">
+    <strong>Automatic sync</strong>
+    <span>{view.stage ?? view.label}</span>
+    {view.state === 'syncing' && <div className="sync-bar" role="progressbar" aria-label={view.stage ?? 'Synchronizing'}><span className="sync-bar-indeterminate" /></div>}
+    <small>Last successful check: {formatAge(row?.last_successful_sync_at ?? null)}. Once a tab is chosen, Revenue OS re-checks the sheet by itself and only re-imports when it changed.</small>
+    {view.message && <p className="connection-message" role="alert">{view.message}</p>}
+    {(view.action === 'sync_now') && <button className="template-link" type="button" disabled={busy !== ''} onClick={onSync}>Check now</button>}
+  </div>
+}
+
 export function ConnectionsPage({ session, organizationId, rows, statusError, refresh, sheetsControls, csvAction, invoiceCount }: Props) {
   const [busy, setBusy] = useState('')
   const [notice, setNotice] = useState('')
@@ -97,7 +110,9 @@ export function ConnectionsPage({ session, organizationId, rows, statusError, re
         if (info.id === 'csv') return <article className="connection-source-card" key={info.id} data-provider="csv" data-state="manual">
           <div className="connection-source-top"><h3>{info.name}</h3><span className={invoiceCount ? 'connection-pill connection-pill-ready' : 'connection-pill'}>{invoiceCount ? 'Data available' : 'Manual'}</span></div>
           <p>{info.summary}</p><small>{invoiceCount} invoice record(s) saved in this workspace.</small>{csvAction}</article>
-        if (info.id === 'google_sheets') return <div key={info.id} className="connection-sheets-wrap">{sheetsControls}</div>
+        if (info.id === 'google_sheets') return <div key={info.id} className="connection-sheets-wrap" data-provider="google_sheets" data-state={describeConnection(byProvider.get('google_sheets')).state}>
+          <SheetsAutomaticStatus row={byProvider.get('google_sheets')} busy={busy} onSync={() => void run('sync', async () => { await syncNow(session, organizationId, 'google_sheets'); say('Checking the spreadsheet now.') })} />
+          {sheetsControls}</div>
         return <ProviderCard key={info.id} info={info} row={row} busy={busy}
           onConnect={() => void run('connect', async () => { window.location.assign(await startAuthorization(session, organizationId, info.id === 'gmail' ? 'gmail' : 'google_sheets')) })}
           onSync={() => void run('sync', async () => { await syncNow(session, organizationId, info.id); say('Synchronization started.') })}

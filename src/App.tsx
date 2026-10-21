@@ -169,6 +169,27 @@ function GoogleSheetsConnector({ session, organization, onSynced }: { session: S
     }
   }
 
+  /** Choosing a different tab saves it as the source, so the automatic sync follows the owner's choice. */
+  async function chooseTab(value: string) {
+    setRange(value)
+    const tab = sheetTabs.find((candidate) => candidate.suggested_range === value)
+    const file = spreadsheets.find((candidate) => candidate.id === spreadsheet)
+    if (!tab || !file) return
+    try {
+      const current = await getFreshSession(session)
+      const response = await fetch('/api/integrations/google/source-selection', {
+        method: 'POST', headers: { Authorization: `Bearer ${current.access_token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ organization_id: organization.id, spreadsheet_id: spreadsheet, spreadsheet_name: file.name, tab_title: tab.title, range: value }),
+      })
+      if (!response.ok) throw new Error('save_failed')
+      setNotice(`Saved “${tab.title}” as the invoice tab. Revenue OS will check it automatically.`)
+      setNoticeError(false)
+    } catch {
+      setNotice('Could not save that tab as the source. Try choosing it again.')
+      setNoticeError(true)
+    }
+  }
+
   async function inspectSpreadsheet(spreadsheetId: string) {
     setSpreadsheet(spreadsheetId)
     setSheetTabs([])
@@ -391,7 +412,7 @@ function GoogleSheetsConnector({ session, organization, onSynced }: { session: S
       </select>
       {spreadsheet && <>
         <label className="field-label" htmlFor="google-sheet-tab">Invoice tab</label>
-        <select id="google-sheet-tab" value={range} onChange={(event) => setRange(event.target.value)} disabled={inspectBusy || sheetTabs.length === 0}>
+        <select id="google-sheet-tab" value={range} onChange={(event) => void chooseTab(event.target.value)} disabled={inspectBusy || sheetTabs.length === 0}>
           <option value="">{inspectBusy ? 'Inspecting tabs…' : 'Choose a tab'}</option>
           {sheetTabs.map((tab) => <option key={tab.title} value={tab.suggested_range}>{tab.title}{tab.likely_invoice_sheet ? ' · likely invoices' : ''}</option>)}
         </select>
@@ -972,6 +993,21 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
     const returning = new URLSearchParams(window.location.search).has('connection') || new URLSearchParams(window.location.search).has('google_sheets')
     if (!returning && landing === 'connections') queueMicrotask(() => setActiveSection('Connections'))
   }, [landing])
+
+  // Background synchronization finished while the app is open: reload the saved invoices without a manual import.
+  const sheetsSyncedAt = conn.rows?.find((row) => row.provider === 'google_sheets')?.last_successful_sync_at ?? null
+  const seenSheetsSync = useRef<string | null | undefined>(undefined)
+  useEffect(() => {
+    if (seenSheetsSync.current === undefined) { seenSheetsSync.current = sheetsSyncedAt; return }
+    if (seenSheetsSync.current === sheetsSyncedAt) return
+    seenSheetsSync.current = sheetsSyncedAt
+    void (async () => {
+      const loaded = await loadInvoices(session, organization.id)
+      setInvoices(loaded); setInvoicesLoading(false)
+      await refreshOpportunities(loaded, assumptionBps !== null)
+    })().catch(() => undefined)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sheetsSyncedAt])
 
   const title = activeSection === 'Overview' ? 'Revenue overview' : activeSection
 

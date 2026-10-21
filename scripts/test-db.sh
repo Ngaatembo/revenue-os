@@ -37,6 +37,8 @@ OUT9=$(psql_db -f supabase/tests/09_source_sync_snapshot_rpc.sql 2>&1)
 echo "$OUT9" | sed -n '/===== SOURCE SNAPSHOT RPC RESULTS =====/,$p' | tail -5
 OUT10=$(psql_db -f supabase/tests/10_connections_communications.sql 2>&1)
 echo "$OUT10" | sed -n '/===== CONNECTION RESULTS =====/,$p' | grep -E "FAIL|passed|^ +[0-9]+ \|" || true
+OUT11=$(psql_db -f supabase/tests/11_sheets_automatic_sync.sql 2>&1)
+echo "$OUT11" | sed -n '/===== AUTO SYNC RESULTS =====/,$p' | grep -E "FAIL|passed|^ +[0-9]+ \|" || true
 FAILED=$(psql_db -tAc "select count(*) from t.results where not ok")
 if [ "$FAILED" != "0" ]; then echo "DB TESTS FAILED: $FAILED" >&2; exit 1; fi
 echo "DB TESTS PASSED"

@@ -19,10 +19,16 @@ export function buildMailbox(now = Date.now()) {
   return messages
 }
 
+const day = (n) => new Date(Date.now() + n * DAY).toISOString().slice(0, 10)
+export const SHEET_ID = 'sheet1234567890'
+export const SHEET_HEADER = ['customer_id', 'customer_name', 'invoice_number', 'currency', 'total_amount', 'paid_amount', 'issued_at', 'due_at']
+export const sheetRow = (n, paid = 0, due = -30) => [`c${n}`, `Sheet Customer ${n}`, `SINV-${n}`, 'USD', 1000 + n, paid, day(-90), day(due)]
+
 export function createFakeGoogle() {
   const state = {
     messages: buildMailbox(), history: [], historyId: 5000, revoked: false, revokeCalls: 0, tokenGrants: 0, refreshCalls: 0,
-    rateLimitedGets: 0, // number of upcoming message fetches that return a rate-limit error
+    sheet: { values: [SHEET_HEADER, sheetRow(1), sheetRow(2), sheetRow(3)], modifiedTime: '2026-10-21T08:00:00.000Z', reads: 0, metadataCalls: 0 },
+    forceScope: null, rateLimitedGets: 0, // number of upcoming message fetches that return a rate-limit error
     scopeGranted: 'https://www.googleapis.com/auth/gmail.readonly openid email', requests: [],
   }
   const json = (body, status = 200, headers = {}) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', ...headers } })
@@ -31,7 +37,7 @@ export function createFakeGoogle() {
     state.requests.push(`${request.method} ${url.host}${url.pathname}`)
     if (url.host === 'oauth2.googleapis.com' && url.pathname === '/token') {
       const form = new URLSearchParams(await request.text())
-      if (form.get('grant_type') === 'authorization_code') { state.tokenGrants += 1; return json({ access_token: 'at-1', refresh_token: 'rt-secret-value', scope: state.scopeGranted, expires_in: 3600 }) }
+      if (form.get('grant_type') === 'authorization_code') { state.tokenGrants += 1; return json({ access_token: 'at-1', refresh_token: 'rt-secret-value', scope: state.forceScope ?? state.scopeGranted, expires_in: 3600 }) }
       state.refreshCalls += 1
       if (state.revoked || form.get('refresh_token') !== 'rt-secret-value') return json({ error: 'invalid_grant' }, 400)
       return json({ access_token: 'at-2', expires_in: 3600 })
@@ -54,6 +60,23 @@ export function createFakeGoogle() {
       }
       if (path === 'history') { const from = Number(url.searchParams.get('startHistoryId')); return json({ history: state.history.filter((h) => h.at > from).map((h) => ({ messagesAdded: h.ids.map((id) => ({ message: { id } })) })), historyId: String(state.historyId) }) }
     }
+    const authed = ['Bearer at-1', 'Bearer at-2'].includes(request.headers.get('authorization') ?? '')
+    if (url.host === 'www.googleapis.com' && url.pathname.startsWith('/drive/v3/files')) {
+      if (!authed) return json({ error: { status: 'UNAUTHENTICATED' } }, 401)
+      if (url.pathname === '/drive/v3/files') return json({ files: [{ id: SHEET_ID, name: 'Invoices 2026', mimeType: 'application/vnd.google-apps.spreadsheet', modifiedTime: state.sheet.modifiedTime, webViewLink: 'https://docs.google.com/spreadsheets/d/' + SHEET_ID }] })
+      state.sheet.metadataCalls += 1
+      return url.pathname === `/drive/v3/files/${SHEET_ID}` ? json({ modifiedTime: state.sheet.modifiedTime, trashed: false }) : json({}, 404)
+    }
+    if (url.host === 'sheets.googleapis.com' && url.pathname.startsWith(`/v4/spreadsheets/${SHEET_ID}`)) {
+      if (!authed) return json({ error: { status: 'UNAUTHENTICATED' } }, 401)
+      if (url.pathname === `/v4/spreadsheets/${SHEET_ID}`) return json({ properties: { title: 'Invoices 2026' }, sheets: [{ properties: { title: 'Invoices', gridProperties: { rowCount: 1000, columnCount: 8 } } }, { properties: { title: 'Notes', gridProperties: { rowCount: 10, columnCount: 2 } } }] })
+      const range = decodeURIComponent(url.pathname.split('/values/')[1] ?? '')
+      if (range.startsWith("'Notes'")) return json({ values: [['note'], ['hello']] })
+      state.sheet.reads += 1
+      const m = range.match(/!([A-Z]+)(\d+):([A-Z]+)(\d+)$/)
+      const [from, to] = m ? [Number(m[2]), Number(m[4])] : [1, state.sheet.values.length]
+      return json({ values: state.sheet.values.slice(from - 1, to) })
+    }
     return json({ error: 'not_found' }, 404)
   }
   /** Add a new inbound message the way Gmail would report it: in the mailbox and in history. */
@@ -61,4 +84,4 @@ export function createFakeGoogle() {
     payload: { headers: [{ name: 'From', value: o.from }, { name: 'To', value: OWNER }, { name: 'Subject', value: o.subject }] } }); state.historyId += 1; state.history.push({ at: state.historyId, ids: [id] }); return id }
   return { state, handle }
 }
-export const GOOGLE_HOSTS = new Set(['oauth2.googleapis.com', 'accounts.google.com', 'www.googleapis.com', 'gmail.googleapis.com'])
+export const GOOGLE_HOSTS = new Set(['oauth2.googleapis.com', 'accounts.google.com', 'www.googleapis.com', 'gmail.googleapis.com', 'sheets.googleapis.com'])

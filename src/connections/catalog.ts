@@ -95,8 +95,19 @@ export function errorMessage(code: string | null): string | null {
     case 'provider_request_failed': return 'Google could not complete the request. Revenue OS will try again automatically.'
     case 'provider_token_refresh_failed': return 'Revenue OS could not renew its access to Google. It will try again automatically.'
     case 'account_email_missing': return 'The Google account could not be identified. Reconnect to try again.'
-    case 'snapshot_rejected_rows': return 'Some rows in the sheet could not be read. Valid rows were kept; fix the rows listed in the sheet card.'
-    default: return 'The last synchronization did not finish. Revenue OS will retry automatically.'
+    case 'snapshot_rejected_rows': return 'Some rows in the sheet could not be read, so nothing was marked missing. Fix those rows; the next automatic check picks them up.'
+    case 'source_not_selected': return 'Choose the spreadsheet and invoice tab below. Automatic syncing starts as soon as you do.'
+    case 'google_sheet_not_found': return 'The selected spreadsheet could not be found. It may have been deleted or moved to the bin.'
+    case 'google_sheet_access_denied': return 'This Google account can no longer read the selected spreadsheet. Check that it is still shared with the connected account.'
+    case 'google_sheet_invalid_range': return 'The selected tab or range no longer exists. Choose the invoice tab again.'
+    case 'sheet_too_large': case 'sheet_too_many_rows': return 'The sheet has more than 50,000 rows. Use a smaller range or archive old rows.'
+    case 'sheet_needs_header_and_rows': return 'The selected tab needs a header row and at least one invoice row.'
+    case 'no_valid_invoice_rows': return 'None of the rows in the selected tab could be read as invoices. Check the column names and values.'
+    case 'duplicate_sheet_headers': return 'Two columns in the sheet have the same name. Rename one of them.'
+    default:
+      if (code.startsWith('missing_columns:')) return 'Your sheet is missing these invoice columns: ' + code.slice('missing_columns:'.length).split(',').join(', ') + '. Add them to the header row; the next automatic check picks the change up.'
+      if (code.startsWith('ambiguous_sheet_headers:')) return 'Some column names in the sheet are ambiguous. Use the Revenue OS invoice column names.'
+      return 'The last synchronization did not finish. Revenue OS will retry automatically.'
   }
 }
 
@@ -104,13 +115,16 @@ export function describeConnection(row: ConnectionRow | undefined | null): Conne
   if (!row || row.status === 'disconnected' || row.status === 'pending') {
     return { state: 'not_connected', label: 'Not connected', stage: null, indeterminate: false, message: null, action: 'connect', initialSyncDone: false }
   }
-  const initialSyncDone = Boolean(row.initial_sync_completed_at)
+  const initialSyncDone = Boolean(row.initial_sync_completed_at || row.last_successful_sync_at)
   if (row.status === 'error') {
     return { state: 'failed', label: row.last_error_code === 'authorization_revoked' ? 'Reconnect needed' : 'Failed', stage: STAGE_TEXT.failed, indeterminate: false,
       message: errorMessage(row.last_error_code), action: 'reconnect', initialSyncDone }
   }
   if (row.status === 'needs_attention') {
     return { state: 'needs_attention', label: 'Needs attention', stage: STAGE_TEXT.failed, indeterminate: false, message: errorMessage(row.last_error_code), action: 'sync_now', initialSyncDone }
+  }
+  if (row.status === 'connected' && row.last_error_code === 'source_not_selected') {
+    return { state: 'needs_attention', label: 'Choose a source', stage: null, indeterminate: false, message: errorMessage('source_not_selected'), action: null, initialSyncDone }
   }
   const working = row.status === 'syncing' || !initialSyncDone
   if (working) {

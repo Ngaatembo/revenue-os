@@ -29,7 +29,7 @@ export function useConnectionStatus(session: SupabaseSession, organizationId: st
       const next = await refresh()
       if (stopped) return
       const busy = (next ?? []).some((row) => describeConnection(row).state === 'syncing')
-      timer.current = window.setTimeout(() => void tick(), busy ? 2500 : 30000)
+      timer.current = window.setTimeout(() => void tick(), busy ? 2500 : 20000)
     }
     void tick()
     return () => { stopped = true; alive.current = false; window.clearTimeout(timer.current) }

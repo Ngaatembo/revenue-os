@@ -17,9 +17,9 @@ psql_admin -c "do \$\$ begin
   if not exists (select 1 from pg_roles where rolname='authenticated') then create role authenticated nologin; end if;
   if not exists (select 1 from pg_roles where rolname='service_role') then create role service_role nologin bypassrls; end if; end \$\$"
 sed -e '/^create role /d' supabase/tests/00_supabase_stub.sql | psql_db -v ON_ERROR_STOP=1 -f -
-# DB_TEST_SCOPE=initial replays only the first release (without the deferred WhatsApp migration 20261021140000).
+# DB_TEST_SCOPE=initial replays only the first release (without the deferred WhatsApp migration 20261021170000).
 for f in supabase/migrations/*.sql; do
-  if [ "${DB_TEST_SCOPE:-}" = "initial" ] && [[ "$f" == *20261021140000* ]]; then continue; fi
+  if [ "${DB_TEST_SCOPE:-}" = "initial" ] && [[ "$f" == *20261021170000* ]]; then continue; fi
   psql_db -v ON_ERROR_STOP=1 -f "$f" >/dev/null
 done
 psql_db -v ON_ERROR_STOP=1 -f supabase/tests/01_harness.sql

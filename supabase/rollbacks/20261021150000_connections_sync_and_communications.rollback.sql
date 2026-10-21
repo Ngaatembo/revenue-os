@@ -1,7 +1,7 @@
--- Rollback for 20261021120000_connections_sync_and_communications.sql.
+-- Rollback for 20261021150000_connections_sync_and_communications.sql.
 -- WARNING: drops public.communications. Every synchronized email record is deleted. Run only if the release is abandoned.
 -- Gmail connections and any in-flight Gmail OAuth states are removed because the old schema cannot represent them.
--- Run 20261021130000's rollback first. Run inside a transaction (psql -1).
+-- Run 20261021160000's rollback first. Run inside a transaction (psql -1).
 DROP VIEW IF EXISTS public.conversation_threads;
 DROP TABLE IF EXISTS public.communications;
 DROP FUNCTION IF EXISTS public.list_connection_status(text);

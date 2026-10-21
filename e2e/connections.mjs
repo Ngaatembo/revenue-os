@@ -21,10 +21,10 @@ const B = { id: '22222222-2222-4222-8222-222222222222', email: 'owner-b@example.
 const b64 = (v) => Buffer.from(JSON.stringify(v)).toString('base64url')
 const mint = (claims) => { const head = b64({ alg: 'HS256', typ: 'JWT' }); const body = b64({ ...claims, iat: Math.floor(Date.now() / 1000), exp: Math.floor(Date.now() / 1000) + 36000 }); return `${head}.${body}.${crypto.createHmac('sha256', SECRET).update(`${head}.${body}`).digest('base64url')}` }
 const SERVICE_KEY = mint({ role: 'service_role', aud: 'authenticated' })
-// RELEASE_SCOPE=initial replays only what the first production release contains: migrations 20261021120000 and 20261021130000.
-// The WhatsApp migration (20261021140000) is deferred, so its table must not exist and the webhook must stay disabled.
+// RELEASE_SCOPE=initial replays only what the first production release contains: migrations 20261021150000 and 20261021160000.
+// The WhatsApp migration (20261021170000) is deferred, so its table must not exist and the webhook must stay disabled.
 const INITIAL_SCOPE = process.env.RELEASE_SCOPE === 'initial'
-if (INITIAL_SCOPE) process.env.E2E_EXCLUDE_MIGRATIONS = '20261021140000'
+if (INITIAL_SCOPE) process.env.E2E_EXCLUDE_MIGRATIONS = '20261021170000'
 const results = []
 let page
 const step = async (name, fn) => { try { await fn(); results.push({ name, ok: true }); console.log('PASS', name) } catch (e) { results.push({ name, ok: false }); console.log('FAIL', name, '-', String(e.message ?? e).split('\n')[0]); try { await page.screenshot({ path: path.join(os.tmpdir(), `conn-fail-${results.length}.png`), fullPage: true }) } catch { /* ignore */ } } }

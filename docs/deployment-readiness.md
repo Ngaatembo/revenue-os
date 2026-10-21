@@ -2,11 +2,13 @@
 
 Nothing in this document has been applied to production. **Production changes need the owner's explicit authorization.**
 
-**Release scope: the initial release is migrations `20261021120000` and `20261021130000`. `20261021140000` (WhatsApp) is deferred until the WhatsApp test starts.** The Worker is compatible with the initial scope (verified: see §2).
+**Release scope: the initial release is migrations `20261021150000` and `20261021160000`. `20261021170000` (WhatsApp) is deferred until the WhatsApp test starts.** The Worker is compatible with the initial scope (verified: see §2).
+
+**Versions.** This release's migrations are `20261021150000` (connections + communications), `20261021160000` (Sheets automatic sync) and, deferred, `20261021170000` (WhatsApp). They were renumbered from `…120000/130000/140000` to avoid a collision with PR #63's `20261021120000_unified_business_signals.sql` (the version is the migration ledger's primary key). The deferred WhatsApp migration moved with them because it alters `communications` and so must sort after `…150000`. #63's migration touches different objects (`business_signals`), so its sorting before ours is harmless. After a production apply the migration tool stamps its own versions; rename the files to those in the same sitting.
 
 ## 1. Exactly what the migrations change
 
-### `20261021120000_connections_sync_and_communications.sql` (idempotent; re-apply is safe — rehearsed)
+### `20261021150000_connections_sync_and_communications.sql` (idempotent; re-apply is safe — rehearsed)
 | Object | Change |
 |---|---|
 | `provider_connections` | Drops all 4 existing CHECK constraints (live today: `provider_connections_check`, `…_last_error_code_check`, `…_provider_check`, `…_status_check` — verified against the hosted project 2026-10-21) and re-creates 4 named ones: provider ∈ {google_sheets, gmail}; status adds `syncing`, `needs_attention`; error-code length; "token required while connected/syncing/needs_attention". Adds 7 columns: `sync_stage`, `sync_started_at`, `sync_cursor`, `next_sync_at`, `consecutive_failures`, `records_synced`, `initial_sync_completed_at`. Adds partial index `provider_connections_due_idx`. Existing row (`google_sheets/connected`) satisfies every new constraint and keeps all values. |
@@ -17,10 +19,10 @@ Nothing in this document has been applied to production. **Production changes ne
 | NEW table `communications` | Metadata of customer emails. RLS enabled **and forced**; members `SELECT` through `private.is_org_member`; writes service-role only; unique `(organization_id, provider, external_id)`. |
 | NEW view `conversation_threads` | `security_invoker` (RLS of the caller applies). |
 
-### `20261021130000_sheets_automatic_sync.sql`
+### `20261021160000_sheets_automatic_sync.sql`
 Two service-role-only SECURITY DEFINER functions: `persist_invoice_import_system` (runs the unchanged `persist_invoice_import` as the workspace owner, the same attribution model as `private.run_org_evaluation`) and `refresh_org_after_sync` (runs that existing per-workspace evaluation). No tables.
 
-### `20261021140000_whatsapp_webhook_receiver.sql` — DEFERRED (not part of the initial release)
+### `20261021170000_whatsapp_webhook_receiver.sql` — DEFERRED (not part of the initial release)
 Widens `communications.provider` to include `whatsapp`; new service-role-only table `whatsapp_numbers`.
 
 ## 2. Compatibility
@@ -66,7 +68,7 @@ Verified in the repo by `src/worker/__tests__/deployConfig.test.ts`: cron `* * *
 | `SUPABASE_URL` | var (in `wrangler.jsonc`) | present |
 | `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` | secret | present (guard passes) |
 | `SYNC_MESSAGE_BUDGET`, `SYNC_INTERVAL_MINUTES` | plain vars, in `wrangler.jsonc` | currently 10 / 5 (Free-plan private test), shipped with the code so a deploy cannot remove them. |
-| `WHATSAPP_APP_SECRET`, `WHATSAPP_VERIFY_TOKEN` | optional secrets | not set — **leave unset until `20261021140000` is applied** |
+| `WHATSAPP_APP_SECRET`, `WHATSAPP_VERIFY_TOKEN` | optional secrets | not set — **leave unset until `20261021170000` is applied** |
 Observed 2026-10-21 against production with unauthenticated requests only: `/api/health` ok; Google routes answer 401 (not 503); `/api/connections/*` is 404 (old Worker deployed; no cron yet).
 
 ## 7. Every remaining external requirement

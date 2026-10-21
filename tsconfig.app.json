@@ -23,5 +23,5 @@
     "noFallthroughCasesInSwitch": true
   },
   "include": ["src"],
-  "exclude": ["src/domain/__tests__", "src/worker/__tests__"]
+  "exclude": ["src/domain/__tests__", "src/worker/__tests__", "src/connections/__tests__"]
 }

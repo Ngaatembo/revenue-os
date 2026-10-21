@@ -1,8 +1,10 @@
 import { googleSheetsOAuthReady, oauthNotConfiguredResponse, type GoogleSheetsOAuthEnv } from './googleSheetsConfig.ts'
 import { handleGoogleSheets } from './googleSheetsHandlers.ts'
+import { handleConnections } from './connections/handlers.ts'
+import { runDueSyncs } from './connections/runner.ts'
 
 interface AssetBinding { fetch(request: Request): Promise<Response> }
-interface Env extends GoogleSheetsOAuthEnv { ASSETS: AssetBinding }
+interface Env extends GoogleSheetsOAuthEnv { ASSETS: AssetBinding; SYNC_MESSAGE_BUDGET?: string }
 
 function json(body: Record<string, string>, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -33,11 +35,20 @@ export default {
       if (!googleSheetsOAuthReady(env)) return oauthNotConfiguredResponse()
       return handleGoogleSheets(request, env)
     }
+    if (url.pathname.startsWith('/api/connections/')) {
+      if (!googleSheetsOAuthReady(env)) return oauthNotConfiguredResponse()
+      return handleConnections(request, env)
+    }
     if (url.pathname === '/api/health') {
       if (request.method !== 'GET') return json({ error: 'Method not allowed' }, 405)
       return checkSupabase(env)
     }
     if (url.pathname.startsWith('/api/')) return json({ error: 'Not found' }, 404)
     return env.ASSETS.fetch(request)
+  },
+  /** Cron Trigger: keeps connected sources up to date without the owner doing anything. */
+  async scheduled(_event: unknown, env: Env, ctx: { waitUntil(promise: Promise<unknown>): void }): Promise<void> {
+    if (!googleSheetsOAuthReady(env)) return
+    ctx.waitUntil(runDueSyncs(env).then((r) => console.log(JSON.stringify({ event: 'scheduled_sync', attempted: r.attempted, outcomes: r.results.map((o) => o.status) }))).catch(() => console.log(JSON.stringify({ event: 'scheduled_sync_failed' }))))
   },
 }

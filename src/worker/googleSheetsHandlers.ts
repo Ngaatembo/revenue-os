@@ -8,8 +8,10 @@ interface Env extends GoogleSheetsOAuthEnv {
 
 type Json = Record<string, unknown>
 const SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly', 'https://www.googleapis.com/auth/drive.metadata.readonly', 'openid', 'email'].join(' ')
+const GMAIL_SCOPE = 'https://www.googleapis.com/auth/gmail.readonly'
+const GMAIL_SCOPES = [GMAIL_SCOPE, 'openid', 'email'].join(' ')
 
-function response(body: Json, status = 200): Response {
+export function response(body: Json, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: {
     'content-type': 'application/json; charset=utf-8',
     'cache-control': 'no-store',
@@ -20,11 +22,11 @@ function response(body: Json, status = 200): Response {
 function redirect(location: string): Response {
   return new Response(null, { status: 302, headers: { location, 'cache-control': 'no-store', 'referrer-policy': 'no-referrer' } })
 }
-function base(env: Env) { return env.SUPABASE_URL?.replace(/\/$/, '') }
+export function base(env: Env) { return env.SUPABASE_URL?.replace(/\/$/, '') }
 function serviceHeaders(env: Env) {
   return { apikey: env.SUPABASE_SERVICE_ROLE_KEY!, Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`, 'content-type': 'application/json' }
 }
-async function db(env: Env, path: string, init: RequestInit = {}) {
+export async function db(env: Env, path: string, init: RequestInit = {}) {
   const response = await fetch(`${base(env)}/rest/v1/${path}`, { ...init, headers: { ...serviceHeaders(env), ...(init.headers ?? {}) }, signal: AbortSignal.timeout(8000) })
   const data = await response.json().catch(() => null)
   if (!response.ok) throw new Error('database_request_failed')
@@ -34,7 +36,7 @@ function bearer(request: Request) {
   const value = request.headers.get('authorization') ?? ''
   return /^Bearer\s+\S+$/i.test(value) ? value.replace(/^Bearer\s+/i, '') : null
 }
-async function authenticate(request: Request, env: Env): Promise<{ authId: string; email: string | null } | null> {
+export async function authenticate(request: Request, env: Env): Promise<{ authId: string; email: string | null } | null> {
   const token = bearer(request)
   if (!token || !base(env) || !env.SUPABASE_ANON_KEY) return null
   const r = await fetch(`${base(env)}/auth/v1/user`, { headers: { apikey: env.SUPABASE_ANON_KEY, Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(5000) })
@@ -42,13 +44,13 @@ async function authenticate(request: Request, env: Env): Promise<{ authId: strin
   const user = await r.json() as Json
   return typeof user.id === 'string' ? { authId: user.id, email: typeof user.email === 'string' ? user.email : null } : null
 }
-async function membership(env: Env, authId: string, organizationId: string) {
+export async function membership(env: Env, authId: string, organizationId: string) {
   const users = await db(env, `users?select=id&auth_subject=eq.${encodeURIComponent(authId)}&limit=1`) as Array<{ id: string }>
   if (!users[0]?.id) return null
   const rows = await db(env, `memberships?select=organization_id,user_id,role&organization_id=eq.${encodeURIComponent(organizationId)}&user_id=eq.${encodeURIComponent(users[0].id)}&limit=1`) as Array<{ organization_id: string; user_id: string; role: string }>
   return rows[0] ?? null
 }
-function safeAppOrigin(request: Request, env: Env) {
+export function safeAppOrigin(request: Request, env: Env) {
   const configured = env.APP_ORIGIN
   const incoming = new URL(request.url).origin
   return configured && configured === incoming ? configured : null
@@ -74,9 +76,10 @@ export function googleSheetsSyncErrorMessage(code: string): string {
   return 'Google Sheets could not be synced. Check the sheet range, required invoice fields, and access, then try again.'
 }
 
-function appRedirect(origin: string, result: string) {
+function appRedirect(origin: string, result: string, provider = 'google_sheets') {
   const target = new URL('/', origin)
-  target.searchParams.set('google_sheets', result)
+  if (provider === 'gmail') { target.searchParams.set('connection', 'gmail'); target.searchParams.set('result', result) }
+  else target.searchParams.set('google_sheets', result)
   return target.toString()
 }
 async function tokenRequest(env: Env, values: Record<string, string>) {
@@ -104,11 +107,13 @@ export async function handleGoogleSheets(request: Request, env: Env): Promise<Re
     if (!organizationId || organizationId.length > 160) return response({ error: 'organization_required' }, 400)
     const member = await membership(env, user.authId, organizationId)
     if (!member) return response({ error: 'workspace_access_denied' }, 403)
+    const requestedProvider = url.searchParams.get('provider') ?? 'google_sheets'
+    if (requestedProvider !== 'google_sheets' && requestedProvider !== 'gmail') return response({ error: 'unknown_provider' }, 400)
     const state = createOAuthState()
     const stateHash = await hashOAuthState(state)
     const expiresAt = new Date(Date.now() + 10 * 60_000).toISOString()
     await db(env, 'provider_oauth_states', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({
-      state_hash: stateHash, provider: 'google_sheets', organization_id: organizationId,
+      state_hash: stateHash, provider: requestedProvider, organization_id: organizationId,
       user_id: member.user_id, expires_at: expiresAt,
     }) })
     const callback = new URL('/api/integrations/google/callback', url.origin).toString()
@@ -116,7 +121,7 @@ export async function handleGoogleSheets(request: Request, env: Env): Promise<Re
     google.searchParams.set('client_id', env.GOOGLE_CLIENT_ID!)
     google.searchParams.set('redirect_uri', callback)
     google.searchParams.set('response_type', 'code')
-    google.searchParams.set('scope', SCOPES)
+    google.searchParams.set('scope', requestedProvider === 'gmail' ? GMAIL_SCOPES : SCOPES)
     google.searchParams.set('access_type', 'offline')
     google.searchParams.set('prompt', 'consent')
     google.searchParams.set('include_granted_scopes', 'true')
@@ -138,13 +143,14 @@ export async function handleGoogleSheets(request: Request, env: Env): Promise<Re
         method: 'POST', body: JSON.stringify({ p_state_hash: stateHash }),
       }) as Array<{ provider: string; organization_id: string; user_id: string }>
       const saved = consumed[0]
-      if (!saved || saved.provider !== 'google_sheets') return redirect(appRedirect(origin, 'failed'))
+      if (!saved || (saved.provider !== 'google_sheets' && saved.provider !== 'gmail')) return redirect(appRedirect(origin, 'failed'))
+      const flow = saved.provider
       const tokens = await tokenRequest(env, {
         code, grant_type: 'authorization_code',
         redirect_uri: new URL('/api/integrations/google/callback', url.origin).toString(),
       })
       if (typeof tokens.refresh_token !== 'string' || typeof tokens.access_token !== 'string') {
-        return redirect(appRedirect(origin, 'failed'))
+        return redirect(appRedirect(origin, 'failed', flow))
       }
       const encrypted = await encryptRefreshToken(tokens.refresh_token, env.GOOGLE_TOKEN_ENCRYPTION_KEY!)
       const userInfoResponse = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
@@ -152,19 +158,23 @@ export async function handleGoogleSheets(request: Request, env: Env): Promise<Re
       })
       const userInfo = userInfoResponse.ok ? await userInfoResponse.json() as Json : {}
       const accountEmail = typeof userInfo.email === 'string' ? userInfo.email.slice(0, 320) : null
-      const scopes = typeof tokens.scope === 'string' ? tokens.scope.split(' ').filter((scope) => scope === 'https://www.googleapis.com/auth/spreadsheets.readonly' || scope === 'https://www.googleapis.com/auth/drive.metadata.readonly' || scope === 'openid' || scope === 'email') : []
-      if (!scopes.includes('https://www.googleapis.com/auth/spreadsheets.readonly')) {
-        return redirect(appRedirect(origin, 'failed'))
+      const scopes = typeof tokens.scope === 'string' ? tokens.scope.split(' ').filter((scope) => scope === 'https://www.googleapis.com/auth/spreadsheets.readonly' || scope === 'https://www.googleapis.com/auth/drive.metadata.readonly' || scope === GMAIL_SCOPE || scope === 'openid' || scope === 'email') : []
+      const requiredScope = flow === 'gmail' ? GMAIL_SCOPE : 'https://www.googleapis.com/auth/spreadsheets.readonly'
+      if (!scopes.includes(requiredScope) || (flow === 'gmail' && !accountEmail)) {
+        // The owner unticked the permission, or the account could not be identified: nothing is stored as connected.
+        return redirect(appRedirect(origin, 'failed', flow))
       }
       await db(env, 'provider_connections?on_conflict=organization_id,provider', {
         method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
         body: JSON.stringify({
-          organization_id: saved.organization_id, provider: 'google_sheets', status: 'connected',
+          organization_id: saved.organization_id, provider: flow, status: 'connected',
           provider_account_email: accountEmail, encrypted_refresh_token: encrypted,
           granted_scopes: scopes, last_error_code: null, updated_at: new Date().toISOString(),
+          // A fresh authorization restarts the sync position; duplicate prevention makes a re-read safe.
+          ...(flow === 'gmail' ? { sync_cursor: null, sync_stage: 'connecting', sync_started_at: null, next_sync_at: null, consecutive_failures: 0 } : {}),
         }),
       })
-      return redirect(appRedirect(origin, 'connected'))
+      return redirect(appRedirect(origin, 'connected', flow))
     } catch {
       return redirect(appRedirect(origin, 'failed'))
     }

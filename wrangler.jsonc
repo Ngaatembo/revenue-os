@@ -23,6 +23,8 @@
       "SUPABASE_URL": "https://zivgfvcmposnbwqsudas.supabase.co"
     }
   },
+  // Automatic synchronisation: due connections are synced every minute (each connection chooses its own cadence).
+  "triggers": { "crons": ["* * * * *"] },
   "observability": {
     "enabled": true
   }

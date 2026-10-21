@@ -6,6 +6,7 @@
 export interface ConversationThread {
   provider: string
   thread_id: string
+  source_account?: string | null
   message_count: number
   last_message_at: string
   last_direction: 'inbound' | 'outbound'

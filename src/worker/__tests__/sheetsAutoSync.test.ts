@@ -19,7 +19,9 @@ function fakeSheets(state: { values: unknown[][]; modifiedTime: string; status?:
     const range = decodeURIComponent(url.pathname.split('/values/')[1]!)
     const m = range.match(/!([A-Z]+)(\d+):([A-Z]+)(\d+)$/)
     const [from, to] = m ? [Number(m[2]), Number(m[4])] : [1, state.values.length]
-    return new Response(JSON.stringify({ values: state.values.slice(from - 1, to) }), { status: 200 })
+    const page = state.values.slice(from - 1, to)
+    while (page.length && (page[page.length - 1] as unknown[]).length === 0) page.pop() // the real API trims trailing blank rows
+    return new Response(JSON.stringify({ values: page }), { status: 200 })
   }
   return { fetchFn, calls }
 }
@@ -40,8 +42,15 @@ test('first run imports every row of a multi-page sheet', async () => {
   const g = fakeSheets({ values, modifiedTime: 't1' }); const h = io(g.fetchFn)
   const r = await syncSheet(h)
   assert.equal(r.kind, 'imported'); assert.equal(h.imported[0]!.rows, 6000); assert.equal(h.imported[0]!.rejected, 0)
-  assert.equal(g.calls.filter((c) => c.includes('/values/')).length, 2, 'two pages of values')
+  assert.equal(g.calls.filter((c) => c.includes('/values/')).length, 3, 'two pages of values plus the empty page that proves the end')
   assert.equal(r.cursor.modifiedTime, 't1'); assert.match(r.cursor.contentHash!, /^[a-f0-9]{64}$/)
+})
+
+test('a blank row at a page boundary does not truncate the import', async () => {
+  const body = Array.from({ length: 7000 }, (_, i) => row(i + 1)); body[CHUNK_ROWS - 2] = [] // row 5000 of the sheet (header is row 1) is blank
+  const g = fakeSheets({ values: [HEADER, ...body], modifiedTime: 't1' }); const h = io(g.fetchFn)
+  const r = await syncSheet(h)
+  assert.equal(r.kind, 'imported'); assert.equal(h.imported[0]!.rows, 6999, 'every non-blank row after the boundary is read')
 })
 
 test('an unchanged file costs one metadata call and no import', async () => {

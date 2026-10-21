@@ -12,7 +12,7 @@ const msg = (n: number, over: Partial<Msg> & { from?: string; to?: string; subje
 })
 
 /** A small in-memory Gmail: list (paged), get, history. */
-function fakeGmail(messages: Msg[], opts: { history?: Array<{ ids: string[] }>; historyId?: string; failGetOnce?: number; rateLimitAfter?: number; historyExpired?: boolean } = {}) {
+function fakeGmail(messages: Msg[], opts: { history?: Array<{ ids: string[] }>; historyId?: string; failGetOnce?: number; rateLimitAfter?: number; historyExpired?: boolean; historyPageSize?: number } = {}) {
   const calls: string[] = []
   let gets = 0
   const fetchFn = async (input: string | URL): Promise<Response> => {
@@ -32,7 +32,11 @@ function fakeGmail(messages: Msg[], opts: { history?: Array<{ ids: string[] }>; 
     }
     if (path === 'history') {
       if (opts.historyExpired) return new Response('{}', { status: 404 })
-      return ok({ history: (opts.history ?? []).map((h) => ({ messagesAdded: h.ids.map((id) => ({ message: { id } })) })), historyId: '2000' })
+      const from = Number(url.searchParams.get('startHistoryId')); const size = Number(url.searchParams.get('maxResults') ?? 100); const start = Number(url.searchParams.get('pageToken') ?? 0)
+      const entries = (opts.history ?? []).map((h, i) => ({ id: String(1001 + i), ids: h.ids })).filter((h) => Number(h.id) > from)
+      const page = entries.slice(start, start + (opts.historyPageSize ?? size))
+      return ok({ history: page.map((h) => ({ id: h.id, messagesAdded: h.ids.map((id) => ({ message: { id } })) })), historyId: '2000',
+        ...(start + page.length < entries.length ? { nextPageToken: String(start + page.length) } : {}) })
     }
     return new Response('{}', { status: 404 })
   }
@@ -110,6 +114,34 @@ test('incremental sync fetches only newly added messages and advances the histor
   assert.equal(r.mode, 'incremental'); assert.deepEqual([...h.saved.keys()].sort(), ['m2', 'm3'])
   assert.equal(r.cursor.historyId, '2000'); assert.equal(r.complete, true)
   assert.equal(g.gets(), 2, 'duplicate history entries are fetched once')
+})
+
+test('a busy mailbox catches up over several runs: no stall, no skipped messages (more new mail than the budget)', async () => {
+  const messages = Array.from({ length: 5 }, (_, i) => msg(i + 1))
+  const g = fakeGmail(messages, { history: [{ ids: ['m1', 'm2'] }, { ids: ['m3', 'm4'] }, { ids: ['m5'] }] })
+  const first = harness(g.fetchFn, { historyId: '1000', backfill: { pageToken: null, done: true } }, 3)
+  const r1 = await syncGmail(first.io)
+  assert.equal(r1.complete, false, 'stopped early'); assert.deepEqual([...first.saved.keys()].sort(), ['m1', 'm2']); assert.equal(r1.cursor.historyId, '1001', 'moved only past the record that was handled')
+  const second = harness(g.fetchFn, r1.cursor, 3)
+  const r2 = await syncGmail(second.io)
+  assert.equal(r2.complete, true); assert.deepEqual([...second.saved.keys()].sort(), ['m3', 'm4', 'm5']); assert.equal(r2.cursor.historyId, '2000')
+})
+
+test('reaching the budget exactly while more history pages exist never skips the unread pages', async () => {
+  const messages = [msg(1), msg(2), msg(3)]
+  const g = fakeGmail(messages, { history: [{ ids: ['m1'] }, { ids: ['m2'] }, { ids: ['m3'] }], historyPageSize: 2 })
+  const first = harness(g.fetchFn, { historyId: '1000', backfill: { pageToken: null, done: true } }, 2)
+  const r1 = await syncGmail(first.io)
+  assert.deepEqual([...first.saved.keys()].sort(), ['m1', 'm2']); assert.equal(r1.complete, false); assert.equal(r1.cursor.historyId, '1002')
+  const second = harness(g.fetchFn, r1.cursor, 2); const r2 = await syncGmail(second.io)
+  assert.deepEqual([...second.saved.keys()], ['m3']); assert.equal(r2.complete, true)
+})
+
+test('a quoted display name containing a comma keeps its address', () => {
+  assert.deepEqual(parseAddress('"Moyo, Tendai" <Tendai@Example.test>, other@x.test'), { address: 'tendai@example.test', name: 'Moyo, Tendai' })
+  const row = parseGmailMessage(msg(1, { from: '"Moyo, Tendai" <tendai@example.test>' }), OWNER)!
+  assert.equal(row.counterpart_address, 'tendai@example.test'); assert.equal(row.counterpart_name, 'Moyo, Tendai')
+  assert.equal(parseGmailMessage(msg(2, { from: '"No Reply, Bank" <noreply@bank.test>' }), OWNER)!.is_automated, true)
 })
 
 test('an expired history position triggers a safe re-backfill instead of an error', async () => {

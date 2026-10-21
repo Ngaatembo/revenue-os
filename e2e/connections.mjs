@@ -44,12 +44,14 @@ async function api(req, res) {
   const chunks = []; for await (const c of req) chunks.push(c)
   const body = chunks.length ? Buffer.concat(chunks) : undefined
   const request = new Request(`${BASE}${req.url}`, { method: req.method, headers: req.headers, body: ['GET', 'HEAD'].includes(req.method) ? undefined : body })
-  const out = await worker.fetch(request, env)
+  const out = await worker.fetch(request, env, { waitUntil: (p) => pendingWork.push(p) })
   res.writeHead(out.status, Object.fromEntries(out.headers)); res.end(Buffer.from(await out.arrayBuffer()))
 }
 const authUser = (header) => { try { const p = JSON.parse(Buffer.from(String(header).replace(/^Bearer /, '').split('.')[1], 'base64url').toString()); return p.sub ? { id: p.sub, email: p.email } : null } catch { return null } }
 /** What Cloudflare's cron does once a minute. */
-const tick = async () => { const pending = []; await worker.scheduled({}, env, { waitUntil: (p) => pending.push(p) }); await Promise.all(pending) }
+const pendingWork = []
+const settle = async () => { while (pendingWork.length) await pendingWork.shift() }
+const tick = async () => { await settle(); const pending = []; await worker.scheduled({}, env, { waitUntil: (p) => pending.push(p) }); await Promise.all(pending) }
 const connOf = (provider) => (field) => sql(`select ${field} from public.provider_connections where provider='${provider}' limit 1`)
 const conn = connOf('gmail')
 const sheetsConn = connOf('google_sheets')
@@ -113,6 +115,7 @@ try {
     assert(conn('organization_id') === sql(`select id from public.organizations where name like 'My Revenue OS%' limit 1`), 'connection belongs to the owner workspace')
   })
   await step('the first chunk is visible as an honest indeterminate stage with a real stored count', async () => {
+    await settle() // the sync runs after the HTTP response, so closing the tab could not cancel it
     const card = page.locator('[data-provider=gmail]')
     await card.getByText(/Fetching available information|Processing and organizing records/).waitFor({ timeout: 15000 })
     assert((await card.getByRole('progressbar').count()) === 1, 'indeterminate progress indicator expected')
@@ -231,6 +234,18 @@ try {
     assert((await get('/api/connections/disconnect', { method: 'POST', body: JSON.stringify({ organization_id: orgA, provider: 'gmail' }) })).status === 403, 'B must not disconnect A')
     assert((await realFetch(`${BASE}/api/connections/sync`, { method: 'POST', body: '{}' })).status === 401, 'unauthenticated requests are refused')
   })
+  await step('only owners and admins can connect a source: an operator is refused at the start of the flow', async () => {
+    const C = { id: '33333333-3333-4333-8333-333333333333', email: 'operator-c@example.test' }
+    const orgA = sql(`select organization_id from public.provider_connections where provider='gmail' limit 1`)
+    sql(`insert into auth.users(id,email) values ('${C.id}','${C.email}')`); sql(`insert into public.users(id, auth_subject, email) values ('${C.id}','${C.id}','${C.email}')`)
+    sql(`insert into public.memberships(organization_id,user_id,role) values ('${orgA}','${C.id}','operator')`)
+    const start = await realFetch(`${BASE}/api/integrations/google/start?organization_id=${encodeURIComponent(orgA)}&provider=gmail`, { headers: { Authorization: `Bearer ${sessionFor(C.id, C.email).access_token}` } })
+    assert(start.status === 403, 'operator must not start authorization, got ' + start.status)
+    assert(sql(`select count(*) from public.provider_oauth_states where user_id='${C.id}'`) === '0', 'no OAuth state may be created for a refused user')
+    const sync = await realFetch(`${BASE}/api/connections/sync`, { method: 'POST', headers: { Authorization: `Bearer ${sessionFor(C.id, C.email).access_token}`, 'content-type': 'application/json' }, body: JSON.stringify({ organization_id: orgA, provider: 'gmail' }) })
+    assert(sync.status === 202, 'an operator may ask for an immediate check of an existing connection')
+    await settle()
+  })
   await step('a new owner with nothing connected gets the welcome and is not shown fake data', async () => {
     const ctx2 = await browser.newContext({ viewport: { width: 1280, height: 900 } })
     const p2 = await ctx2.newPage()
@@ -348,12 +363,29 @@ try {
     assert((await page.locator('[data-provider=whatsapp_business]').getAttribute('data-state')) === 'unavailable', 'WhatsApp stays unavailable in the product')
     assert(sql(`select count(*) from public.communications where provider='whatsapp' and subject is null and snippet like 'Hello%'`) === '1', 'text preview stored, no body column')
   })
+  await step('connecting a different mailbox starts fresh: counters reset and the old mailbox is not shown as the new one', async () => {
+    google.state.accountEmail = 'second@shop.test'
+    await page.reload(); await page.getByRole('button', { name: /^Connections$/ }).first().click()
+    await page.locator('[data-provider=gmail]').getByRole('button', { name: 'Disconnect' }).click() // switching mailbox = disconnect, then connect the other one
+    await page.locator('[data-provider=gmail][data-state=not_connected]').waitFor({ timeout: 15000 })
+    const grants = google.state.tokenGrants
+    await page.locator('[data-provider=gmail]').getByRole('button', { name: 'Connect Gmail' }).click()
+    for (let i = 0; i < 100 && google.state.tokenGrants === grants; i += 1) await sleep(100)
+    for (let i = 0; i < 100 && conn('provider_account_email') !== 'second@shop.test'; i += 1) await sleep(100)
+    assert(conn('provider_account_email') === 'second@shop.test', 'new account stored')
+    await settle()
+    assert(conn('initial_sync_completed_at') === '' || conn('records_synced') === '0', 'a new mailbox must not inherit the old mailbox completion state')
+    await page.getByRole('button', { name: /^Overview$/ }).first().click()
+    await page.getByTestId('conversations-panel').waitFor({ timeout: 20000 })
+    assert((await page.getByTestId('conversations-panel').getByText('Quote request: 20 bags of cement').count()) === 0, 'threads from the previous mailbox are not shown for the new one')
+    google.state.accountEmail = null
+  })
   await step('disconnect revokes at the provider, removes the stored credential and keeps imported records', async () => {
     const kept = sql(`select count(*) from public.communications`)
     await page.reload(); await page.getByRole('button', { name: /^Connections$/ }).first().click()
     await page.locator('[data-provider=gmail]').getByRole('button', { name: 'Disconnect' }).click()
     await page.locator('[data-provider=gmail][data-state=not_connected]').waitFor({ timeout: 15000 })
-    assert(google.state.revokeCalls === 1, 'token was revoked at the provider')
+    assert(google.state.revokeCalls === 2, 'each disconnect revoked the token at the provider')
     assert(conn('status') === 'disconnected' && conn('encrypted_refresh_token') === '', 'credential removed')
     assert(sql(`select count(*) from public.communications`) === kept, 'records kept')
     await tick(); assert(conn('status') === 'disconnected', 'scheduler leaves disconnected sources alone')

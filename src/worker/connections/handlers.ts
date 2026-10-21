@@ -7,7 +7,9 @@ interface Env extends RunnerEnv { SUPABASE_ANON_KEY?: string; APP_ORIGIN?: strin
 const PROVIDERS = ['gmail', 'google_sheets']
 
 /** Provider-neutral connection routes: sync now, disconnect. Status is read by members straight from list_connection_status(). */
-export async function handleConnections(request: Request, env: Env): Promise<Response> {
+export interface ExecutionContextLike { waitUntil(promise: Promise<unknown>): void }
+
+export async function handleConnections(request: Request, env: Env, ctx?: ExecutionContextLike): Promise<Response> {
   const url = new URL(request.url)
   if (env.APP_ORIGIN && env.APP_ORIGIN !== url.origin) return response({ error: 'app_origin_not_allowed' }, 403)
   if (url.pathname === '/api/connections/readiness') return readiness(request, env, url)
@@ -23,8 +25,10 @@ export async function handleConnections(request: Request, env: Env): Promise<Res
 
   if (url.pathname === '/api/connections/sync') {
     if (!member || !['owner', 'admin', 'operator'].includes(member.role)) return response({ error: 'workspace_permission_denied' }, 403)
-    const outcome = await runConnectionSync(env, organizationId, provider, { force: true })
-    return response({ outcome })
+    // Run after the response so closing the tab cannot cancel a sync half-way (the owner is told it continues in the background).
+    const work = runConnectionSync(env, organizationId, provider, { force: true }).catch(() => ({ status: 'failed' as const, error_code: 'sync_failed' }))
+    if (ctx) { ctx.waitUntil(work); return response({ outcome: { status: 'started' } }, 202) }
+    return response({ outcome: await work })
   }
 
   if (url.pathname === '/api/connections/disconnect') {

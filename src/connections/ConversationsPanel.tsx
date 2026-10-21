@@ -11,16 +11,17 @@ export function ConversationsPanel({ session, organizationId, gmail, onOpenConne
   const [threads, setThreads] = useState<ConversationThread[] | null>(null)
   const [error, setError] = useState('')
   const view = describeConnection(gmail)
+  const account = gmail?.provider_account_email ?? null
   const syncedMarker = `${gmail?.records_synced ?? 0}:${gmail?.last_successful_sync_at ?? ''}`
 
   useEffect(() => {
     if (view.state === 'not_connected') return
     let cancelled = false
-    loadConversationThreads(session, organizationId)
+    loadConversationThreads(session, organizationId, account)
       .then((rows) => { if (!cancelled) { setThreads(rows); setError('') } })
       .catch((cause) => { if (!cancelled) setError(cause instanceof Error ? cause.message : 'Could not load conversations.') })
     return () => { cancelled = true }
-  }, [session, organizationId, view.state, syncedMarker])
+  }, [session, organizationId, account, view.state, syncedMarker])
 
   if (view.state === 'not_connected') {
     return <section className="panel conversations-panel" aria-labelledby="conversations-title"><h2 id="conversations-title">Customer conversations</h2>

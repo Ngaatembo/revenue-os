@@ -27,7 +27,10 @@ export async function accessTokenFor(env: GoogleEnv, encryptedRefreshToken: stri
   })
   const body = await r.json().catch(() => null) as { access_token?: string; error?: string } | null
   if (r.ok && typeof body?.access_token === 'string') return body.access_token
-  if (body?.error === 'invalid_grant' || r.status === 400 || r.status === 401) throw new AuthorizationRevokedError()
+  // Only "invalid_grant" means this owner's refresh token was revoked or expired. A rejected client (wrong or rotated
+  // secret) affects every workspace and must never wipe stored credentials.
+  if (body?.error === 'invalid_grant') throw new AuthorizationRevokedError()
+  if (body?.error === 'invalid_client' || body?.error === 'unauthorized_client' || body?.error === 'invalid_request') throw new Error('provider_client_rejected')
   if (r.status === 429) throw new RateLimitedError(120)
   throw new Error('provider_token_refresh_failed')
 }

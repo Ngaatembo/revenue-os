@@ -60,6 +60,7 @@ check "falsefalse" "select has_function_privilege('authenticated','public.persis
 check "truefalse" "select has_function_privilege('authenticated','public.list_connection_status(text)','execute')::text || has_function_privilege('anon','public.list_connection_status(text)','execute')::text" "status function: members yes, anonymous no"
 if run -1 -f supabase/migrations/20261021120000_connections_sync_and_communications.sql >/dev/null 2>&1; then echo "PASS re-applying 20261021120000 is safe (idempotent)"; else echo "FAIL re-applying 20261021120000 errored"; FAILS=$((FAILS+1)); fi
 check "connected|enc-seed" "select status||'|'||encrypted_refresh_token from public.provider_connections where provider='google_sheets'" "the re-apply changed no data"
+check "provider_connections_consecutive_failures_check,provider_connections_error_len,provider_connections_provider_check,provider_connections_records_synced_check,provider_connections_status_check,provider_connections_sync_cursor_check,provider_connections_sync_stage_check,provider_connections_token_required" "select string_agg(conname, ',' order by conname) from pg_constraint where conrelid='public.provider_connections'::regclass and contype='c'" "re-applying keeps every constraint, including the column-level checks"
 echo "== rolling back"
 run -1 -f supabase/rollbacks/20261021140000_whatsapp_webhook_receiver.rollback.sql
 run -1 -f supabase/rollbacks/20261021130000_sheets_automatic_sync.rollback.sql

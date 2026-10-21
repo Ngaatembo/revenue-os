@@ -43,7 +43,7 @@ export function createFakeGoogle() {
       return json({ access_token: 'at-2', expires_in: 3600 })
     }
     if (url.host === 'oauth2.googleapis.com' && url.pathname === '/revoke') { state.revokeCalls += 1; return json({}) }
-    if (url.pathname === '/oauth2/v2/userinfo') return json({ email: OWNER })
+    if (url.pathname === '/oauth2/v2/userinfo') return json({ email: state.accountEmail ?? OWNER })
     if (url.host === 'gmail.googleapis.com') {
       if (request.headers.get('authorization') !== 'Bearer at-2' && request.headers.get('authorization') !== 'Bearer at-1') return json({ error: { status: 'UNAUTHENTICATED' } }, 401)
       const path = url.pathname.replace('/gmail/v1/users/me/', '')

@@ -50,4 +50,4 @@ Stored per email: id, thread id, direction, counterpart address/name, subject (�
 - **Real Gmail test procedure and expected delays**: `gmail-verification-runbook.md`.
 
 ### Evidence (sandbox, 2026-10-21)
-`npm run test:domain` 241/241 · `scripts/test-db.sh` passes (new suites 10, 11, 12) · `npm run test:e2e:connections` 26/26 · `npm run test:e2e` 17/17 · `scripts/rehearse-migration.sh` PASSED · build and lint clean. All provider behaviour above is **simulated Google**.
+`npm run test:domain` 245/245 · `scripts/test-db.sh` passes (new suites 10, 11, 12) · `npm run test:e2e:connections` 28/28 · `npm run test:e2e` 17/17 · `scripts/rehearse-migration.sh` PASSED · build and lint clean. All provider behaviour above is **simulated Google**.

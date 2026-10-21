@@ -5,10 +5,10 @@ import type { ConversationThread } from './conversationInsights.ts'
 export const loadConnectionStatus = (session: SupabaseSession, organizationId: string) =>
   apiRequest<ConnectionRow[]>(session, 'rpc/list_connection_status', { method: 'POST', body: JSON.stringify({ p_organization_id: organizationId }) })
 
-export const loadConversationThreads = (session: SupabaseSession, organizationId: string) => {
+export const loadConversationThreads = (session: SupabaseSession, organizationId: string, account: string | null) => {
   const params = new URLSearchParams({
-    select: 'provider,thread_id,message_count,last_message_at,last_direction,last_inbound_at,last_outbound_at,counterpart_address,counterpart_name,subject,last_snippet,all_automated',
-    organization_id: `eq.${organizationId}`, provider: 'eq.gmail', order: 'last_message_at.desc', limit: '500',
+    select: 'provider,thread_id,source_account,message_count,last_message_at,last_direction,last_inbound_at,last_outbound_at,counterpart_address,counterpart_name,subject,last_snippet,all_automated',
+    organization_id: `eq.${organizationId}`, provider: 'eq.gmail', ...(account ? { source_account: `eq.${account.toLowerCase()}` } : {}), order: 'last_message_at.desc', limit: '500',
   })
   return apiRequest<ConversationThread[]>(session, `conversation_threads?${params}`)
 }

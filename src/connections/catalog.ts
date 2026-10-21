@@ -93,6 +93,7 @@ export function errorMessage(code: string | null): string | null {
     case 'provider_rate_limited': return 'Google asked Revenue OS to slow down. It will continue automatically.'
     case 'provider_access_denied': return 'Google refused access to this mailbox. Check that the account still allows Revenue OS, then reconnect.'
     case 'provider_request_failed': return 'Google could not complete the request. Revenue OS will try again automatically.'
+    case 'provider_client_rejected': return 'Google rejected Revenue OS\'s own credentials (client ID or secret). This is a server setting, not your account: ask whoever set up Google Cloud to check it. Your connection and data are kept.'
     case 'provider_token_refresh_failed': return 'Revenue OS could not renew its access to Google. It will try again automatically.'
     case 'account_email_missing': return 'The Google account could not be identified. Reconnect to try again.'
     case 'snapshot_rejected_rows': return 'Some rows in the sheet could not be read, so nothing was marked missing. Fix those rows; the next automatic check picks them up.'

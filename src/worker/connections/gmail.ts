@@ -25,11 +25,14 @@ const AUTOMATED_SENDER = /(^|[._-])(no-?reply|do-?not-?reply|donotreply|notifica
 
 export function parseAddress(value: string | undefined): { address: string | null; name: string | null } {
   if (!value) return { address: null, name: null }
-  const first = value.split(',')[0]!.trim()
-  const m = first.match(/^(?:"?([^"<]*)"?\s*)?<([^<>@\s]+@[^<>@\s]+)>$/) ?? first.match(/^()([^<>@\s]+@[^<>@\s]+)$/)
-  if (!m) return { address: null, name: null }
-  const name = (m[1] ?? '').trim()
-  return { address: m[2]!.toLowerCase().slice(0, 320), name: name ? name.slice(0, 200) : null }
+  // "Moyo, Tendai" <t@x.test> | Tendai <t@x.test> | t@x.test  (commas inside quotes belong to the name)
+  const named = value.match(/^\s*(?:"((?:[^"\\]|\\.)*)"|([^<",]*))\s*<([^<>\s@]+@[^<>\s]+)>/)
+  if (named) {
+    const name = (named[1] ?? named[2] ?? '').replace(/\\(.)/g, '$1').trim()
+    return { address: named[3]!.toLowerCase().slice(0, 320), name: name ? name.slice(0, 200) : null }
+  }
+  const bare = value.match(/^\s*([^\s<>",@]+@[^\s<>",]+)/)
+  return bare ? { address: bare[1]!.toLowerCase().slice(0, 320), name: null } : { address: null, name: null }
 }
 
 /** Convert a Gmail metadata message into a normalised communication, or null when it is not a customer conversation. */
@@ -144,22 +147,29 @@ export async function syncGmail(io: GmailSyncIO): Promise<GmailSyncResult> {
     return { cursor, fetched, stored, complete: cursor.backfill!.done, mode: 'backfill' }
   }
 
-  // Incremental: only messages added since the stored history position.
+  // Incremental: only messages added since the stored history position. The cursor moves only past history
+  // records that were fully handled, so a busy mailbox catches up over several runs and never skips or stalls.
   await io.onStage('fetching')
   let pageToken: string | undefined
   const ids = new Set<string>()
+  let lastHandledRecord: string | null = null
   let latest = cursor.historyId!
+  let cut = false
   try {
-    do {
+    pages: do {
       const page = await gmailGet(io.fetchFn, io.accessToken, 'history', {
         startHistoryId: cursor.historyId!, historyTypes: 'messageAdded', maxResults: '100', ...(pageToken ? { pageToken } : {}),
       })
-      for (const h of (page.history as Array<{ messagesAdded?: Array<{ message?: { id?: string } }> }> | undefined) ?? []) {
-        for (const added of h.messagesAdded ?? []) if (added.message?.id) ids.add(added.message.id)
+      for (const h of (page.history as Array<{ id?: string; messagesAdded?: Array<{ message?: { id?: string } }> }> | undefined) ?? []) {
+        const entryIds = (h.messagesAdded ?? []).flatMap((added) => added.message?.id ? [added.message.id] : [])
+        const fresh = entryIds.filter((id) => !ids.has(id))
+        if (ids.size > 0 && ids.size + fresh.length > io.messageBudget) { cut = true; break pages }
+        fresh.forEach((id) => ids.add(id))
+        if (h.id) lastHandledRecord = h.id
       }
       if (typeof page.historyId === 'string') latest = page.historyId
       pageToken = typeof page.nextPageToken === 'string' ? page.nextPageToken : undefined
-    } while (pageToken && ids.size < io.messageBudget)
+    } while (pageToken)
   } catch (e) {
     if (e instanceof Error && e.message === 'provider_not_found') {
       // The stored history position has expired (Gmail keeps it for about a week). Re-backfill; dedupe keeps this safe.
@@ -169,15 +179,15 @@ export async function syncGmail(io: GmailSyncIO): Promise<GmailSyncResult> {
     }
     throw e
   }
-  const toFetch = [...ids].slice(0, io.messageBudget)
-  fetched = toFetch.length
+  fetched = ids.size
   await io.onStage('processing')
-  const rows = await fetchMetadata(io, toFetch)
+  const rows = await fetchMetadata(io, [...ids])
   if (rows.length) await io.save(rows)
   stored = rows.length
-  // Only advance if every discovered id was handled; otherwise the next run re-reads the same range.
-  const advanced = toFetch.length === ids.size
-  cursor = advanced ? { ...cursor, historyId: latest } : cursor
+  // Everything read was handled: jump to the mailbox's current position. If we stopped early, continue from the last
+  // record we finished (or stay put when the very first record could not be taken), and run again right away.
+  const advancedTo = cut ? (lastHandledRecord ?? cursor.historyId!) : latest
+  cursor = { ...cursor, historyId: advancedTo }
   await io.checkpoint(cursor, stored)
-  return { cursor, fetched, stored, complete: advanced, mode: 'incremental' }
+  return { cursor, fetched, stored, complete: !cut, mode: 'incremental' }
 }

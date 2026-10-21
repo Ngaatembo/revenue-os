@@ -62,15 +62,18 @@ Verified in the repo by `src/worker/__tests__/deployConfig.test.ts`: cron `* * *
 | `APP_ORIGIN` | secret/var | present; equals `https://revenue-os.ngaatendwew.workers.dev` (callback redirects there) |
 | `SUPABASE_URL` | var (in `wrangler.jsonc`) | present |
 | `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` | secret | present (guard passes) |
-| `SYNC_MESSAGE_BUDGET`, `SYNC_INTERVAL_MINUTES` | optional | defaults 100 / 5. **Set budget ≤ 30 on the free plan.** |
+| `SYNC_MESSAGE_BUDGET`, `SYNC_INTERVAL_MINUTES` | plain vars, now in `wrangler.jsonc` | 100 / 5, shipped with the code so a deploy cannot remove them. |
 | `WHATSAPP_APP_SECRET`, `WHATSAPP_VERIFY_TOKEN` | optional secrets | not set (receiver disabled) |
 Observed 2026-10-21 against production with unauthenticated requests only: `/api/health` ok; Google routes answer 401 (not 503); `/api/connections/*` is 404 (old Worker deployed; no cron yet).
 
 ## 7. Every remaining external requirement
 1. Owner approval to apply the migrations and merge/deploy.
 2. Google Cloud: Gmail API enabled, scopes added, test users, redirect URI (see `gmail-verification-runbook.md`).
-3. Choose the Workers plan or set `SYNC_MESSAGE_BUDGET` accordingly.
+3. **Workers Paid plan.** The free plan's 10 ms CPU per request/cron run and 50 subrequests are very unlikely to fit a sync ([limits](https://developers.cloudflare.com/workers/platform/limits/)); the default budget of 100 assumes the paid plan.
 4. Real authorization run with a test mailbox and a test spreadsheet (synthetic data).
 5. Supabase Auth: enable leaked-password protection.
 6. Public launch only: Google OAuth verification + security assessment for `gmail.readonly`.
 7. WhatsApp: Meta developer app/test number (see `whatsapp-route.md`); business verification and app review for real customers.
+
+## 8. Review findings fixed before release (commit after `806a655`)
+An independent review of the branch found and I fixed: incremental Gmail sync could stall or skip mail once new mail exceeded the per-run budget (cursor now advances only past fully handled history records); a rejected Google client (wrong/rotated secret) was treated as "owner revoked" and wiped stored credentials (only `invalid_grant` does that now); any workspace member could start an OAuth flow and overwrite the workspace's Gmail/Sheets credential (owner/admin only, re-checked at the callback); sync ran inside the HTTP request and could be cancelled by closing the tab (now `ctx.waitUntil`); "Sync now" could skip a provider rate-limit pause; re-applying the migration silently dropped column-level checks (constraints are now dropped by name); blank rows at a 5,000-row page boundary truncated large sheets; Gmail failures redirected as Sheets failures; the Overview reload effect fired on first load and used a stale assumption; reconnecting a *different* mailbox inherited the old one's counters and threads; quoted display names containing commas lost the sender. Each has a regression test.

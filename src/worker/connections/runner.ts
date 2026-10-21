@@ -44,22 +44,24 @@ async function runGmail(env: RunnerEnv, org: string, c: Claimed, accessToken: st
   const ownerEmail = c.provider_account_email
   if (!ownerEmail) throw new Error('account_email_missing')
   const budget = Math.max(10, Math.min(500, Number(env.SYNC_MESSAGE_BUDGET) || 100))
+  let inserted = 0 // rows that were actually new (re-reads after reauthorization are ignored by the unique key)
   const result = await syncGmail({
     fetchFn, accessToken, ownerEmail, cursor: parseCursor(c.sync_cursor), messageBudget: budget,
     onStage: async (stage) => { await patch(env, org, 'gmail', { sync_stage: stage }) },
     save: async (rows: CommunicationRow[]) => {
       for (let i = 0; i < rows.length; i += 100) {
-        await db(env, 'communications?on_conflict=organization_id,provider,external_id', {
-          method: 'POST', headers: { Prefer: 'resolution=ignore-duplicates,return=minimal' },
+        const added = await db(env, 'communications?on_conflict=organization_id,provider,external_id&select=id', {
+          method: 'POST', headers: { Prefer: 'resolution=ignore-duplicates,return=representation' },
           body: JSON.stringify(rows.slice(i, i + 100).map((row) => ({ ...row, organization_id: org }))),
-        })
+        }) as unknown[]
+        inserted += Array.isArray(added) ? added.length : 0
       }
     },
-    checkpoint: async (cursor: GmailCursor, stored: number) => {
-      await patch(env, org, 'gmail', { sync_cursor: JSON.stringify(cursor), records_synced: Number(c.records_synced) + stored })
+    checkpoint: async (cursor: GmailCursor) => {
+      await patch(env, org, 'gmail', { sync_cursor: JSON.stringify(cursor), records_synced: Number(c.records_synced) + inserted })
     },
   })
-  return { complete: result.complete, fetched: result.fetched, stored: result.stored, changed: result.stored > 0 }
+  return { complete: result.complete, fetched: result.fetched, stored: result.stored, changed: inserted > 0 }
 }
 
 async function runSheets(env: RunnerEnv, org: string, c: Claimed, accessToken: string, fetchFn: FetchFn): Promise<ProviderRun> {

@@ -30,7 +30,7 @@ async function checkSupabase(env: Env): Promise<Response> {
 }
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx?: { waitUntil(promise: Promise<unknown>): void }): Promise<Response> {
     const url = new URL(request.url)
     if (url.pathname.startsWith('/api/integrations/google/')) {
       if (!googleSheetsOAuthReady(env)) return oauthNotConfiguredResponse()
@@ -39,7 +39,7 @@ export default {
     if (url.pathname === '/api/webhooks/whatsapp') return handleWhatsAppWebhook(request, env)
     if (url.pathname.startsWith('/api/connections/')) {
       if (!googleSheetsOAuthReady(env)) return oauthNotConfiguredResponse()
-      return handleConnections(request, env)
+      return handleConnections(request, env, ctx)
     }
     if (url.pathname === '/api/health') {
       if (request.method !== 'GET') return json({ error: 'Method not allowed' }, 405)

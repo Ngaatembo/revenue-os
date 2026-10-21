@@ -32,7 +32,9 @@ select t.eq('conn: a stale lease (crashed worker) can be reclaimed', $q$select c
 update public.provider_connections set status='connected', next_sync_at = now() + interval '1 hour' where organization_id=t.o('orga') and provider='gmail';
 select t.eq('conn: not due yet is not claimed', $q$select count(*)::text from public.claim_connection_sync(t.o('orga'),'gmail')$q$, '0');
 select t.eq('conn: force overrides schedule', $q$select count(*)::text from public.claim_connection_sync(t.o('orga'),'gmail',true)$q$, '1');
-update public.provider_connections set status='connected', sync_started_at=null where organization_id=t.o('orga') and provider='gmail';
+update public.provider_connections set status='connected', sync_started_at=null, sync_stage='waiting_rate_limit', next_sync_at = now() + interval '5 minutes' where organization_id=t.o('orga') and provider='gmail';
+select t.eq('conn: "sync now" cannot skip a provider rate-limit pause', $q$select count(*)::text from public.claim_connection_sync(t.o('orga'),'gmail',true)$q$, '0');
+update public.provider_connections set status='connected', sync_started_at=null, sync_stage='complete', next_sync_at=null where organization_id=t.o('orga') and provider='gmail';
 
 insert into public.communications(organization_id, provider, external_id, thread_id, direction, counterpart_address, counterpart_name, subject, snippet, occurred_at)
 values (t.o('orga'),'gmail','m1','t1','inbound','cust@example.test','Cust','Quote for 10 units','Can you send a quote?', now()-interval '5 days'),
@@ -40,6 +42,7 @@ values (t.o('orga'),'gmail','m1','t1','inbound','cust@example.test','Cust','Quot
        (t.o('orga'),'gmail','m3','t2','outbound','other@example.test','Other','Re: Invoice question','Sent it today', now()-interval '3 days'),
        (t.o('orgb'),'gmail','m1','t1','inbound','b@example.test','B','B private subject','secret', now()-interval '1 day');
 select t.err('conn: duplicate external id rejected', $q$insert into public.communications(organization_id, provider, external_id, thread_id, direction, occurred_at) values (t.o('orga'),'gmail','m1','t9','inbound',now())$q$, '23505');
+select t.eq('conn: thread view carries the source mailbox', $q$select coalesce(source_account,'none') from public.conversation_threads where organization_id=t.o('orga') and thread_id='t2'$q$, 'none');
 select t.eq('conn: thread view groups messages', $q$select message_count||'/'||last_direction from public.conversation_threads where organization_id=t.o('orga') and thread_id='t2'$q$, '2/outbound');
 reset role;
 select set_config('request.jwt.claim.role', '', false);

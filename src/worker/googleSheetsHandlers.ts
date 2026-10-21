@@ -106,7 +106,9 @@ export async function handleGoogleSheets(request: Request, env: Env): Promise<Re
     const organizationId = url.searchParams.get('organization_id')?.trim()
     if (!organizationId || organizationId.length > 160) return response({ error: 'organization_required' }, 400)
     const member = await membership(env, user.authId, organizationId)
+    // Connecting a source replaces the workspace's credential, so it needs the same role as disconnecting one.
     if (!member) return response({ error: 'workspace_access_denied' }, 403)
+    if (!['owner', 'admin'].includes(member.role)) return response({ error: 'workspace_admin_required', message: 'Only an owner or admin can connect a source.' }, 403)
     const requestedProvider = url.searchParams.get('provider') ?? 'google_sheets'
     if (requestedProvider !== 'google_sheets' && requestedProvider !== 'gmail') return response({ error: 'unknown_provider' }, 400)
     const state = createOAuthState()
@@ -137,6 +139,7 @@ export async function handleGoogleSheets(request: Request, env: Env): Promise<Re
     if (!state || state.length > 64 || providerError || !code || code.length > 4096) {
       return redirect(appRedirect(origin, 'failed'))
     }
+    let flowProvider = 'google_sheets'
     try {
       const stateHash = await hashOAuthState(state)
       const consumed = await db(env, 'rpc/consume_provider_oauth_state', {
@@ -145,6 +148,10 @@ export async function handleGoogleSheets(request: Request, env: Env): Promise<Re
       const saved = consumed[0]
       if (!saved || (saved.provider !== 'google_sheets' && saved.provider !== 'gmail')) return redirect(appRedirect(origin, 'failed'))
       const flow = saved.provider
+      flowProvider = flow
+      // The role may have changed while the owner was on Google's page.
+      const stillAllowed = await db(env, `memberships?select=role&organization_id=eq.${encodeURIComponent(saved.organization_id)}&user_id=eq.${encodeURIComponent(saved.user_id)}&limit=1`) as Array<{ role: string }>
+      if (!stillAllowed[0] || !['owner', 'admin'].includes(stillAllowed[0].role)) return redirect(appRedirect(origin, 'failed', flow))
       const tokens = await tokenRequest(env, {
         code, grant_type: 'authorization_code',
         redirect_uri: new URL('/api/integrations/google/callback', url.origin).toString(),
@@ -164,6 +171,9 @@ export async function handleGoogleSheets(request: Request, env: Env): Promise<Re
         // The owner unticked the permission, or the account could not be identified: nothing is stored as connected.
         return redirect(appRedirect(origin, 'failed', flow))
       }
+      const previous = flow === 'gmail' ? await db(env, `provider_connections?select=provider_account_email&organization_id=eq.${encodeURIComponent(saved.organization_id)}&provider=eq.gmail&limit=1`) as Array<{ provider_account_email: string | null }> : []
+      // Reconnecting the same mailbox (e.g. the weekly Testing-mode expiry) keeps its history; a different mailbox starts fresh.
+      const differentAccount = flow === 'gmail' && Boolean(previous[0]?.provider_account_email) && previous[0]!.provider_account_email !== accountEmail
       await db(env, 'provider_connections?on_conflict=organization_id,provider', {
         method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
         body: JSON.stringify({
@@ -172,11 +182,12 @@ export async function handleGoogleSheets(request: Request, env: Env): Promise<Re
           granted_scopes: scopes, last_error_code: null, updated_at: new Date().toISOString(),
           // A fresh authorization restarts the sync position; duplicate prevention makes a re-read safe.
           ...(flow === 'gmail' ? { sync_cursor: null, sync_stage: 'connecting', sync_started_at: null, next_sync_at: null, consecutive_failures: 0 } : {}),
+          ...(differentAccount ? { records_synced: 0, initial_sync_completed_at: null, last_successful_sync_at: null } : {}),
         }),
       })
       return redirect(appRedirect(origin, 'connected', flow))
     } catch {
-      return redirect(appRedirect(origin, 'failed'))
+      return redirect(appRedirect(origin, 'failed', flowProvider))
     }
   }
 

@@ -3,17 +3,16 @@
 -- only through list_connection_status(), which never returns credentials.
 
 -- 1. Allow more providers and richer sync states on provider_connections / provider_oauth_states.
-DO $$
-DECLARE c record;
-BEGIN
-  FOR c IN SELECT conname FROM pg_constraint WHERE conrelid = 'public.provider_connections'::regclass AND contype = 'c' LOOP
-    EXECUTE format('ALTER TABLE public.provider_connections DROP CONSTRAINT %I', c.conname);
-  END LOOP;
-  FOR c IN SELECT conname FROM pg_constraint WHERE conrelid = 'public.provider_oauth_states'::regclass AND contype = 'c'
-      AND pg_get_constraintdef(oid) LIKE '%provider%' LOOP
-    EXECUTE format('ALTER TABLE public.provider_oauth_states DROP CONSTRAINT %I', c.conname);
-  END LOOP;
-END $$;
+-- Only the table-level constraints this release replaces are dropped (by name: the four that exist in production plus the
+-- four this migration creates, so re-applying is safe). Column-level checks added below are never touched.
+ALTER TABLE public.provider_connections
+  DROP CONSTRAINT IF EXISTS provider_connections_check,
+  DROP CONSTRAINT IF EXISTS provider_connections_last_error_code_check,
+  DROP CONSTRAINT IF EXISTS provider_connections_provider_check,
+  DROP CONSTRAINT IF EXISTS provider_connections_status_check,
+  DROP CONSTRAINT IF EXISTS provider_connections_error_len,
+  DROP CONSTRAINT IF EXISTS provider_connections_token_required;
+ALTER TABLE public.provider_oauth_states DROP CONSTRAINT IF EXISTS provider_oauth_states_provider_check;
 
 ALTER TABLE public.provider_connections
   ADD CONSTRAINT provider_connections_provider_check CHECK (provider IN ('google_sheets', 'gmail')),
@@ -65,7 +64,8 @@ AS $function$
      AND c.status IN ('connected', 'needs_attention', 'syncing')
      AND c.encrypted_refresh_token IS NOT NULL
      AND (c.sync_started_at IS NULL OR c.sync_started_at < now() - interval '10 minutes' OR c.status <> 'syncing')
-     AND (p_force OR c.next_sync_at IS NULL OR c.next_sync_at <= now())
+     -- "Sync now" may skip the normal schedule but never a provider-requested rate-limit pause.
+     AND ((p_force AND c.sync_stage IS DISTINCT FROM 'waiting_rate_limit') OR c.next_sync_at IS NULL OR c.next_sync_at <= now())
   RETURNING c.status, c.sync_cursor, c.encrypted_refresh_token, c.provider_account_email,
             c.consecutive_failures, c.initial_sync_completed_at, c.records_synced;
 $function$;
@@ -125,7 +125,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON public.communications TO service_role;
 -- 5. One row per conversation: what we observed (last message, who sent it) and nothing inferred.
 -- Inference ("waiting on you") is derived by the app from these facts and is labelled as such.
 CREATE OR REPLACE VIEW public.conversation_threads WITH (security_invoker = true) AS
-SELECT c.organization_id, c.provider, c.thread_id,
+SELECT c.organization_id, c.provider, c.thread_id, c.source_account,
        count(*)::integer AS message_count,
        max(c.occurred_at) AS last_message_at,
        (array_agg(c.direction ORDER BY c.occurred_at DESC))[1] AS last_direction,
@@ -137,6 +137,6 @@ SELECT c.organization_id, c.provider, c.thread_id,
        (array_agg(c.snippet ORDER BY c.occurred_at DESC) FILTER (WHERE c.snippet IS NOT NULL))[1] AS last_snippet,
        bool_and(c.is_automated) AS all_automated
   FROM public.communications c
- GROUP BY c.organization_id, c.provider, c.thread_id;
+ GROUP BY c.organization_id, c.provider, c.thread_id, c.source_account;
 REVOKE ALL ON public.conversation_threads FROM PUBLIC, anon, authenticated;
 GRANT SELECT ON public.conversation_threads TO authenticated, service_role;

@@ -995,16 +995,19 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
   }, [landing])
 
   // Background synchronization finished while the app is open: reload the saved invoices without a manual import.
-  const sheetsSyncedAt = conn.rows?.find((row) => row.provider === 'google_sheets')?.last_successful_sync_at ?? null
+  const sheetsSyncedAt = conn.rows ? (conn.rows.find((row) => row.provider === 'google_sheets')?.last_successful_sync_at ?? null) : undefined
   const seenSheetsSync = useRef<string | null | undefined>(undefined)
+  const assumptionRef = useRef(assumptionBps)
+  useEffect(() => { assumptionRef.current = assumptionBps }, [assumptionBps])
   useEffect(() => {
-    if (seenSheetsSync.current === undefined) { seenSheetsSync.current = sheetsSyncedAt; return }
+    if (sheetsSyncedAt === undefined) return // connection status not loaded yet
+    if (seenSheetsSync.current === undefined) { seenSheetsSync.current = sheetsSyncedAt; return } // first reading is the baseline, not a change
     if (seenSheetsSync.current === sheetsSyncedAt) return
     seenSheetsSync.current = sheetsSyncedAt
     void (async () => {
       const loaded = await loadInvoices(session, organization.id)
       setInvoices(loaded); setInvoicesLoading(false)
-      await refreshOpportunities(loaded, assumptionBps !== null)
+      await refreshOpportunities(loaded, assumptionRef.current !== null)
     })().catch(() => undefined)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sheetsSyncedAt])

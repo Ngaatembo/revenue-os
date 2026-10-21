@@ -27,8 +27,8 @@ Still to confirm/set:
 | Setting | How |
 |---|---|
 | Cron Trigger `* * * * *` | Ships with the code (`wrangler.jsonc` → `triggers.crons`). After deploy: Cloudflare dashboard → Worker `revenue-os` → **Settings → Triggers → Cron Triggers** must list it. |
-| `SYNC_MESSAGE_BUDGET` (optional) | Emails per run. Default 100. **Free Workers plan allows ~50 subrequests per run → set 30.** Paid plan: up to 500. `npx wrangler secret put SYNC_MESSAGE_BUDGET` |
-| `SYNC_INTERVAL_MINUTES` (optional) | Default 5. |
+| Workers plan | **Workers Paid is required in practice** (free: 10 ms CPU, 50 subrequests). See `OWNER-CHECKLIST.md` item 1. |
+| `SYNC_MESSAGE_BUDGET`, `SYNC_INTERVAL_MINUTES` | Ship in `wrangler.jsonc` (100 and 5). Change them there, not in the dashboard. |
 
 ## C. Database + deploy (needs your explicit approval)
 

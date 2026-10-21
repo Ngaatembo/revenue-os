@@ -51,12 +51,14 @@ async function readValues(fetchFn: FetchFn, token: string, spreadsheetId: string
   }
   const chunk = chunkRanges(range)
   if (!chunk) return read(range)
+  // The Sheets API trims trailing blank rows inside a requested range, so a short page does NOT mean the sheet ended
+  // (e.g. a blank row at a page boundary). Keep paging until a page comes back completely empty.
   const all: unknown[][] = []
-  for (let i = 0; i * CHUNK_ROWS < MAX_ROWS + CHUNK_ROWS; i += 1) {
+  for (let i = 0; i <= Math.ceil(MAX_ROWS / CHUNK_ROWS) + 1; i += 1) {
     const rows = await read(chunk(i))
+    if (rows.length === 0) return all
     all.push(...rows)
     if (all.length > MAX_ROWS + 1) throw new Error('sheet_too_large')
-    if (rows.length < CHUNK_ROWS) return all
   }
   throw new Error('sheet_too_large')
 }

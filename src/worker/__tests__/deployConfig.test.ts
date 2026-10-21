@@ -16,7 +16,8 @@ test('the Worker is configured to run background syncs on a Cron Trigger every m
 test('API routes reach the Worker before static assets', () => { assert.ok(wrangler.assets?.run_worker_first?.includes('/api/*')) })
 test('no secret value is committed in wrangler.jsonc', () => {
   const raw = readFileSync(new URL('../../../wrangler.jsonc', import.meta.url), 'utf8')
-  assert.deepEqual(Object.keys(wrangler.vars ?? {}), ['SUPABASE_URL'])
+  assert.deepEqual(Object.keys(wrangler.vars ?? {}).sort(), ['SUPABASE_URL', 'SYNC_INTERVAL_MINUTES', 'SYNC_MESSAGE_BUDGET'])
+  assert.equal(wrangler.vars?.SYNC_INTERVAL_MINUTES, '5'); assert.equal(wrangler.vars?.SYNC_MESSAGE_BUDGET, '100')
   assert.equal(/SECRET|SERVICE_ROLE|ENCRYPTION_KEY|CLIENT_ID/i.test(raw.replace(/\/\/.*$/gm, '')), false)
 })
 test('scheduled() does nothing, and does not throw, when the server is not configured', async () => {

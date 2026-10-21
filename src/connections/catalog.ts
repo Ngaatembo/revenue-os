@@ -86,6 +86,8 @@ const STAGE_TEXT: Record<SyncStage, string> = {
   failed: 'Synchronization needs attention',
 }
 
+const SHEET_EXAMPLE = 'Example: row 1 is customer_id | customer_name | invoice_number | currency | total_amount | paid_amount | issued_at | due_at, and row 2 is C-001 | Acme Ltd | INV-1001 | USD | 1200.00 | 0 | 2026-08-01 | 2026-09-01.'
+
 export function errorMessage(code: string | null): string | null {
   switch (code) {
     case null: return null
@@ -104,11 +106,11 @@ export function errorMessage(code: string | null): string | null {
     case 'google_sheet_access_denied': return 'This Google account can no longer read the selected spreadsheet. Check that it is still shared with the connected account.'
     case 'google_sheet_invalid_range': return 'The selected tab or range no longer exists. Choose the invoice tab again.'
     case 'sheet_too_large': case 'sheet_too_many_rows': return 'The sheet has more than 50,000 rows. Use a smaller range or archive old rows.'
-    case 'sheet_needs_header_and_rows': return 'The selected tab needs a header row and at least one invoice row.'
-    case 'no_valid_invoice_rows': return 'None of the rows in the selected tab could be read as invoices. Check the column names and values.'
+    case 'sheet_needs_header_and_rows': return 'Google returned fewer than two filled rows for the selected tab, so Revenue OS found no header row followed by an invoice. Check that the data is on the tab you selected (not another tab), row 1 is the header and row 2 onward holds invoices. ' + SHEET_EXAMPLE
+    case 'no_valid_invoice_rows': return 'None of the rows under the header could be read as invoices. Each row needs an id, customer, invoice number, a three-letter currency, plain-number amounts and dates such as 2026-10-01. ' + SHEET_EXAMPLE
     case 'duplicate_sheet_headers': return 'Two columns in the sheet have the same name. Rename one of them.'
     default:
-      if (code.startsWith('missing_columns:')) return 'Your sheet is missing these invoice columns: ' + code.slice('missing_columns:'.length).split(',').join(', ') + '. Add them to the header row; the next automatic check picks the change up.'
+      if (code.startsWith('missing_columns:')) return 'Your sheet is missing these invoice columns: ' + code.slice('missing_columns:'.length).split(',').join(', ') + '. Add them to the header row; the next automatic check picks the change up. ' + SHEET_EXAMPLE
       if (code.startsWith('ambiguous_sheet_headers:')) return 'Some column names in the sheet are ambiguous. Use the Revenue OS invoice column names.'
       return 'The last synchronization did not finish. Revenue OS will retry automatically.'
   }
@@ -160,7 +162,38 @@ export function freshnessLine(rows: ConnectionRow[] | null, now = Date.now()): s
     const name = SOURCE_NAME[r.provider] ?? r.provider
     if (view.state === 'failed') return `${name} needs to be reconnected`
     if (r.last_successful_sync_at) return `${name} last synchronized ${formatAge(r.last_successful_sync_at, now)}${view.state === 'needs_attention' ? ' (needs attention)' : ''}`
+    if (view.state === 'needs_attention') return `${name} has not synchronized successfully yet (needs attention)`
     return `${name} is still setting up`
   })
   return `Built from saved records. ${parts.join(' · ')}.`
+}
+
+/** A connected source that has not synchronized for this long is treated as stale. Syncs normally run every few minutes. */
+export const STALE_AFTER_HOURS = 6
+
+export type SourceWarning = { provider: string; message: string }
+
+/**
+ * Warnings shown above the Overview when a connected source is failing or out of date. A failed or stale source says
+ * nothing about whether business activity happened, so every message says the list may be incomplete, never that it is empty.
+ */
+export function sourceWarnings(rows: ConnectionRow[] | null, now = Date.now()): SourceWarning[] {
+  const out: SourceWarning[] = []
+  for (const r of rows ?? []) {
+    const view = describeConnection(r)
+    if (view.state === 'not_connected') continue
+    const name = SOURCE_NAME[r.provider]
+    if (!name) continue
+    const effect = r.provider === 'google_sheets'
+      ? 'The overdue invoices below are from the last good import and may be out of date, for example a payment recorded in the sheet since then would not show.'
+      : 'Customers waiting for a reply may be missing from the list below.'
+    const reason = view.message ? ` ${view.message}` : ''
+    if (view.state === 'failed' || view.state === 'needs_attention') {
+      const since = r.last_successful_sync_at ? `${name} last synchronized successfully ${formatAge(r.last_successful_sync_at, now)}.` : `${name} has not synchronized successfully yet.`
+      out.push({ provider: r.provider, message: `${since}${reason} ${effect} This does not mean nothing changed in your business.` })
+    } else if (r.last_successful_sync_at && now - new Date(r.last_successful_sync_at).getTime() > STALE_AFTER_HOURS * 3_600_000) {
+      out.push({ provider: r.provider, message: `${name} last synchronized ${formatAge(r.last_successful_sync_at, now)}, longer than expected. ${effect} This does not mean nothing changed in your business.` })
+    }
+  }
+  return out
 }

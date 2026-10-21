@@ -1019,6 +1019,23 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
           {loadError && <div className="alert alert-error" role="alert"><strong>Could not load your saved data.</strong> {loadError} Your records are not lost; reload the page to try again.</div>}
           {store.note && <div className={'alert ' + (store.noteIsError ? 'alert-error' : 'alert-info')} role={store.noteIsError ? 'alert' : 'status'}>{store.note}</div>}
 
+          {activeSection === 'Overview' && <section className="owner-next-step" aria-labelledby="owner-next-step-title">
+            {invoicesLoading || leadLoading || actionsLoading || records.loading ? <>
+              <div><span className="owner-next-step-label">START HERE</span><h2 id="owner-next-step-title">Checking your saved records</h2><p>We’ll show the next step once your workspace data has loaded.</p></div>
+            </> : loadError || leadError ? <>
+              <div><span className="owner-next-step-label">START HERE</span><h2 id="owner-next-step-title">Some information needs checking</h2><p>We couldn't load all saved data. Review the error message before relying on these totals.</p></div>
+            </> : attention.summary.needingAttention > 0 ? <>
+              <div><span className="owner-next-step-label">START HERE</span><h2 id="owner-next-step-title">{attention.summary.needingAttention} {attention.summary.needingAttention === 1 ? 'item needs' : 'items need'} your attention</h2><p>Review the evidence and recommended next step before contacting anyone.</p></div>
+              <button className="button button-primary" type="button" onClick={() => setActiveSection('Urgent')}>Review urgent items <Icon name="arrow-right" /></button>
+            </> : invoices.length === 0 && leads.length === 0 && records.quotations.length === 0 && records.deposits.length === 0 && records.tasks.length === 0 ? <>
+              <div><span className="owner-next-step-label">START HERE</span><h2 id="owner-next-step-title">Add your first business records</h2><p>Import an invoice CSV or connect a spreadsheet to discover what needs attention.</p></div>
+              <button className="button button-primary" type="button" onClick={() => fileRef.current?.click()}><Icon name="upload" /> Add invoices</button>
+            </> : <>
+              <div><span className="owner-next-step-label">START HERE</span><h2 id="owner-next-step-title">No urgent issues found in the saved records</h2><p>This reflects the information currently available, not background monitoring of every business channel.</p></div>
+              <button className="button button-secondary" type="button" onClick={() => setActiveSection('Follow-ups')}>Review follow-ups <Icon name="arrow-right" /></button>
+            </>}
+          </section>}
+
           {activeSection === 'Overview' || activeSection === 'Opportunities' || activeSection === 'Urgent' ? (
             <>
               {activeSection === 'Overview' && !invoicesLoading && !leadLoading && !actionsLoading && !records.loading && invoices.length === 0 && leads.length === 0 && records.quotations.length === 0 && records.deposits.length === 0 && records.tasks.length === 0 && records.reviews.length === 0 && <section className="panel first-run-panel" aria-labelledby="first-run-title">

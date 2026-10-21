@@ -598,3 +598,28 @@ a { text-underline-offset: .18em; }
 .brain-reason-disclosure input { width: 100%; min-height: 44px; box-sizing: border-box; padding: 10px 12px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); color: var(--ink); font: inherit; }
 .brain-reason-disclosure input:focus-visible { outline: 3px solid color-mix(in srgb, var(--action) 24%, transparent); outline-offset: 1px; border-color: var(--action); }
 @media (max-width: 760px) { .brain-reason-disclosure { margin-top: 10px; } .brain-reason-disclosure summary { min-height: 46px; } }
+
+
+/* Owner-first overview: one clear next step before the detailed metrics. */
+.owner-next-step { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 17px 20px; margin: 0 0 18px; border: 1px solid var(--line); border-left: 4px solid var(--action); border-radius: 9px; background: var(--surface); }
+.owner-next-step > div { min-width: 0; }
+.owner-next-step-label { display: block; margin-bottom: 5px; color: var(--muted); font-size: 10px; font-weight: 750; letter-spacing: .12em; }
+.owner-next-step h2 { margin: 0; color: var(--ink); font-size: 18px; line-height: 1.3; letter-spacing: -.02em; }
+.owner-next-step p { max-width: 58ch; margin: 5px 0 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.owner-next-step .button { flex: 0 0 auto; min-height: 44px; }
+@media (max-width: 760px) {
+  .page-content { padding-top: 18px; }
+  .page-heading { align-items: flex-start; }
+  .page-heading > div { min-width: 0; }
+  .page-heading .eyebrow { font-size: 10px; letter-spacing: .12em; }
+  .page-heading h1 { font-size: 28px; }
+  .page-subtitle { font-size: 14px; line-height: 1.4; }
+  .page-heading > .button { align-self: flex-start; min-height: 42px; padding-inline: 11px; font-size: 12px; }
+  .preview-banner { display: none; }
+  .owner-next-step { align-items: stretch; flex-direction: column; gap: 12px; padding: 15px; margin-bottom: 14px; }
+  .owner-next-step h2 { font-size: 17px; }
+  .owner-next-step p { font-size: 12px; }
+  .owner-next-step .button { width: 100%; justify-content: center; }
+  .daily-brief-heading p:not(.eyebrow) { display: none; }
+  .daily-brief-footnote > .template-link { max-width: 130px; text-align: right; }
+}

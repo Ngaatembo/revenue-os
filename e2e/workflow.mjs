@@ -39,7 +39,7 @@ try {
   server = await startServer({ dist, port: APP_PORT, upstream: `http://127.0.0.1:${API_PORT}` })
   for (let i = 0; i < 50; i += 1) { try { if ((await fetch(`http://127.0.0.1:${API_PORT}/`)).ok) break } catch { /* wait */ } await new Promise((r) => setTimeout(r, 200)) }
 
-  browser = await chromium.launch()
+  browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {})
   const context = await browser.newContext({ viewport: { width: 1280, height: 900 } })
   page = await context.newPage()
   page.on('response', async (response) => { if (response.status() >= 400 && response.url().includes('/rest/v1/')) console.log('HTTP', response.status(), response.request().method(), response.url().replace(BASE, ''), (await response.text().catch(() => '')).slice(0, 160)) })

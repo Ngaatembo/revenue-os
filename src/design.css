@@ -747,3 +747,11 @@ body { background: var(--page); }
 .set-aside > summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; font-size: 15px; font-weight: 600; color: var(--ink-strong); }
 .conversation-item.is-set-aside { opacity: .92; }
 @media (max-width: 560px) { .track-actions .button { flex: 1 1 calc(50% - 8px); } .track-actions .track-primary { flex-basis: 100%; } }
+/* Brand in the top bar when the sidebar is hidden (narrow windows and phones) */
+.topbar-brand { display: none; align-items: center; gap: 8px; color: var(--ink-strong); font-size: 15px; }
+.topbar-brand b { font-weight: 800; letter-spacing: -.01em; }
+.topbar-brand::after { content: '/'; margin-left: 4px; color: var(--muted); font-weight: 400; }
+@media (max-width: 760px) {
+  .topbar-brand { display: inline-flex; }
+  .breadcrumbs > span { display: none; }
+}

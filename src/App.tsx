@@ -426,6 +426,7 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
   const fileRef = useRef<HTMLInputElement>(null)
   const paymentFileRef = useRef<HTMLInputElement>(null)
   const [activeSection, setActiveSection] = useState<Section>('Overview')
+  const [mobileMoreOpen, setMobileMoreOpen] = useState(false)
   const [invoices, setInvoices] = useState<InvoiceEvidence[]>([])
   const [issues, setIssues] = useState<CsvIssue[]>([])
   const [sourceName, setSourceName] = useState('')
@@ -1018,6 +1019,23 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
           {loadError && <div className="alert alert-error" role="alert"><strong>Could not load your saved data.</strong> {loadError} Your records are not lost; reload the page to try again.</div>}
           {store.note && <div className={'alert ' + (store.noteIsError ? 'alert-error' : 'alert-info')} role={store.noteIsError ? 'alert' : 'status'}>{store.note}</div>}
 
+          {activeSection === 'Overview' && <section className="owner-next-step" aria-labelledby="owner-next-step-title">
+            {invoicesLoading || leadLoading || actionsLoading || records.loading ? <>
+              <div><span className="owner-next-step-label">START HERE</span><h2 id="owner-next-step-title">Checking your saved records</h2><p>We’ll show the next step once your workspace data has loaded.</p></div>
+            </> : loadError || leadError ? <>
+              <div><span className="owner-next-step-label">START HERE</span><h2 id="owner-next-step-title">Some information needs checking</h2><p>We couldn't load all saved data. Review the error message before relying on these totals.</p></div>
+            </> : attention.summary.needingAttention > 0 ? <>
+              <div><span className="owner-next-step-label">START HERE</span><h2 id="owner-next-step-title">{attention.summary.needingAttention} {attention.summary.needingAttention === 1 ? 'item needs' : 'items need'} your attention</h2><p>Review the evidence and recommended next step before contacting anyone.</p></div>
+              <button className="button button-primary" type="button" onClick={() => setActiveSection('Urgent')}>Review urgent items <Icon name="arrow-right" /></button>
+            </> : invoices.length === 0 && leads.length === 0 && records.quotations.length === 0 && records.deposits.length === 0 && records.tasks.length === 0 ? <>
+              <div><span className="owner-next-step-label">START HERE</span><h2 id="owner-next-step-title">Add your first business records</h2><p>Import an invoice CSV or connect a spreadsheet to discover what needs attention.</p></div>
+              <button className="button button-primary" type="button" onClick={() => fileRef.current?.click()}><Icon name="upload" /> Add invoices</button>
+            </> : <>
+              <div><span className="owner-next-step-label">START HERE</span><h2 id="owner-next-step-title">No urgent issues found in the saved records</h2><p>This reflects the information currently available, not background monitoring of every business channel.</p></div>
+              <button className="button button-secondary" type="button" onClick={() => setActiveSection('Follow-ups')}>Review follow-ups <Icon name="arrow-right" /></button>
+            </>}
+          </section>}
+
           {activeSection === 'Overview' || activeSection === 'Opportunities' || activeSection === 'Urgent' ? (
             <>
               {activeSection === 'Overview' && !invoicesLoading && !leadLoading && !actionsLoading && !records.loading && invoices.length === 0 && leads.length === 0 && records.quotations.length === 0 && records.deposits.length === 0 && records.tasks.length === 0 && records.reviews.length === 0 && <section className="panel first-run-panel" aria-labelledby="first-run-title">
@@ -1140,7 +1158,16 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
         </div>
       </main>
 
-      <nav className="mobile-nav" aria-label="Mobile navigation">{sections.map((section) => <button key={section} className={activeSection === section ? 'active' : ''} onClick={() => setActiveSection(section)} aria-label={section}><Icon name={section === 'Overview' ? 'grid' : section === 'Urgent' ? 'clock' : section === 'Follow-ups' ? 'check' : section === 'Opportunities' ? 'spark' : section === 'Lead Recovery' ? 'check' : section === 'Actions' ? 'check' : section === 'Outcomes' ? 'chart' : section === 'Connections' ? 'plug' : 'brain'} /><span>{section}</span></button>)}</nav>
+      {mobileMoreOpen && <div className="mobile-more-backdrop" onClick={() => setMobileMoreOpen(false)}>
+        <nav className="mobile-more-menu" aria-label="More workspace sections" onClick={(event) => event.stopPropagation()}>
+          <div className="mobile-more-heading"><strong>More sections</strong><button type="button" onClick={() => setMobileMoreOpen(false)} aria-label="Close menu">Close</button></div>
+          {(['Opportunities', 'Lead Recovery', 'Actions', 'Outcomes', 'Business Brain', 'Connections'] as Section[]).map((section) => <button key={section} type="button" className={activeSection === section ? 'active' : ''} onClick={() => { setActiveSection(section); setMobileMoreOpen(false) }}><Icon name={section === 'Opportunities' ? 'spark' : section === 'Lead Recovery' || section === 'Actions' ? 'check' : section === 'Outcomes' ? 'chart' : section === 'Connections' ? 'plug' : 'brain'} /><span>{section}</span><span className="mobile-more-arrow">›</span></button>)}
+        </nav>
+      </div>}
+      <nav className="mobile-nav" aria-label="Mobile navigation">
+        {(['Overview', 'Urgent', 'Follow-ups'] as Section[]).map((section) => <button key={section} type="button" className={activeSection === section ? 'active' : ''} onClick={() => { setActiveSection(section); setMobileMoreOpen(false) }} aria-label={section}><Icon name={section === 'Overview' ? 'grid' : section === 'Urgent' ? 'clock' : 'check'} /><span>{section}</span></button>)}
+        <button type="button" className={['Opportunities', 'Lead Recovery', 'Actions', 'Outcomes', 'Business Brain', 'Connections'].includes(activeSection) ? 'active' : ''} onClick={() => setMobileMoreOpen((open) => !open)} aria-expanded={mobileMoreOpen} aria-label="More sections"><Icon name="grid" /><span>More</span></button>
+      </nav>
     </div>
   )
 }

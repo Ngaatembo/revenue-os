@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { overdueInvoiceSignals } from '../businessSignalAdapters.ts'
+import { overdueInvoiceSignals, quotationSignals, taskDueSignals } from '../businessSignalAdapters.ts'
+import { validateBusinessSignal } from '../businessSignals.ts'
 import type { InvoiceEvidence } from '../types.ts'
 
 const invoice = (overrides: Partial<InvoiceEvidence> = {}): InvoiceEvidence => ({
@@ -46,7 +47,6 @@ test('rejects invalid organization and evaluation timestamps', () => {
   assert.throws(() => overdueInvoiceSignals([], 'org-1', 'not-a-date'), /asOf/)
 })
 
-import { quotationSignals, taskDueSignals } from '../businessSignalAdapters.ts'
 import type { Quotation, Task } from '../records.ts'
 
 const quotation = (overrides: Partial<Quotation> = {}): Quotation => ({

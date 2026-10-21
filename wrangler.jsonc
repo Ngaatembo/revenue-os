@@ -16,7 +16,7 @@
     "SUPABASE_URL": "https://zivgfvcmposnbwqsudas.supabase.co",
     // Non-secret tuning for automatic synchronisation (kept in the file so a deploy never removes them).
     "SYNC_INTERVAL_MINUTES": "5",
-    "SYNC_MESSAGE_BUDGET": "100"
+    "SYNC_MESSAGE_BUDGET": "10"
   },
   // Required by `wrangler preview` (used by Workers Builds for non-production branches).
   // There is only one Supabase project, so previews read the same public URL; the health check
@@ -25,7 +25,7 @@
     "vars": {
       "SUPABASE_URL": "https://zivgfvcmposnbwqsudas.supabase.co",
       "SYNC_INTERVAL_MINUTES": "5",
-      "SYNC_MESSAGE_BUDGET": "100"
+      "SYNC_MESSAGE_BUDGET": "10"
     }
   },
   // Automatic synchronisation: due connections are synced every minute (each connection chooses its own cadence).

@@ -31,6 +31,10 @@ OUT6=$(psql_db -f supabase/tests/06_scheduled_evaluation.sql 2>&1)
 echo "$OUT6" | sed -n '/===== SCHEDULE RESULTS =====/,$p'
 OUT7=$(psql_db -f supabase/tests/07_business_records.sql 2>&1)
 echo "$OUT7" | sed -n '/===== RECORDS RESULTS =====/,$p'
+OUT8=$(psql_db -f supabase/tests/08_source_reconciliation.sql 2>&1)
+echo "$OUT8" | grep -E "FAIL|ERROR" || true
+OUT9=$(psql_db -f supabase/tests/09_source_sync_snapshot_rpc.sql 2>&1)
+echo "$OUT9" | sed -n '/===== SOURCE SNAPSHOT RPC RESULTS =====/,$p' | tail -5
 FAILED=$(psql_db -tAc "select count(*) from t.results where not ok")
 if [ "$FAILED" != "0" ]; then echo "DB TESTS FAILED: $FAILED" >&2; exit 1; fi
 echo "DB TESTS PASSED"

@@ -240,6 +240,27 @@ try {
     assert(sql(`select count(*) from public.tasks where title='intrusion'`) === '0', 'intrusion row exists')
   })
 
+  await step('lead recovery: stalled lead is flagged, interaction recorded, next follow-up rescheduled and logged', async () => {
+    await nav('Lead Recovery')
+    const form = page.locator('form.lead-form')
+    await form.getByLabel('Contact name').fill('Tendai M.')
+    await form.getByLabel('Business name').fill('Zeta Guest House')
+    await form.getByLabel('Potential value').fill('300')
+    await form.getByLabel('Next follow-up date').fill(day(-10))
+    await form.getByRole('button', { name: 'Add lead' }).click()
+    await page.getByText('Zeta Guest House').first().waitFor({ timeout: 15000 })
+    assert(sql(`select count(*) from public.sales_leads where business_name='Zeta Guest House'`) === '1', 'lead not saved')
+    await page.getByText(/Stalled \d+d/).first().waitFor({ timeout: 10000 })
+    await page.getByRole('button', { name: 'Recover lead' }).first().click()
+    await page.getByLabel('What happened').selectOption('interested')
+    await page.getByLabel('Interaction notes').fill('Spoke to owner, wants a revised quote')
+    await page.getByLabel('Next follow-up date').last().fill(day(3))
+    await page.getByRole('button', { name: 'Save interaction' }).click()
+    await page.getByText(/Stalled \d+d/).first().waitFor({ state: 'detached', timeout: 15000 })
+    assert(sql(`select count(*) from public.lead_activities where summary like 'Spoke to owner%'`) === '1', 'interaction not logged')
+    assert(sql(`select next_follow_up from public.sales_leads where business_name='Zeta Guest House'`) === day(3), 'follow-up not rescheduled')
+  })
+
   await step('phone width: no horizontal scroll on Follow-ups or Urgent', async () => {
     await page.setViewportSize({ width: 375, height: 800 })
     for (const name of ['Follow-ups', 'Urgent']) {

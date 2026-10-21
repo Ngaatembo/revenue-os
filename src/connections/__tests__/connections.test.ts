@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { describeConnection, errorMessage, formatAge, PROVIDERS, type ConnectionRow } from '../catalog.ts'
-import { decideLanding } from '../landing.ts'
+import { describeConnection, errorMessage, formatAge, freshnessLine, PROVIDERS, type ConnectionRow } from '../catalog.ts'
+import { decideLanding, setupInProgress } from '../landing.ts'
 import { deriveConversationInsights, gmailThreadLink, type ConversationThread } from '../conversationInsights.ts'
 
 const row = (over: Partial<ConnectionRow> = {}): ConnectionRow => ({
@@ -42,15 +42,28 @@ test('WhatsApp is never offered as connectable and states its real dependency', 
 })
 test('formatAge', () => { assert.equal(formatAge(null), 'never'); assert.equal(formatAge(new Date(Date.now() - 3 * 3600_000).toISOString()), '3 h ago') })
 
-test('landing: first visit welcomes, then connections; resumes until a source has synced; then overview', () => {
+test('landing: unfinished setup always goes to Connections; a synchronized source or existing records go to Overview', () => {
   const base = { hasRecords: false, recordsLoading: false }
-  assert.equal(decideLanding({ ...base, welcomeSeen: false, connections: null }), 'loading')
-  assert.equal(decideLanding({ ...base, welcomeSeen: false, connections: [] }), 'welcome')
-  assert.equal(decideLanding({ ...base, welcomeSeen: true, connections: [] }), 'connections')
-  assert.equal(decideLanding({ ...base, welcomeSeen: true, connections: [row()] }), 'connections')
-  assert.equal(decideLanding({ ...base, welcomeSeen: false, connections: [row({ initial_sync_completed_at: '2026-10-21T00:00:00Z' })] }), 'overview')
-  assert.equal(decideLanding({ ...base, welcomeSeen: false, connections: [], hasRecords: true }), 'overview')
-  assert.equal(decideLanding({ ...base, recordsLoading: true, welcomeSeen: true, connections: [] }), 'loading')
+  assert.equal(decideLanding({ ...base, connections: null }), 'loading')
+  assert.equal(decideLanding({ ...base, connections: [] }), 'connections')
+  assert.equal(decideLanding({ ...base, connections: [row()] }), 'connections', 'authorized but never synchronized is still setup')
+  assert.equal(decideLanding({ ...base, connections: [row({ status: 'error', last_error_code: 'authorization_revoked' })] }), 'connections')
+  assert.equal(decideLanding({ ...base, connections: [row({ initial_sync_completed_at: '2026-10-21T00:00:00Z' })] }), 'overview')
+  assert.equal(decideLanding({ ...base, connections: [], hasRecords: true }), 'overview')
+  assert.equal(decideLanding({ ...base, recordsLoading: true, connections: [] }), 'loading')
+})
+test('setupInProgress is true until a source has really synchronized', () => {
+  assert.equal(setupInProgress(null), true); assert.equal(setupInProgress([]), true); assert.equal(setupInProgress([row()]), true)
+  assert.equal(setupInProgress([row({ last_successful_sync_at: '2026-10-21T00:00:00Z' })]), false)
+})
+test('freshness wording is built only from recorded state', () => {
+  const now = Date.parse('2026-10-21T12:00:00Z')
+  assert.match(freshnessLine([], now), /No source is connected/)
+  assert.match(freshnessLine(null, now), /No source is connected/)
+  assert.match(freshnessLine([row({ last_successful_sync_at: '2026-10-21T11:55:00Z', initial_sync_completed_at: '2026-10-21T11:55:00Z' })], now), /Gmail last synchronized 5 min ago/)
+  assert.match(freshnessLine([row()], now), /Gmail is still setting up/)
+  assert.match(freshnessLine([row({ status: 'error', last_error_code: 'authorization_revoked' })], now), /Gmail needs to be reconnected/)
+  assert.doesNotMatch(freshnessLine([row({ provider: 'whatsapp_business', last_successful_sync_at: '2026-10-21T11:55:00Z' })], now), /WhatsApp last synchronized/)
 })
 
 const day = 86_400_000

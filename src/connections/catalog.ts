@@ -148,3 +148,19 @@ export function formatAge(iso: string | null, now = Date.now()): string {
   if (seconds < 86400) return `${Math.floor(seconds / 3600)} h ago`
   return `${Math.floor(seconds / 86400)} d ago`
 }
+
+const SOURCE_NAME: Record<string, string> = { gmail: 'Gmail', google_sheets: 'Google Sheets' }
+
+/** One honest sentence about how fresh the Overview is, built only from recorded connection state. */
+export function freshnessLine(rows: ConnectionRow[] | null, now = Date.now()): string {
+  const live = (rows ?? []).filter((r) => describeConnection(r).state !== 'not_connected')
+  if (live.length === 0) return 'No source is connected, so this reflects only records you entered or uploaded.'
+  const parts = live.map((r) => {
+    const view = describeConnection(r)
+    const name = SOURCE_NAME[r.provider] ?? r.provider
+    if (view.state === 'failed') return `${name} needs to be reconnected`
+    if (r.last_successful_sync_at) return `${name} last synchronized ${formatAge(r.last_successful_sync_at, now)}${view.state === 'needs_attention' ? ' (needs attention)' : ''}`
+    return `${name} is still setting up`
+  })
+  return `Built from saved records. ${parts.join(' · ')}.`
+}

@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import type { SupabaseSession } from '../lib/supabaseRest.ts'
 import { disconnectProvider, loadReadiness, startAuthorization, syncNow, type ReadinessReport } from './api.ts'
 import { describeConnection, formatAge, PROVIDERS, type ConnectionRow, type ProviderInfo } from './catalog.ts'
+import { setupInProgress } from './landing.ts'
 
 type Props = {
   session: SupabaseSession
@@ -14,6 +15,7 @@ type Props = {
   sheetsControls: ReactNode
   csvAction: ReactNode
   invoiceCount: number
+  onOpenOverview: () => void
 }
 
 function ProviderCard({ info, row, busy, onConnect, onSync, onDisconnect, extra }: {
@@ -32,7 +34,7 @@ function ProviderCard({ info, row, busy, onConnect, onSync, onDisconnect, extra 
       <strong>Revenue OS can read</strong><ul>{info.access.map((a) => <li key={a}>{a}</li>)}</ul>
       <strong>It is used to</strong><ul>{info.usedFor.map((u) => <li key={u}>{u}</li>)}</ul>
     </details>
-    {info.dependency && <p className="connection-dependency" role="note">{info.dependency}</p>}
+    {info.dependency && <details className="connection-dependency-details" open={unavailable}><summary>{unavailable ? 'Why this is not available yet' : 'Requirements and limits'}</summary><p>{info.dependency}</p></details>}
     {!unavailable && !manual && view.state !== 'not_connected' && <>
       {row?.provider_account_email && <small>Account: {row.provider_account_email}</small>}
       {view.stage && <div className="sync-stage" role="status" aria-live="polite">
@@ -67,6 +69,24 @@ function SheetsAutomaticStatus({ row, busy, onSync }: { row: ConnectionRow | und
   </div>
 }
 
+/** Three honest steps. Each is marked done only from recorded state; step 3 unlocks only after a synchronization really completed. */
+function SetupSteps({ rows, onOpenOverview }: { rows: ConnectionRow[] | null; onOpenOverview: () => void }) {
+  const views = (rows ?? []).map(describeConnection)
+  const connected = views.some((v) => v.state !== 'not_connected')
+  const syncing = views.some((v) => v.state === 'syncing' && !v.initialSyncDone)
+  const synced = views.some((v) => v.initialSyncDone)
+  const step = (n: number, title: string, text: string, done: boolean, active: boolean) => <li className={done ? 'done' : active ? 'active' : ''} aria-current={active ? 'step' : undefined}>
+    <span className="setup-step-number" aria-hidden="true">{done ? '✓' : n}</span><div><strong>{title}</strong><small>{text}</small></div></li>
+  return <section className="setup-steps" aria-label="Setup progress" data-testid="setup-steps">
+    <ol>
+      {step(1, 'Connect', 'Choose Gmail or your invoice spreadsheet and approve access.', connected, !connected)}
+      {step(2, 'First synchronization', syncing ? 'Running now. You can leave this page; it continues.' : synced ? 'Complete.' : 'Starts as soon as a source is connected.', synced, connected && !synced)}
+      {step(3, 'See your Overview', synced ? 'Ready: your Overview now shows what was synchronized.' : 'Unlocks when the first synchronization completes.', false, synced)}
+    </ol>
+    {synced && <button className="button button-primary" type="button" onClick={onOpenOverview}>Open your Overview</button>}
+  </section>
+}
+
 const CHECK_LABELS: Record<string, string> = {
   google_client_id: 'Google client ID is set', google_client_secret: 'Google client secret is set', token_encryption_key_valid: 'Token encryption key is set and valid (64 hex characters)',
   app_origin_matches_this_request: 'APP_ORIGIN matches this site', supabase_url: 'Supabase URL is set', supabase_anon_key: 'Supabase publishable key is set', supabase_service_role_key: 'Supabase service key is set (server only)',
@@ -93,11 +113,14 @@ function SetupCheck({ session, organizationId }: { session: SupabaseSession; org
   </details>
 }
 
-export function ConnectionsPage({ session, organizationId, rows, statusError, refresh, sheetsControls, csvAction, invoiceCount }: Props) {
+export function ConnectionsPage({ session, organizationId, rows, statusError, refresh, sheetsControls, csvAction, invoiceCount, onOpenOverview }: Props) {
   const [busy, setBusy] = useState('')
   const [notice, setNotice] = useState('')
   const [noticeIsError, setNoticeIsError] = useState(false)
   const handledReturn = useRef(false)
+  // Remember, for this visit, whether setup was unfinished when the page first loaded, so the steps stay visible through completion.
+  const [startedIncomplete, setStartedIncomplete] = useState<boolean | null>(null)
+  useEffect(() => { if (startedIncomplete === null && rows !== null) queueMicrotask(() => setStartedIncomplete(setupInProgress(rows))) }, [rows, startedIncomplete])
   const byProvider = new Map((rows ?? []).map((row) => [row.provider, row]))
 
   const say = (text: string, error = false) => { setNotice(text); setNoticeIsError(error) }
@@ -128,14 +151,13 @@ export function ConnectionsPage({ session, organizationId, rows, statusError, re
   return <section className="panel connections-page" aria-labelledby="connections-title">
     <div className="panel-heading"><div><h2 id="connections-title">Connect your business once</h2>
       <p>Revenue OS reads the tools you already use, keeps them up to date, and shows what needs your attention. A source only shows as connected after you authorize it, and nothing is sent to your customers.</p></div></div>
+    {startedIncomplete && <SetupSteps rows={rows} onOpenOverview={onOpenOverview} />}
     {statusError && <p className="connection-message" role="alert">Connection status could not be loaded: {statusError}</p>}
     {notice && <p className={noticeIsError ? 'connection-message' : 'connection-note'} role={noticeIsError ? 'alert' : 'status'}>{notice}</p>}
     <div className="connection-source-grid">
       {PROVIDERS.map((info) => {
         const row = info.id === 'gmail' || info.id === 'google_sheets' ? byProvider.get(info.id) : undefined
-        if (info.id === 'csv') return <article className="connection-source-card" key={info.id} data-provider="csv" data-state="manual">
-          <div className="connection-source-top"><h3>{info.name}</h3><span className={invoiceCount ? 'connection-pill connection-pill-ready' : 'connection-pill'}>{invoiceCount ? 'Data available' : 'Manual'}</span></div>
-          <p>{info.summary}</p><small>{invoiceCount} invoice record(s) saved in this workspace.</small>{csvAction}</article>
+        if (info.id === 'csv') return null
         if (info.id === 'google_sheets') return <div key={info.id} className="connection-sheets-wrap" data-provider="google_sheets" data-state={describeConnection(byProvider.get('google_sheets')).state}>
           <SheetsAutomaticStatus row={byProvider.get('google_sheets')} busy={busy} onSync={() => void run('sync', async () => { await syncNow(session, organizationId, 'google_sheets'); say('Checking the spreadsheet now.') })} />
           {sheetsControls}</div>
@@ -145,6 +167,12 @@ export function ConnectionsPage({ session, organizationId, rows, statusError, re
           onDisconnect={() => { if (window.confirm('Disconnect Gmail? Revenue OS stops reading the mailbox and removes its stored access. Records already imported are kept.')) void run('disconnect', async () => { await disconnectProvider(session, organizationId, info.id); say('Gmail disconnected. Access was revoked at Google where possible.') }) }} />
       })}
     </div>
+    <section className="fallback-import" aria-labelledby="fallback-title" data-provider="csv" data-state="manual">
+      <h3 id="fallback-title">No account to connect?</h3>
+      <p>Upload an invoice file instead. This is a manual fallback: it is read once and does not update by itself, so connecting a source above is better.</p>
+      <small>{invoiceCount} invoice record(s) saved in this workspace.</small>
+      {csvAction}
+    </section>
     <SetupCheck session={session} organizationId={organizationId} />
   </section>
 }

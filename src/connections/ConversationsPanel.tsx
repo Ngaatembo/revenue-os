@@ -1,34 +1,19 @@
-import { useEffect, useState } from 'react'
-import type { SupabaseSession } from '../lib/supabaseRest.ts'
-import { loadConversationThreads } from './api.ts'
 import { describeConnection, formatAge, type ConnectionRow } from './catalog.ts'
-import { deriveConversationInsights, gmailThreadLink, whoLabel, type ConversationThread } from './conversationInsights.ts'
+import { gmailThreadLink, whoLabel } from './conversationInsights.ts'
+import type { ConversationData } from './useConversations.ts'
 
 /** Customer conversations from synchronized email. Facts and inferences are labelled separately. */
-export function ConversationsPanel({ session, organizationId, gmail, onOpenConnections }: {
-  session: SupabaseSession; organizationId: string; gmail: ConnectionRow | undefined; onOpenConnections: () => void
+export function ConversationsPanel({ data, gmail, onOpenConnections }: {
+  data: ConversationData; gmail: ConnectionRow | undefined; onOpenConnections: () => void
 }) {
-  const [threads, setThreads] = useState<ConversationThread[] | null>(null)
-  const [error, setError] = useState('')
+  const { threads, insights, error } = data
   const view = describeConnection(gmail)
-  const account = gmail?.provider_account_email ?? null
-  const syncedMarker = `${gmail?.records_synced ?? 0}:${gmail?.last_successful_sync_at ?? ''}`
-
-  useEffect(() => {
-    if (view.state === 'not_connected') return
-    let cancelled = false
-    loadConversationThreads(session, organizationId, account)
-      .then((rows) => { if (!cancelled) { setThreads(rows); setError('') } })
-      .catch((cause) => { if (!cancelled) setError(cause instanceof Error ? cause.message : 'Could not load conversations.') })
-    return () => { cancelled = true }
-  }, [session, organizationId, account, view.state, syncedMarker])
 
   if (view.state === 'not_connected') {
     return <section className="panel conversations-panel" aria-labelledby="conversations-title"><h2 id="conversations-title">Customer conversations</h2>
       <p>No email is connected, so Revenue OS cannot tell which customers are waiting for you.</p>
       <button className="button button-secondary" type="button" onClick={onOpenConnections}>Connect Gmail</button></section>
   }
-  const insights = threads ? deriveConversationInsights(threads) : []
   const real = (threads ?? []).filter((t) => !t.all_automated)
   const waiting = insights.filter((i) => i.kind === 'awaiting_reply').length
   return <section className="panel conversations-panel" aria-labelledby="conversations-title" data-testid="conversations-panel">

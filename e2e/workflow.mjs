@@ -52,8 +52,7 @@ try {
 
   await step('signed-in owner gets a workspace', async () => {
     await page.goto(BASE)
-    // A brand-new owner is welcomed and sent to Connections (covered in depth by e2e/connections.mjs).
-    await page.getByRole('button', { name: 'Choose what to connect' }).click({ timeout: 20000 })
+    // A brand-new owner with nothing connected lands on Connections (covered in depth by e2e/connections.mjs).
     await page.getByRole('heading', { name: 'Connect your business once' }).waitFor({ timeout: 20000 })
     assert(sql(`select count(*) from public.organizations`) === '1', 'workspace not created')
   })

@@ -7,6 +7,7 @@
 // the app; see docs/connections-stage.md for what is and is not verified.
 import crypto from 'node:crypto'
 import { execFileSync } from 'node:child_process'
+import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -85,16 +86,59 @@ try {
     await route.fulfill({ status: 302, headers: { location: target.toString() } })
   })
 
-  await step('first sign-in shows the welcome, then sends the owner to Connections', async () => {
+  await step('before signing in, the welcome explains the product with the approved logo, then offers sign-in or sign-up', async () => {
+    const anon = await browser.newContext({ viewport: { width: 1280, height: 900 } })
+    const p0 = await anon.newPage()
+    await p0.goto(BASE)
+    const welcome = p0.getByTestId('auth-welcome')
+    await welcome.waitFor({ timeout: 20000 })
+    await welcome.getByRole('heading', { name: /Know who owes you, and who is waiting on you/ }).waitFor()
+    for (const text of ['Connect once', 'It keeps itself up to date', 'See what needs you']) await welcome.getByText(text).waitFor()
+    await welcome.getByText(/WhatsApp Business needs Meta approval and is not available yet/).waitFor()
+    const logo = welcome.getByRole('img', { name: /Revenue OS/ })
+    assert((await logo.getAttribute('src')) === '/revenue-os-logo.png', 'the supplied logo is used')
+    assert((await logo.evaluate((img) => img.naturalWidth)) > 300, 'the logo image actually loaded')
+    await p0.getByRole('tab', { name: 'Sign in' }).waitFor(); await p0.getByRole('tab', { name: 'Create account' }).waitFor()
+    await p0.getByRole('button', { name: 'Continue with Google' }).waitFor()
+    if (process.env.E2E_SHOTS) {
+      fs.mkdirSync(process.env.E2E_SHOTS, { recursive: true })
+      await p0.screenshot({ path: path.join(process.env.E2E_SHOTS, 'welcome-light.png'), fullPage: true })
+      await p0.emulateMedia({ colorScheme: 'dark' }); await sleep(500); await p0.screenshot({ path: path.join(process.env.E2E_SHOTS, 'welcome-dark.png'), fullPage: true })
+      await p0.emulateMedia({ colorScheme: 'light' }); await p0.setViewportSize({ width: 390, height: 844 }); await sleep(500); await p0.screenshot({ path: path.join(process.env.E2E_SHOTS, 'welcome-mobile.png'), fullPage: true })
+    }
+    await anon.close()
+  })
+  await step('after signing in, a new owner is taken straight to Connections with honest setup steps and no pop-up', async () => {
     await page.goto(BASE)
-    await page.getByRole('dialog').getByRole('heading', { name: /business watchman/i }).waitFor({ timeout: 20000 })
-    await page.getByRole('button', { name: 'Choose what to connect' }).click()
-    await page.getByRole('heading', { name: 'Connect your business once' }).waitFor()
+    await page.getByRole('heading', { name: 'Connect your business once' }).waitFor({ timeout: 20000 })
+    assert((await page.getByRole('dialog').count()) === 0, 'no welcome dialog after sign-in')
+    const steps = page.getByTestId('setup-steps')
+    await steps.waitFor()
+    assert((await steps.locator('li.active').innerText()).startsWith('1') || (await steps.locator('li.active strong').innerText()) === 'Connect', 'step 1 (Connect) is the active step')
+    assert((await steps.getByRole('button', { name: 'Open your Overview' }).count()) === 0, 'the Overview step stays locked until a synchronization completes')
+    // CSV is a fallback below the primary sources, not a connection card.
+    assert((await page.locator('.connection-source-grid [data-provider=csv]').count()) === 0, 'CSV is not in the connection grid')
+    await page.locator('.fallback-import[data-provider=csv]').getByText(/manual fallback/).waitFor()
+    await page.locator('.fallback-import').getByRole('button', { name: 'Upload an invoice file' }).waitFor()
+    // Approved brand: blue action, light sidebar, navy ink, supplied mark in the navigation.
+    const look = await page.evaluate(() => {
+      const css = (el, prop) => getComputedStyle(el)[prop]
+      const primary = document.querySelector('.button-primary'); const sidebar = document.querySelector('.sidebar'); const mark = document.querySelector('.brand-symbol')
+      return { primary: css(primary, 'backgroundColor'), sidebar: css(sidebar, 'backgroundColor'), mark: mark.getAttribute('src'), markLoaded: mark.naturalWidth > 0, theme: document.querySelector('meta[name=theme-color]').content }
+    })
+    assert(look.primary === 'rgb(0, 100, 234)', 'primary buttons are the brand blue, got ' + look.primary)
+    const [r, g, b] = look.sidebar.match(/\d+/g).map(Number)
+    assert(r > 235 && g > 235 && b > 235, 'sidebar is light, not the green drift: ' + look.sidebar)
+    assert(look.mark === '/revenue-os-mark.png' && look.markLoaded && look.theme === '#0064ea', 'supplied mark and brand theme colour')
+    assert((await page.locator('.owner-next-step').count()) === 0, 'no START HERE card')
+    if (process.env.E2E_SHOTS) { fs.mkdirSync(process.env.E2E_SHOTS, { recursive: true }); await page.screenshot({ path: path.join(process.env.E2E_SHOTS, 'connections-setup.png'), fullPage: true })
+      await page.emulateMedia({ colorScheme: 'dark' }); await sleep(500); await page.screenshot({ path: path.join(process.env.E2E_SHOTS, 'connections-dark.png'), fullPage: true }); await page.emulateMedia({ colorScheme: 'light' })
+      await page.setViewportSize({ width: 390, height: 844 }); await sleep(500); await page.screenshot({ path: path.join(process.env.E2E_SHOTS, 'connections-mobile.png'), fullPage: true }); await page.setViewportSize({ width: 1280, height: 900 }) }
   })
   await step('Connections lists what each source reads; WhatsApp is honest about approval; nothing is shown connected', async () => {
     const gmail = page.locator('[data-provider=gmail]')
     assert((await gmail.getAttribute('data-state')) === 'not_connected', 'gmail should start not connected')
-    await gmail.locator('summary').click()
+    await gmail.locator('summary', { hasText: 'What it reads' }).click()
     await gmail.getByText(/Sender, recipient, subject, date/).waitFor()
     const wa = page.locator('[data-provider=whatsapp_business]')
     assert((await wa.getAttribute('data-state')) === 'unavailable', 'whatsapp state')
@@ -128,13 +172,22 @@ try {
     assert(sql(`select count(*) from public.communications`) === '100', 'first chunk should have stored exactly the 100-message budget, got ' + sql(`select count(*) from public.communications`))
     assert(shown.includes('100 records stored so far'), 'UI should show the real stored count')
   })
-  await step('leaving the page does not stop the sync: scheduled runs finish the initial synchronization', async () => {
+  await step('leaving the page does not stop the sync; when the first synchronization completes the owner is offered the Overview', async () => {
     await page.getByRole('button', { name: /^Overview$/ }).first().click().catch(() => undefined)
+    await sleep(500)
+    await page.getByRole('button', { name: /^Connections$/ }).first().click()
+    await page.getByTestId('setup-steps').waitFor()
     for (let i = 0; i < 6 && conn('initial_sync_completed_at') === ''; i += 1) await tick()
     assert(conn('initial_sync_completed_at') !== '', 'initial sync did not complete')
     assert(conn('status') === 'connected' && conn('sync_stage') === 'complete' && conn('last_error_code') === '', 'connection should be cleanly connected')
     assert(sql(`select count(*) from public.communications`) === '207', 'expected all 207 messages exactly once, got ' + sql(`select count(*) from public.communications`))
     assert(sql(`select count(*) from (select external_id from public.communications group by 1 having count(*)>1) d`) === '0', 'duplicates found')
+    // The open page notices the completed background sync and unlocks step 3 without a reload.
+    const open = page.getByTestId('setup-steps').getByRole('button', { name: 'Open your Overview' })
+    await open.waitFor({ timeout: 30000 })
+    await open.click()
+    await page.getByTestId('conversations-panel').waitFor({ timeout: 20000 })
+    if (process.env.E2E_SHOTS) await page.screenshot({ path: path.join(process.env.E2E_SHOTS, 'overview.png'), fullPage: true })
   })
   await step('stored records are metadata with source references; newsletters are marked automated', async () => {
     assert(sql(`select count(*) from public.communications where is_automated`) === '200', 'newsletters should be flagged automated')
@@ -250,18 +303,17 @@ try {
     assert(sync.status === 202, 'an operator may ask for an immediate check of an existing connection')
     await settle()
   })
-  await step('a new owner with nothing connected gets the welcome and is not shown fake data', async () => {
+  await step('a new owner with nothing connected lands on Connections and is not shown fake data', async () => {
     const ctx2 = await browser.newContext({ viewport: { width: 1280, height: 900 } })
     const p2 = await ctx2.newPage()
     await ctx2.addInitScript((v) => { try { localStorage.setItem('revenue-os.auth-session', JSON.stringify(v)) } catch { /* ignore */ } }, sessionFor(B.id, B.email))
     await p2.goto(BASE)
-    await p2.getByRole('dialog').getByRole('heading', { name: /business watchman/i }).waitFor({ timeout: 20000 })
-    await p2.getByRole('button', { name: 'Choose what to connect' }).click()
+    await p2.getByRole('heading', { name: 'Connect your business once' }).waitFor({ timeout: 20000 })
+    assert((await p2.getByRole('dialog').count()) === 0, 'no pop-up')
     assert((await p2.locator('[data-provider=gmail]').getAttribute('data-state')) === 'not_connected', 'B sees Gmail as not connected')
     assert((await p2.getByText('Quote request').count()) === 0, "B must not see A's mail")
     await ctx2.close()
   })
-
   // ---------------- Google Sheets: authorize once, then everything is automatic ----------------
   await step('Sheets: authorize once, choose the invoice tab, and the first import happens without pressing sync', async () => {
     sql(`insert into public.assumptions(organization_id,id,assumption_key,value_bps,updated_by) select organization_id,'recovery-rate','recovery_rate',3000,user_id from public.memberships where role='owner' and organization_id=(select organization_id from public.provider_connections where provider='gmail') limit 1`)

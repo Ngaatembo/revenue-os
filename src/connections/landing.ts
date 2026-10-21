@@ -1,24 +1,19 @@
 import type { ConnectionRow } from './catalog.ts'
 
-export type Landing = 'loading' | 'welcome' | 'connections' | 'overview'
+export type Landing = 'loading' | 'connections' | 'overview'
 
 /**
- * Where a signed-in owner should land.
- *  - First visit with nothing set up: a short welcome, then Connections.
- *  - Setup started but not finished: resume on Connections.
- *  - Setup done (a source has synced, or records already exist): Overview, never forced back.
+ * Where a signed-in owner should land (the welcome itself is shown before sign-in).
+ *  - Nothing has synced and no records exist: Connections, every time, until setup is finished.
+ *  - A source has completed a synchronization, or records already exist: Overview, never forced back.
  */
-export function decideLanding(input: { welcomeSeen: boolean; connections: ConnectionRow[] | null; hasRecords: boolean; recordsLoading: boolean }): Landing {
+export function decideLanding(input: { connections: ConnectionRow[] | null; hasRecords: boolean; recordsLoading: boolean }): Landing {
   if (input.connections === null || input.recordsLoading) return 'loading'
   const synced = input.connections.some((c) => Boolean(c.initial_sync_completed_at || c.last_successful_sync_at))
-  if (synced || input.hasRecords) return 'overview'
-  return input.welcomeSeen ? 'connections' : 'welcome'
+  return synced || input.hasRecords ? 'overview' : 'connections'
 }
 
-const key = (userId: string, organizationId: string) => `revenue-os.welcome.${userId}.${organizationId}`
-export function readWelcomeSeen(userId: string, organizationId: string): boolean {
-  try { return localStorage.getItem(key(userId, organizationId)) === '1' } catch { return false }
-}
-export function writeWelcomeSeen(userId: string, organizationId: string) {
-  try { localStorage.setItem(key(userId, organizationId), '1') } catch { /* private mode: the welcome simply shows again */ }
+/** True while the owner is still setting up: no source has finished a first synchronization. */
+export function setupInProgress(connections: ConnectionRow[] | null): boolean {
+  return (connections ?? []).every((c) => !c.initial_sync_completed_at && !c.last_successful_sync_at)
 }

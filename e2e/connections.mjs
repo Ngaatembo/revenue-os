@@ -536,8 +536,15 @@ try {
     assert(sql(`select count(*) from public.communications where provider='whatsapp'`) === '0', 'nothing stored from forged deliveries')
     assert((await send(body, sig)).status === 200 && (await send(body, sig)).status === 200, 'signed delivery accepted, replay acknowledged')
     assert(sql(`select count(*) from public.communications where provider='whatsapp' and external_id='wamid.E2E1' and organization_id='${orgA}'`) === '1', 'stored exactly once')
+    const echoBody = JSON.stringify({ object: 'whatsapp_business_account', entry: [{ id: 'waba', changes: [{ field: 'smb_message_echoes', value: { messaging_product: 'whatsapp',
+      metadata: { display_phone_number: '15550001111', phone_number_id: '109876543210' },
+      message_echoes: [{ from: '15550001111', to: '263771112222', id: 'wamid.E2EOUT1', timestamp: String(Math.floor(Date.now() / 1000) - 2 * 86400), type: 'text', text: { body: 'Yes, open 9 to 1' } }] } }] }] })
+    const echoSig = 'sha256=' + crypto.createHmac('sha256', 'wa-app-secret-e2e').update(echoBody).digest('hex')
+    assert((await send(echoBody, echoSig)).status === 200 && (await send(echoBody, echoSig)).status === 200, 'signed echo accepted, replay acknowledged')
+    assert(sql(`select count(*) from public.communications where provider='whatsapp' and direction='outbound' and external_id='wamid.E2EOUT1' and thread_id='263771112222' and organization_id='${orgA}'`) === '1', 'a reply sent from the Business app is stored once as outbound on the same thread')
+    assert((await send(echoBody, 'sha256=' + 'b'.repeat(64))).status === 401, 'forged echo rejected')
     const unknown = body.replace('109876543210', '999999999999'); assert((await send(unknown, 'sha256=' + crypto.createHmac('sha256', 'wa-app-secret-e2e').update(unknown).digest('hex'))).status === 200, 'unknown number acknowledged')
-    assert(sql(`select count(*) from public.communications where provider='whatsapp'`) === '1', 'unregistered numbers store nothing')
+    assert(sql(`select count(*) from public.communications where provider='whatsapp'`) === '2', 'unregistered numbers store nothing (one inbound and one echo from the registered number only)')
     await page.reload(); await page.getByTestId('conversations-panel').waitFor({ timeout: 20000 })
     assert((await page.getByTestId('conversations-panel').getByText('Kudzai').count()) === 0, 'WhatsApp threads are not turned into "waiting for reply" guesses: their replies are invisible to the API')
     await page.getByRole('button', { name: /^Connections$/ }).first().click()

@@ -25,3 +25,5 @@ Replies sent from the phone/app are invisible to the API unless coexistence echo
 
 ## What is built and tested (simulated)
 `src/worker/connections/whatsapp.ts` + migration `20261021170000`: GET handshake, HMAC-SHA256 verification over the raw body (constant time), idempotent storage by message id, unknown numbers acknowledged but dropped, storage failures return 500 so Meta retries. Unit tests (signature incl. non-ASCII, parsing, handshake, rejection, idempotency, failure), DB tests (12), and a browser journey step. **Not tested against Meta.**
+
+> Updated plan, Meta findings, route comparison and the next slices: see `docs/whatsapp-existing-number-plan.md` (22 Oct 2026).

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { overdueInvoiceSignals } from '../businessSignalAdapters.ts'
+import { overdueInvoiceSignals, quotationSignals, taskDueSignals } from '../businessSignalAdapters.ts'
+import { validateBusinessSignal } from '../businessSignals.ts'
 import type { InvoiceEvidence } from '../types.ts'
 
 const invoice = (overrides: Partial<InvoiceEvidence> = {}): InvoiceEvidence => ({
@@ -44,4 +45,49 @@ test('omits contradictory or incomplete invoice rows rather than inventing alert
 test('rejects invalid organization and evaluation timestamps', () => {
   assert.throws(() => overdueInvoiceSignals([], '', '2026-10-20T10:00:00.000Z'), /organizationId/)
   assert.throws(() => overdueInvoiceSignals([], 'org-1', 'not-a-date'), /asOf/)
+})
+
+import type { Quotation, Task } from '../records.ts'
+
+const quotation = (overrides: Partial<Quotation> = {}): Quotation => ({
+  id: 'quote-1', reference: 'Q-104', customerName: 'Moyo Events', currency: 'USD', amountMinor: 12500,
+  status: 'sent', sentOn: '2026-10-19', validUntil: '2026-11-19', followUpDate: '2026-10-22',
+  lastContactOn: '2026-10-19', ownerId: null, notes: null, ...overrides,
+})
+const task = (overrides: Partial<Task> = {}): Task => ({
+  id: 'task-1', title: 'Follow up on quotation', detail: null, dueDate: '2026-10-20',
+  status: 'open', ownerId: null, relatedType: 'quotation', relatedId: 'quote-1', ...overrides,
+})
+const observedAt = '2026-10-21T10:00:00.000Z'
+
+test('sent quotation becomes a signal without guessing customer identity', () => {
+  const [signal] = quotationSignals([quotation()], 'org-a', 'manual-records', observedAt)
+  assert.equal(signal.type, 'quotation_sent')
+  assert.equal(signal.customer.status, 'unmatched')
+  assert.equal(signal.reviewState, 'needs_review')
+  assert.match(signal.evidence.description, /Q-104/)
+  assert.deepEqual(validateBusinessSignal(signal), [])
+})
+
+test('unsent or malformed quotations do not create sent signals', () => {
+  assert.deepEqual(quotationSignals([quotation({ status: 'accepted' }), quotation({ id: 'quote-2', status: 'withdrawn' })], 'org-a', 'manual-records', observedAt), [])
+  assert.deepEqual(quotationSignals([quotation({ sentOn: 'not-a-date' })], 'org-a', 'manual-records', observedAt), [])
+})
+
+test('open task becomes a due signal but does not assert customer contact', () => {
+  const [signal] = taskDueSignals([task()], 'org-a', 'manual-records', observedAt)
+  assert.equal(signal.type, 'follow_up_due')
+  assert.equal(signal.customer.status, 'unmatched')
+  assert.equal(signal.reviewState, 'needs_review')
+  assert.deepEqual(validateBusinessSignal(signal), [])
+})
+
+test('completed tasks are not emitted as due work', () => {
+  assert.deepEqual(taskDueSignals([task({ status: 'done' })], 'org-a', 'manual-records', observedAt), [])
+})
+
+test('record adapters require explicit tenant, source, and observation time', () => {
+  assert.throws(() => quotationSignals([], '', 'manual-records', observedAt), /organizationId/)
+  assert.throws(() => taskDueSignals([], 'org-a', '', observedAt), /sourceId/)
+  assert.throws(() => taskDueSignals([], 'org-a', 'manual-records', 'bad-time'), /observedAt/)
 })

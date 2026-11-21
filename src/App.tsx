@@ -16,7 +16,6 @@ import { ConversationsPanel } from './connections/ConversationsPanel'
 import { SourceStatusRows } from './connections/SourceStatusRows'
 import { useConnectionStatus } from './connections/useConnectionStatus'
 import { useConversations } from './connections/useConversations'
-import { decideLanding } from './connections/landing'
 import { freshnessLine } from './connections/catalog'
 import { whoLabel } from './connections/conversationInsights'
 import { NeedsYouBand } from './overview/NeedsYouBand'
@@ -1008,16 +1007,6 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
     return { status, title: sourceName || 'Saved Supabase invoice records', detail: `${invoices.length} invoice record${invoices.length === 1 ? '' : 's'} · saved in Supabase${saved}`, note }
   })()
 
-  const landingDecided = useRef(false)
-  const landing = decideLanding({ connections: conn.rows, hasRecords: invoices.length > 0 || leads.length > 0 || records.quotations.length > 0 || records.deposits.length > 0 || records.tasks.length > 0, recordsLoading: invoicesLoading || leadLoading || records.loading })
-  useEffect(() => {
-    // Decide once per visit where a signed-in owner starts. Later navigation is theirs to control.
-    if (landing === 'loading' || landingDecided.current) return
-    landingDecided.current = true
-    const returning = new URLSearchParams(window.location.search).has('connection') || new URLSearchParams(window.location.search).has('google_sheets')
-    if (!returning && landing === 'connections') queueMicrotask(() => setActiveSection('Connections'))
-  }, [landing])
-
   // Background synchronization finished while the app is open: reload the saved invoices without a manual import.
   const sheetsSyncedAt = conn.rows ? (conn.rows.find((row) => row.provider === 'google_sheets')?.last_successful_sync_at ?? null) : undefined
   const seenSheetsSync = useRef<string | null | undefined>(undefined)
@@ -1095,7 +1084,7 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
         <header className="topbar">
           <span className="topbar-brand"><img src="/revenue-os-mark.png" alt="" width="26" height="26" /><b>Revenue OS</b></span>
           <div className="breadcrumbs"><span>Workspace</span><span className="crumb-separator">/</span><strong>{SECTION_LABELS[activeSection]}</strong></div>
-          <div className="topbar-right"><span className="connection-state"><i /> Supabase connected</span><button className="button button-secondary" type="button" onClick={onSignOut}>Sign out</button><span className="topbar-avatar">{(session.user.email?.[0] || 'U').toUpperCase()}</span></div>
+          <div className="topbar-right"><span className="connection-state"><i /> Workspace connected</span><button className="button button-secondary" type="button" onClick={onSignOut}>Sign out</button><span className="topbar-avatar">{(session.user.email?.[0] || 'U').toUpperCase()}</span></div>
         </header>
 
         <div className="page-content">

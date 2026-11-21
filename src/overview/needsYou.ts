@@ -54,7 +54,7 @@ export function buildNeedsYou(input: NeedsYouInput): NeedsYouItem[] {
   const waiting = input.conversationsAwaiting
   if (waiting.length > 0) {
     const names = waiting.slice(0, 2).join(', ') + (waiting.length > 2 ? ` and ${waiting.length - 2} more` : '')
-    items.push({ id: 'conversations', kind: 'conversation', title: `${plural(waiting.length, 'customer')} ${waiting.length === 1 ? 'is' : 'are'} waiting for your reply`, detail: names, basis: 'Inferred', action: { type: 'goto', label: 'See who', target: 'Overview' }, detailsTarget: 'Overview' })
+    items.push({ id: 'conversations', kind: 'conversation', title: `${plural(waiting.length, 'customer')} ${waiting.length === 1 ? 'is' : 'are'} waiting for your reply`, detail: names, basis: 'Inferred', action: { type: 'goto', label: 'See who', target: 'Follow-ups' }, detailsTarget: 'Follow-ups' })
   }
   if (input.draftsToReview > 0) {
     items.push({ id: 'drafts', kind: 'decision', title: `${plural(input.draftsToReview, 'reminder draft')} waiting for your decision`, detail: 'Nothing is sent until you approve it and send it yourself.', basis: 'Observed', action: { type: 'goto', label: 'Review', target: 'Actions' }, detailsTarget: 'Actions' })

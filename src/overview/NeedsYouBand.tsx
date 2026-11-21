@@ -41,8 +41,8 @@ export function NeedsYouBand({ items, loading, checkedAt, hiddenInvoices, busyOp
           </div>
           <div className="needs-row-actions">
             {item.action.type === 'draft'
-              ? <button type="button" className="button button-primary needs-primary" disabled={busyOpportunityId === item.action.opportunityId} onClick={() => onDraft(item.action.opportunityId)}>{busyOpportunityId === item.action.opportunityId ? 'Preparing…' : item.action.label}</button>
-              : <button type="button" className="button button-secondary needs-primary" onClick={() => onGoto(item.action.target)}>{item.action.label}</button>}
+              ? <button type="button" className="button button-primary needs-primary" disabled={busyOpportunityId === item.action.opportunityId} onClick={() => onDraft((item.action as { opportunityId: string }).opportunityId)}>{busyOpportunityId === item.action.opportunityId ? 'Preparing…' : item.action.label}</button>
+              : <button type="button" className="button button-secondary needs-primary" onClick={() => onGoto((item.action as { target: NeedsYouTarget }).target)}>{item.action.label}</button>}
             {item.snoozeOpportunityId && <RowMenu label={`More actions for ${item.title}`}
               items={[
                 { label: 'Snooze 7 days', run: () => onSnooze(item.snoozeOpportunityId as string) },

@@ -3,7 +3,7 @@ import { buildOverdueOpportunities } from './domain/overdueInvoices'
 import { parseInvoiceCsv, type CsvIssue } from './domain/invoiceCsv'
 import { parsePaymentCsv } from './domain/paymentCsv'
 import { addMoney, formatMoney, money } from './domain/money'
-import { agingSummary, rankOpportunities, daysOverdue, type ActionProgress, type RankedOpportunity } from './domain/prioritization'
+import { rankOpportunities, daysOverdue, type ActionProgress, type RankedOpportunity } from './domain/prioritization'
 import { draftReminderMessage } from './domain/reminderDraft'
 import { buildDashboardSummary } from './domain/dashboardSummary'
 import { partitionCrossSourceDuplicates } from './domain/importDuplicates'
@@ -16,7 +16,7 @@ import { ConversationsPanel } from './connections/ConversationsPanel'
 import { SourceStatusRows } from './connections/SourceStatusRows'
 import { useConnectionStatus } from './connections/useConnectionStatus'
 import { useConversations } from './connections/useConversations'
-import { decideLanding, setupInProgress } from './connections/landing'
+import { decideLanding } from './connections/landing'
 import { freshnessLine } from './connections/catalog'
 import { whoLabel } from './connections/conversationInsights'
 import { NeedsYouBand } from './overview/NeedsYouBand'
@@ -42,21 +42,34 @@ import type { IssueTransition } from './lib/opportunityQueries'
 import './App.css'
 import './design.css'
 import './sourceReview.css'
+import './overview/demo.css'
 
 type Section = 'Overview' | 'Urgent' | 'Follow-ups' | 'Opportunities' | 'Lead Recovery' | 'Actions' | 'Outcomes' | 'Business Brain' | 'Connections'
 
-const SECTION_SUBTITLES: Record<Section, string> = {
-  Overview: 'What needs you today, and the money behind it.',
-  Urgent: 'Overdue invoices and leads that need you now, with the evidence behind each.',
-  'Follow-ups': 'Quotations, deposits and tasks waiting on you or your team.',
-  Opportunities: 'Every overdue invoice, ranked, with the next step for each.',
-  'Lead Recovery': 'Enquiries and the follow-ups you promised.',
-  Actions: 'Reminder drafts to review, approve and send yourself.',
-  Outcomes: 'Payments matched to reminders you sent. Verified revenue only.',
-  'Business Brain': 'The facts and assumptions behind every recommendation.',
-  Connections: 'Connect your tools once. Revenue OS keeps itself up to date.',
+const SECTION_LABELS: Record<Section, string> = {
+  Overview: 'Overview',
+  Urgent: 'Needs attention',
+  'Follow-ups': 'Follow-ups',
+  Opportunities: 'Collections',
+  'Lead Recovery': 'Sales pipeline',
+  Actions: 'Reminder drafts',
+  Outcomes: 'Payment outcomes',
+  'Business Brain': 'Assumptions',
+  Connections: 'Connections',
 }
-const sections: Section[] = ['Overview', 'Urgent', 'Follow-ups', 'Opportunities', 'Lead Recovery', 'Actions', 'Outcomes', 'Business Brain', 'Connections']
+const SECTION_SUBTITLES: Record<Section, string> = {
+  Overview: 'See overdue invoices and customer follow-ups that need attention.',
+  Urgent: 'Review the highest-priority invoices, promises and customer tasks.',
+  'Follow-ups': 'Keep customer conversations, quotations and agreed next steps moving.',
+  Opportunities: 'See every overdue invoice and choose a clear next action.',
+  'Lead Recovery': 'Track enquiries and quotations until they become paying customers.',
+  Actions: 'Review reminder drafts before sending them yourself.',
+  Outcomes: 'Check payment records and distinguish evidence from estimates.',
+  'Business Brain': 'Review the rules and assumptions behind Revenue OS recommendations.',
+  Connections: 'Connect the invoice and customer data sources Revenue OS uses.',
+}
+const primarySections: Section[] = ['Overview', 'Opportunities', 'Lead Recovery', 'Follow-ups']
+const secondarySections: Section[] = ['Urgent', 'Actions', 'Outcomes', 'Business Brain', 'Connections']
 const invoiceCsvHeader = 'customer_id,customer_name,invoice_number,currency,total_amount,paid_amount,issued_at,due_at\n'
 
 function downloadCsvTemplate() {
@@ -850,7 +863,6 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
     () => rankOpportunities(opportunities, new Date().toISOString(), progressByInvoiceId),
     [opportunities, progressByInvoiceId],
   )
-  const aging = useMemo(() => agingSummary(opportunities, new Date().toISOString()), [opportunities])
   const summary = useMemo(() => buildDashboardSummary(recoveryActions, verifiedOutcomes), [recoveryActions, verifiedOutcomes])
   const workflowSummary = useMemo(() => summarizeWorkflow(opportunities, new Date().toISOString()), [opportunities])
   const moneyPosition = useMemo<MoneyPosition[]>(
@@ -1024,7 +1036,7 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sheetsSyncedAt])
 
-  const title = activeSection === 'Overview' ? 'Revenue overview' : activeSection
+  const title = SECTION_LABELS[activeSection]
 
   const needsYouInput: NeedsYouInput = {
     overdue: rankedOpportunities.filter((ranked) => !ranked.snoozed).map((ranked) => ({ id: ranked.opportunity.id, customer: ranked.opportunity.evidence[0]?.customerName || 'A customer', invoice: ranked.opportunity.evidence[0]?.invoiceNumber || '—', amount: formatMoney(ranked.opportunity.outstanding), lateLabel: ranked.urgencyLabel, progress: progressByInvoiceId.get(ranked.opportunity.evidence[0]?.id) ?? 'none' })),
@@ -1035,9 +1047,8 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
   }
   const needsYou = buildNeedsYou(needsYouInput)
   // On Overview the invoice list lives in the needs-you band; the full panel only shows there when it carries something else (loading, errors, empty, or a rate to set).
-  const showWorkGrid = activeSection !== 'Overview' || invoicesLoading || Boolean(loadError) || invoices.length === 0 || assumptionBps === null || opportunities.length === 0
+  const showWorkGrid = activeSection !== 'Overview' || invoicesLoading || Boolean(loadError) || (invoices.length > 0 && assumptionBps === null)
   const draftingOpportunityId = rankedOpportunities.find((ranked) => ranked.opportunity.evidence[0]?.id === actionBusy)?.opportunity.id ?? null
-  const scrollToConversations = () => document.getElementById('conversations')?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' })
   const lastCheckedAt = (conn.rows ?? []).map((row) => row.last_successful_sync_at).filter((at): at is string => Boolean(at)).sort().pop() ?? new Date().toISOString()
 
   return (
@@ -1053,15 +1064,27 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
           <span className="chevron" aria-hidden="true">⌄</span>
         </div>
         <p className="nav-label">WORKSPACE</p>
-        <nav className="primary-nav">
-          {sections.map((section) => {
-            const icon = section === 'Overview' ? 'grid' : section === 'Urgent' ? 'clock' : section === 'Follow-ups' ? 'check' : section === 'Opportunities' ? 'spark' : section === 'Lead Recovery' ? 'check' : section === 'Actions' ? 'check' : section === 'Outcomes' ? 'chart' : section === 'Connections' ? 'plug' : 'brain'
+        <nav className="primary-nav" aria-label="Main workspace">
+          {primarySections.map((section) => {
+            const icon = section === 'Overview' ? 'grid' : section === 'Opportunities' ? 'chart' : section === 'Lead Recovery' ? 'spark' : 'check'
             return <button key={section} className={`nav-item ${activeSection === section ? 'active' : ''}`} onClick={() => setActiveSection(section)}>
-              <Icon name={icon} /><span>{section}</span>
-              {section === 'Opportunities' && opportunities.length > 0 && <span className="nav-count">{opportunities.length}</span>}{section === 'Urgent' && attention.summary.needingAttention > 0 && <span className="nav-count">{attention.summary.needingAttention}</span>}
+              <Icon name={icon} /><span>{SECTION_LABELS[section]}</span>
+              {section === 'Opportunities' && opportunities.length > 0 && <span className="nav-count">{opportunities.length}</span>}
             </button>
           })}
         </nav>
+        <details className="nav-secondary" open={secondarySections.includes(activeSection)}>
+          <summary className="nav-label">More tools <span aria-hidden="true">⌄</span></summary>
+          <nav className="secondary-nav" aria-label="More workspace tools">
+            {secondarySections.map((section) => {
+              const icon = section === 'Urgent' ? 'clock' : section === 'Actions' ? 'check' : section === 'Outcomes' ? 'chart' : section === 'Connections' ? 'plug' : 'brain'
+              return <button key={section} className={`nav-item ${activeSection === section ? 'active' : ''}`} onClick={() => setActiveSection(section)}>
+                <Icon name={icon} /><span>{SECTION_LABELS[section]}</span>
+                {section === 'Urgent' && attention.summary.needingAttention > 0 && <span className="nav-count">{attention.summary.needingAttention}</span>}
+              </button>
+            })}
+          </nav>
+        </details>
         <div className="sidebar-bottom">
           <div className="sidebar-rule" />
           <div className="user-chip"><span className="user-avatar">{(session.user.email?.[0] || 'U').toUpperCase()}</span><span><strong>{session.user.email || 'Signed in'}</strong><small>Workspace member</small></span><span className="more">···</span></div>
@@ -1071,18 +1094,18 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
       <main className="main-area" id="overview">
         <header className="topbar">
           <span className="topbar-brand"><img src="/revenue-os-mark.png" alt="" width="26" height="26" /><b>Revenue OS</b></span>
-          <div className="breadcrumbs"><span>Workspace</span><span className="crumb-separator">/</span><strong>{activeSection}</strong></div>
+          <div className="breadcrumbs"><span>Workspace</span><span className="crumb-separator">/</span><strong>{SECTION_LABELS[activeSection]}</strong></div>
           <div className="topbar-right"><span className="connection-state"><i /> Supabase connected</span><button className="button button-secondary" type="button" onClick={onSignOut}>Sign out</button><span className="topbar-avatar">{(session.user.email?.[0] || 'U').toUpperCase()}</span></div>
         </header>
 
         <div className="page-content">
           <div className="page-heading">
             <div><p className="eyebrow">REVENUE OPERATIONS</p><h1>{title}</h1><p className="page-subtitle">{SECTION_SUBTITLES[activeSection]}</p></div>
-            {activeSection !== 'Connections' && <button className="button button-secondary" onClick={() => fileRef.current?.click()}><Icon name="upload" />Upload invoice file</button>}
+            {(activeSection === 'Overview' || activeSection === 'Opportunities') && <button className="button button-secondary" type="button" onClick={() => fileRef.current?.click()}><Icon name="upload" />Import invoices</button>}
             <input ref={fileRef} className="visually-hidden" type="file" accept=".csv,text/csv" aria-label="Choose an invoice spreadsheet" onChange={(event) => void importFile(event.target.files?.[0])} />
           </div>
 
-          <div className="preview-banner"><span className="preview-dot" />Workspace connected <span className="preview-divider">·</span> Leads, invoice imports and recovery assumptions sync to Supabase. Actions still require manual approval.</div>
+          <div className="preview-banner"><span className="preview-dot" />Track money owed and customer follow-ups in one place. You review every reminder before sending it; Revenue OS never contacts customers automatically.</div>
 
           {error && <div className="alert alert-error" role="alert"><strong>Could not complete the operation.</strong> {error}</div>}
           {importNote && <div className="alert alert-success" role="status"><strong>Saved.</strong> {importNote}</div>}
@@ -1109,16 +1132,17 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
 
           {activeSection === 'Overview' || activeSection === 'Opportunities' || activeSection === 'Urgent' ? (
             <>
-              {activeSection === 'Overview' && !invoicesLoading && !leadLoading && !actionsLoading && !records.loading && invoices.length === 0 && leads.length === 0 && records.quotations.length === 0 && records.deposits.length === 0 && records.tasks.length === 0 && records.reviews.length === 0 && setupInProgress(conn.rows) && conversations.threads === null && <section className="panel first-run-panel" aria-labelledby="first-run-title">
-            <div className="panel-heading"><div><h2 id="first-run-title">Nothing to show yet</h2><p>Connect Gmail or your invoice spreadsheet and Revenue OS fills this page from your own records. Until a source has synchronized there are no figures to show, and none are invented.</p></div></div>
-            <div className="first-run-actions"><button className="button button-primary" type="button" onClick={() => setActiveSection('Connections')}>Connect your tools</button><button className="template-link" type="button" onClick={() => fileRef.current?.click()}>No account to connect? Upload an invoice file</button></div>
+              {activeSection === 'Overview' && !invoicesLoading && invoices.length === 0 && !loadError && <section className="panel first-run-panel" aria-labelledby="first-run-title">
+            <div className="panel-heading"><div><p className="eyebrow">GET STARTED</p><h2 id="first-run-title">Start with the records your business already has</h2><p>Import an invoice list to see what is overdue, or add an enquiry to start tracking sales opportunities. Revenue OS uses your saved records; it does not fill your workspace with sample figures.</p></div></div>
+            <div className="first-run-actions"><button className="button button-primary" type="button" onClick={() => fileRef.current?.click()}>Import invoices</button><button className="button button-secondary" type="button" onClick={() => setActiveSection('Lead Recovery')}>Add a sales opportunity</button></div>
           </section>}
           {activeSection === 'Overview' && <>
-            <NeedsYouBand items={needsYou} loading={invoicesLoading || leadLoading || actionsLoading} checkedAt={lastCheckedAt} hiddenInvoices={hiddenInvoiceCount(needsYouInput)} busyOpportunityId={draftingOpportunityId}
-              onGoto={(target) => { if (target === 'Overview') scrollToConversations(); else setActiveSection(target) }}
+            <MoneySummary invoices={invoices} invoicesLoaded={!invoicesLoading} onOpen={() => setActiveSection('Opportunities')} />
+            {(invoices.length > 0 || needsYou.length > 0 || invoicesLoading || leadLoading) && <NeedsYouBand items={needsYou} loading={invoicesLoading || leadLoading || actionsLoading} checkedAt={lastCheckedAt} hiddenInvoices={hiddenInvoiceCount(needsYouInput)} busyOpportunityId={draftingOpportunityId}
+              onGoto={(target) => setActiveSection(target)}
               onDraft={(opportunityId) => { const ranked = rankedOpportunities.find((candidate) => candidate.opportunity.id === opportunityId); if (ranked) void handleProposeReminder(ranked.opportunity) }}
-              onSnooze={(opportunityId) => { const ranked = rankedOpportunities.find((candidate) => candidate.opportunity.id === opportunityId); if (ranked) void handleIssueTransition(ranked.opportunity, 'snooze', { snoozeUntil: new Date(Date.now() + 7 * 86_400_000).toISOString() }) }} />
-            <p className="source-strip"><i className={loadError || leadError ? 'connection-dot connection-dot-muted' : 'connection-dot'} /><span>{loadError || leadError ? 'Some saved data could not be loaded; review the error notice in its section.' : freshnessLine(conn.rows)}</span><button type="button" className="template-link" onClick={() => setActiveSection('Connections')}>Sources</button></p>
+              onSnooze={(opportunityId) => { const ranked = rankedOpportunities.find((candidate) => candidate.opportunity.id === opportunityId); if (ranked) void handleIssueTransition(ranked.opportunity, 'snooze', { snoozeUntil: new Date(Date.now() + 7 * 86_400_000).toISOString() }) }} />}
+            <p className="source-strip"><i className={loadError || leadError ? 'connection-dot connection-dot-muted' : 'connection-dot'} /><span>{loadError || leadError ? 'Some saved data could not be loaded; review the error notice in its section.' : freshnessLine(conn.rows)}</span><button type="button" className="template-link" onClick={() => setActiveSection('Connections')}>Data sources</button></p>
           </>}
               {activeSection !== 'Overview' && <section className="metric-grid" aria-label="Revenue summary">
                 <article className="metric-card"><div className="metric-top"><span>Open opportunities</span><span className="metric-icon teal"><Icon name="spark" /></span></div><strong className="metric-value">{invoicesLoading ? '…' : invoices.length && assumptionBps !== null ? opportunities.length : '—'}</strong><p>{invoicesLoading ? 'Loading saved invoices…' : invoices.length === 0 ? 'No invoices imported into this workspace yet' : assumptionBps === null ? 'Set a recovery-rate assumption to detect opportunities' : `${opportunities.length} ${store.mode === 'saved' ? 'saved' : 'calculated'} from imported invoice evidence`}</p></article>
@@ -1126,13 +1150,9 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
                 <article className="metric-card"><div className="metric-top"><span>Verified revenue</span><span className="metric-icon green"><Icon name="check" /></span></div><strong className="metric-value metric-money">{summary.verifiedByCurrency.length === 0 ? '—' : summary.verifiedByCurrency.length === 1 ? formatMoney(summary.verifiedByCurrency[0]) : 'Multiple currencies'}</strong><p>{summary.verifiedByCurrency.length > 1 && <span className="currency-breakdown">{summary.verifiedByCurrency.map((total) => formatMoney(total)).join(' · ')}<br /></span>}{summary.verifiedOutcomeCount ? summary.verifiedOutcomeCount + ' payment-matched outcome(s) · observed after a reminder, not proven caused by it' : 'Recorded only when payment evidence is matched'}</p></article>
                 <article className="metric-card"><div className="metric-top"><span>Waiting on you</span><span className="metric-icon amber"><Icon name="check" /></span></div><strong className="metric-value">{actionsLoading ? '—' : summary.needsOwner}</strong><p>{actionsLoading ? 'Loading actions…' : summary.actionCounts.proposed + ' draft(s) to review · ' + summary.actionCounts.approved + ' approved to send · ' + summary.awaitingEvidence + ' sent, awaiting payment evidence'}</p></article>
               </section>}
-              {activeSection === 'Overview' && <MoneySummary aging={aging} invoicesLoaded={!invoicesLoading} hasInvoices={invoices.length > 0} estimated={estimatedByCurrency} verified={summary.verifiedByCurrency} recoveryRateKnown={assumptionBps !== null} onOpen={() => setActiveSection('Opportunities')} />}
-              {activeSection === 'Overview' && <ConversationsPanel data={conversations} gmail={gmailRow} onOpenConnections={() => setActiveSection('Connections')} />}
-
-              {activeSection === 'Overview' && !showWorkGrid && <p className="brain-line" data-testid="brain-line"><span><i className="assumption-dot" />Business Brain · {brain.status}</span><span>{brain.detail}</span><span>Recovery rate {assumptionBps === null ? 'not set' : `${(assumptionBps / 100).toFixed(2).replace(/\.00$/, '')}%`}</span><button type="button" className="template-link" onClick={() => setActiveSection('Business Brain')}>Review assumptions</button></p>}
               {showWorkGrid && <section className="work-grid">
                 <div className="panel opportunity-panel">
-                  <div className="panel-heading"><div><h2>{activeSection === 'Urgent' ? 'Urgent attention queue' : activeSection === 'Opportunities' ? 'Revenue opportunities' : 'Priority opportunities'}</h2><p>{activeSection === 'Urgent' ? 'Overdue invoices and leads that need you now, each with its evidence, why it matters and the next step. Snoozing hides an alert for a while, never the unpaid money.' : 'Based on imported records and your stated assumptions.'}</p></div>{store.syncing ? <span className="status-pill">Refreshing…</span> : (activeSection === 'Urgent' ? attention.summary.needingAttention > 0 : opportunities.length > 0) && <span className="status-pill">{activeSection === 'Urgent' ? attention.summary.needingAttention + ' need you' : opportunities.length + ' open'}</span>}</div>
+                  <div className="panel-heading"><div><h2>{activeSection === 'Urgent' ? 'Needs attention' : activeSection === 'Opportunities' ? 'Invoices to collect' : 'Priority invoices'}</h2><p>{activeSection === 'Urgent' ? 'Overdue invoices, broken payment promises and customer tasks that need a response.' : 'Invoices past their due date, ranked with a clear next step for each.'}</p></div>{store.syncing ? <span className="status-pill">Refreshing…</span> : (activeSection === 'Urgent' ? attention.summary.needingAttention > 0 : opportunities.length > 0) && <span className="status-pill">{activeSection === 'Urgent' ? attention.summary.needingAttention + ' need you' : opportunities.length + ' open'}</span>}</div>
                   {activeSection === 'Urgent' ? (
                     <AttentionQueue items={attention.items} summary={attention.summary} failedRules={attention.failedRules} loading={invoicesLoading || leadLoading || records.loading}
                       onOpenLeads={() => setActiveSection('Lead Recovery')}
@@ -1160,7 +1180,7 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
                 </div>
 
                 <aside className="panel brain-panel">
-                  <div className="panel-heading"><div><h2>Business Brain</h2><p>Facts and assumptions behind recommendations.</p></div><span className="brain-status">{brain.status}</span></div>
+                  <div className="panel-heading"><div><h2>Why these are prioritised</h2><p>Source records and assumptions behind the suggested order.</p></div><span className="brain-status">{brain.status}</span></div>
                   <div className="brain-source"><span className="source-icon"><Icon name="brain" /></span><div><strong>{brain.title}</strong><small>{brain.detail}</small></div></div>
                   <div className="brain-divider" />
                   <div className="assumption-row"><span><i className="assumption-dot" />Recovery rate</span><strong>{assumptionBps === null ? 'Not set' : `${(assumptionBps / 100).toFixed(2).replace(/\.00$/, '')}%`}</strong></div>
@@ -1201,7 +1221,7 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
 
               {issues.length > 0 && <section className="panel issues-panel"><div className="panel-heading"><div><h2>Rows needing attention</h2><p>These rows were skipped; correct the source file and re-import.</p></div><span className="issue-count">{issues.length}</span></div><ul>{issues.slice(0, 8).map((issue) => <li key={`${issue.row}-${issue.message}`}><strong>Row {issue.row}</strong><span>{issue.message}</span></li>)}</ul>{issues.length > 8 && <p className="more-issues">And {issues.length - 8} more row issues.</p>}</section>}
             </>
-          ) : activeSection === 'Follow-ups' ? <WorkRecords session={session} organizationId={organization.id} records={records} invoices={invoices} reload={records.reload} canWrite /> : activeSection === 'Lead Recovery' ? <LeadRecovery leadCapacity={checkLeadCapacity(plan, leads.filter((lead) => lead.status !== 'converted' && lead.status !== 'closed').length)} leads={leads} setLeads={setLeads} session={session} organization={organization} loading={leadLoading} loadError={leadError} /> : activeSection === 'Actions' ? <RecoveryActions owners={records.actionOwners} members={records.members} onAssign={async (actionId, ownerId) => { try { await assignActionOwner(session, { organizationId: organization.id, actionId, ownerId }); records.reload(); return '' } catch (cause) { return cause instanceof Error ? cause.message : 'Owner not saved.' } }} actions={recoveryActions} invoices={invoices} loading={actionsLoading} busyId={actionBusy} notice={actionNotice} noticeIsError={actionNoticeIsError} onTransition={(action, transition) => void handleActionTransition(action, transition)} /> : activeSection === 'Outcomes' ? <RecoveryOutcomes actions={recoveryActions} invoices={invoices} outcomes={verifiedOutcomes} loading={outcomesLoading} busyId={actionBusy} notice={paymentNotice} noticeIsError={paymentNoticeIsError} issues={paymentIssues} moneyPosition={moneyPosition} promises={promiseRows} fileRef={paymentFileRef} onImport={(file) => void handleImportPayments(file)} onVerify={(action) => void handleVerifyOutcome(action)} /> : activeSection === 'Connections' ? (
+          ) : activeSection === 'Follow-ups' ? <div className="followups-workspace"><ConversationsPanel data={conversations} gmail={gmailRow} onOpenConnections={() => setActiveSection('Connections')} /><WorkRecords session={session} organizationId={organization.id} records={records} invoices={invoices} reload={records.reload} canWrite /></div> : activeSection === 'Lead Recovery' ? <LeadRecovery leadCapacity={checkLeadCapacity(plan, leads.filter((lead) => lead.status !== 'converted' && lead.status !== 'closed').length)} leads={leads} setLeads={setLeads} session={session} organization={organization} loading={leadLoading} loadError={leadError} /> : activeSection === 'Actions' ? <RecoveryActions owners={records.actionOwners} members={records.members} onAssign={async (actionId, ownerId) => { try { await assignActionOwner(session, { organizationId: organization.id, actionId, ownerId }); records.reload(); return '' } catch (cause) { return cause instanceof Error ? cause.message : 'Owner not saved.' } }} actions={recoveryActions} invoices={invoices} loading={actionsLoading} busyId={actionBusy} notice={actionNotice} noticeIsError={actionNoticeIsError} onTransition={(action, transition) => void handleActionTransition(action, transition)} /> : activeSection === 'Outcomes' ? <RecoveryOutcomes actions={recoveryActions} invoices={invoices} outcomes={verifiedOutcomes} loading={outcomesLoading} busyId={actionBusy} notice={paymentNotice} noticeIsError={paymentNoticeIsError} issues={paymentIssues} moneyPosition={moneyPosition} promises={promiseRows} fileRef={paymentFileRef} onImport={(file) => void handleImportPayments(file)} onVerify={(action) => void handleVerifyOutcome(action)} /> : activeSection === 'Connections' ? (
             <div className="connections-workspace">
               <ConnectionsPage session={session} organizationId={organization.id} rows={conn.rows} statusError={conn.error} refresh={conn.refresh} invoiceCount={invoices.length}
                 csvAction={<button className="button button-secondary" type="button" onClick={() => fileRef.current?.click()}>Upload an invoice file</button>} onOpenOverview={() => setActiveSection('Overview')}
@@ -1221,12 +1241,12 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
       {mobileMoreOpen && <div className="mobile-more-backdrop" onClick={() => setMobileMoreOpen(false)}>
         <nav className="mobile-more-menu" aria-label="More workspace sections" onClick={(event) => event.stopPropagation()}>
           <div className="mobile-more-heading"><strong>More sections</strong><button type="button" onClick={() => setMobileMoreOpen(false)} aria-label="Close menu">Close</button></div>
-          {(['Opportunities', 'Lead Recovery', 'Actions', 'Outcomes', 'Business Brain', 'Connections'] as Section[]).map((section) => <button key={section} type="button" className={activeSection === section ? 'active' : ''} onClick={() => { setActiveSection(section); setMobileMoreOpen(false) }}><Icon name={section === 'Opportunities' ? 'spark' : section === 'Lead Recovery' || section === 'Actions' ? 'check' : section === 'Outcomes' ? 'chart' : section === 'Connections' ? 'plug' : 'brain'} /><span>{section}</span><span className="mobile-more-arrow">›</span></button>)}
+          {secondarySections.map((section) => <button key={section} type="button" className={activeSection === section ? 'active' : ''} onClick={() => { setActiveSection(section); setMobileMoreOpen(false) }}><Icon name={section === 'Urgent' ? 'clock' : section === 'Actions' ? 'check' : section === 'Outcomes' ? 'chart' : section === 'Connections' ? 'plug' : 'brain'} /><span>{SECTION_LABELS[section]}</span><span className="mobile-more-arrow">›</span></button>)}
         </nav>
       </div>}
       <nav className="mobile-nav" aria-label="Mobile navigation">
-        {(['Overview', 'Urgent', 'Follow-ups'] as Section[]).map((section) => <button key={section} type="button" className={activeSection === section ? 'active' : ''} onClick={() => { setActiveSection(section); setMobileMoreOpen(false) }} aria-label={section}><Icon name={section === 'Overview' ? 'grid' : section === 'Urgent' ? 'clock' : 'check'} /><span>{section}</span></button>)}
-        <button type="button" className={['Opportunities', 'Lead Recovery', 'Actions', 'Outcomes', 'Business Brain', 'Connections'].includes(activeSection) ? 'active' : ''} onClick={() => setMobileMoreOpen((open) => !open)} aria-expanded={mobileMoreOpen} aria-label="More sections"><Icon name="grid" /><span>More</span></button>
+        {primarySections.map((section) => <button key={section} type="button" className={activeSection === section ? 'active' : ''} onClick={() => { setActiveSection(section); setMobileMoreOpen(false) }} aria-label={SECTION_LABELS[section]}><Icon name={section === 'Overview' ? 'grid' : section === 'Opportunities' ? 'chart' : section === 'Lead Recovery' ? 'spark' : 'check'} /><span>{SECTION_LABELS[section]}</span></button>)}
+        <button type="button" className={secondarySections.includes(activeSection) ? 'active' : ''} onClick={() => setMobileMoreOpen((open) => !open)} aria-expanded={mobileMoreOpen} aria-label="More tools"><Icon name="grid" /><span>More</span></button>
       </nav>
     </div>
   )
@@ -1392,7 +1412,7 @@ function LeadRecovery({ leadCapacity, leads, setLeads, session, organization, lo
   const statusLabel: Record<LeadStatus, string> = { new: 'New', follow_up: 'Follow-up due', contacted: 'Contacted', converted: 'Converted', closed: 'Closed' }
 
   return <div className="lead-workspace">
-    <section className="lead-intro panel"><div><p className="eyebrow">REVENUE RECOVERY</p><h2>Lead Recovery</h2><p>Capture enquiries, schedule follow-ups, and track which opportunities turn into revenue.</p></div><span className="lead-local-pill">SUPABASE SYNC</span></section>
+    <section className="lead-intro panel"><div><p className="eyebrow">CUSTOMER OPPORTUNITIES</p><h2>Sales pipeline</h2><p>Capture enquiries, set the next follow-up and keep potential customers moving towards a decision.</p></div><span className="lead-local-pill">SUPABASE SYNC</span></section>
     <section className="lead-metrics" aria-label="Lead recovery metrics">
       <article className="lead-metric"><span>Total leads</span><strong>{leads.length}</strong><small>Saved in your workspace</small></article>
       <article className="lead-metric"><span>Active pipeline</span><strong>{currencyTotals(leads.filter((lead) => lead.status !== 'converted' && lead.status !== 'closed'))}</strong><small>Potential value, not revenue</small></article>

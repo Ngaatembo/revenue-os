@@ -1121,13 +1121,13 @@ function App({ session, organization, onSignOut }: { session: SupabaseSession; o
 
           {activeSection === 'Overview' || activeSection === 'Opportunities' || activeSection === 'Urgent' ? (
             <>
-              {activeSection === 'Overview' && !invoicesLoading && invoices.length === 0 && !loadError && <section className="panel first-run-panel" aria-labelledby="first-run-title">
+              {activeSection === 'Overview' && !invoicesLoading && !leadLoading && !records.loading && invoices.length === 0 && leads.length === 0 && records.quotations.length === 0 && records.deposits.length === 0 && records.tasks.length === 0 && records.reviews.length === 0 && !loadError && !leadError && <section className="panel first-run-panel" aria-labelledby="first-run-title">
             <div className="panel-heading"><div><p className="eyebrow">GET STARTED</p><h2 id="first-run-title">Start with the records your business already has</h2><p>Import an invoice list to see what is overdue, or add an enquiry to start tracking sales opportunities. Revenue OS uses your saved records; it does not fill your workspace with sample figures.</p></div></div>
             <div className="first-run-actions"><button className="button button-primary" type="button" onClick={() => fileRef.current?.click()}>Import invoices</button><button className="button button-secondary" type="button" onClick={() => setActiveSection('Lead Recovery')}>Add a sales opportunity</button></div>
           </section>}
           {activeSection === 'Overview' && <>
             <MoneySummary invoices={invoices} invoicesLoaded={!invoicesLoading} onOpen={() => setActiveSection('Opportunities')} />
-            {(invoices.length > 0 || needsYou.length > 0 || invoicesLoading || leadLoading) && <NeedsYouBand items={needsYou} loading={invoicesLoading || leadLoading || actionsLoading} checkedAt={lastCheckedAt} hiddenInvoices={hiddenInvoiceCount(needsYouInput)} busyOpportunityId={draftingOpportunityId}
+            {(invoices.length > 0 || leads.length > 0 || records.quotations.length > 0 || records.deposits.length > 0 || records.tasks.length > 0 || needsYou.length > 0 || invoicesLoading || leadLoading) && <NeedsYouBand items={needsYou} loading={invoicesLoading || leadLoading || actionsLoading} checkedAt={lastCheckedAt} hiddenInvoices={hiddenInvoiceCount(needsYouInput)} busyOpportunityId={draftingOpportunityId}
               onGoto={(target) => setActiveSection(target)}
               onDraft={(opportunityId) => { const ranked = rankedOpportunities.find((candidate) => candidate.opportunity.id === opportunityId); if (ranked) void handleProposeReminder(ranked.opportunity) }}
               onSnooze={(opportunityId) => { const ranked = rankedOpportunities.find((candidate) => candidate.opportunity.id === opportunityId); if (ranked) void handleIssueTransition(ranked.opportunity, 'snooze', { snoozeUntil: new Date(Date.now() + 7 * 86_400_000).toISOString() }) }} />}

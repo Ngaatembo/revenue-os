@@ -17,13 +17,15 @@ export function MoneySummary({ invoices, invoicesLoaded, onOpen }: Props) {
   if (invoices.length === 0) return null
 
   const now = Date.now()
+  const oneDayMs = 24 * 60 * 60 * 1000
   const totals = new Map<string, { amount: number; count: number }>()
   for (const invoice of invoices) {
     const outstanding = Math.max(0, invoice.total.amount - invoice.paid.amount)
     const dueAt = Date.parse(invoice.dueAt)
-    if (outstanding === 0 || Number.isNaN(dueAt) || dueAt >= now) continue
-    const current = totals.get(invoice.currency) ?? { amount: 0, count: 0 }
-    totals.set(invoice.currency, { amount: current.amount + outstanding, count: current.count + 1 })
+    if (outstanding === 0 || Number.isNaN(dueAt) || now - dueAt < oneDayMs) continue
+    const currency = invoice.total.currency
+    const current = totals.get(currency) ?? { amount: 0, count: 0 }
+    totals.set(currency, { amount: current.amount + outstanding, count: current.count + 1 })
   }
 
   const rows = [...totals.entries()].sort(([a], [b]) => a.localeCompare(b))
@@ -34,7 +36,7 @@ export function MoneySummary({ invoices, invoicesLoaded, onOpen }: Props) {
       <div>
         <p className="eyebrow">COLLECTIONS</p>
         <h2 id="overdue-money-title" className="section-title">Money overdue</h2>
-        <p className="money-description">Invoices past their due date that still have an unpaid balance.</p>
+        <p className="money-description">Invoices at least one day past their due date that still have an unpaid balance.</p>
       </div>
       <button type="button" className="button button-secondary" onClick={onOpen}>View overdue invoices</button>
     </div>
@@ -46,6 +48,6 @@ export function MoneySummary({ invoices, invoicesLoaded, onOpen }: Props) {
           <span>{value.count} overdue invoice{value.count === 1 ? '' : 's'} · {currency}</span>
         </div>)}
       </div>}
-    <p className="money-note">Calculated from invoice totals, recorded payments and due dates. This is money still owed, not a recovery estimate.</p>
+    <p className="money-note">Calculated from saved invoice totals, recorded payments and due dates. This is money still owed, not a recovery estimate.</p>
   </section>
 }

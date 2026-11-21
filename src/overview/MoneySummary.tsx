@@ -29,8 +29,6 @@ export function MoneySummary({ invoices, invoicesLoaded, onOpen }: Props) {
   }
 
   const rows = [...totals.entries()].sort(([a], [b]) => a.localeCompare(b))
-  const invoiceCount = rows.reduce((sum, [, value]) => sum + value.count, 0)
-
   return <section className="money" aria-labelledby="overdue-money-title" data-testid="money-summary">
     <div className="money-heading">
       <div>

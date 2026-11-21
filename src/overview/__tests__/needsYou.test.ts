@@ -27,6 +27,11 @@ describe('buildNeedsYou', () => {
     assert.equal(items[0].detail, 'Chipo Dube, Tendai Moyo and 1 more')
     assert.equal(items[0].basis, 'Inferred')
   })
+  it('routes waiting customer conversations to the Follow-ups workspace', () => {
+    const item = buildNeedsYou({ ...empty, conversationsAwaiting: ['Chipo Dube'] })[0]
+    assert.deepEqual(item.action, { type: 'goto', label: 'See who', target: 'Follow-ups' })
+    assert.equal(item.detailsTarget, 'Follow-ups')
+  })
   it('a money row offers one primary action: draft, or review once a draft exists', () => {
     const fresh = buildNeedsYou({ ...empty, overdue: [row(1)] })[0]
     assert.deepEqual(fresh.action, { type: 'draft', label: 'Draft reminder', opportunityId: 'i1' })

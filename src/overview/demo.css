@@ -1,0 +1,290 @@
+/* Revenue OS demo refresh: clear hierarchy, calmer navigation, and readable actions. */
+.preview-banner {
+  min-height: 0;
+  padding: 11px 14px;
+  border-color: var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.preview-banner .preview-dot { flex: 0 0 7px; }
+
+.nav-secondary {
+  margin-top: 20px;
+}
+.nav-secondary > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+.nav-secondary > summary::-webkit-details-marker { display: none; }
+.nav-secondary > summary span {
+  transition: transform .15s ease;
+}
+.nav-secondary[open] > summary span { transform: rotate(180deg); }
+.secondary-nav {
+  display: grid;
+  gap: 3px;
+  margin-top: 5px;
+}
+.secondary-nav .nav-item {
+  min-height: 38px;
+  font-size: 12px;
+}
+
+.first-run-panel {
+  margin-bottom: 20px;
+  padding: 22px;
+  border-radius: 12px;
+}
+.first-run-panel .panel-heading {
+  margin-bottom: 16px;
+}
+.first-run-panel .panel-heading h2 {
+  margin: 0 0 8px;
+  font-size: 21px;
+  line-height: 1.3;
+}
+.first-run-panel .panel-heading p:not(.eyebrow) {
+  max-width: 660px;
+  font-size: 14px;
+  line-height: 1.65;
+}
+.first-run-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.money {
+  display: grid;
+  gap: 16px;
+  margin: 20px 0;
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.money-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 18px;
+}
+.money-heading .eyebrow { margin: 0 0 5px; }
+.money-heading .section-title {
+  margin: 0;
+  color: var(--ink-strong);
+  font-size: 21px;
+  font-weight: 680;
+  letter-spacing: -.35px;
+}
+.money-description {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+.money-overdue-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 12px;
+}
+.money-overdue-item {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 17px 18px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface-soft);
+}
+.money-overdue-amount {
+  overflow-wrap: anywhere;
+  color: var(--ink-strong);
+  font-family: var(--money-font);
+  font-size: clamp(25px, 3vw, 32px);
+  font-weight: 650;
+  font-variant-numeric: tabular-nums lining-nums;
+  letter-spacing: 0;
+  line-height: 1.15;
+}
+.money-overdue-item span {
+  color: var(--muted);
+  font-size: 13px;
+}
+.money-clear {
+  margin: 0;
+  padding: 13px 15px;
+  border-radius: 8px;
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-size: 14px;
+}
+.money-note {
+  margin: -3px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.needs-you {
+  display: grid;
+  gap: 0;
+  margin: 20px 0;
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.needs-you-head {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 7px;
+}
+.needs-you-head .eyebrow { margin: 0 0 5px; }
+.needs-you-head h2 {
+  margin: 0;
+  color: var(--ink-strong);
+  font-size: 21px;
+  line-height: 1.3;
+  letter-spacing: -.35px;
+}
+.needs-you-promise {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.needs-you-count {
+  flex: 0 0 auto;
+  padding: 5px 9px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+.needs-you-list {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.needs-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  padding: 15px 0;
+  border-top: 1px solid var(--line);
+}
+.needs-row-main {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+.needs-row-line1 {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 5px 14px;
+}
+.needs-row-title {
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 680;
+  overflow-wrap: anywhere;
+}
+.needs-row-detail {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.needs-row .tag-observed,
+.needs-row .tag-inferred { display: none; }
+.needs-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.needs-row-actions .button {
+  min-height: 39px;
+  font-size: 13px;
+}
+.needs-you-clear {
+  margin: 0;
+  padding: 13px 0 2px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.55;
+}
+.needs-more {
+  justify-self: start;
+  margin: 8px 0 0;
+  padding: 4px 0;
+  color: var(--action);
+  font-size: 13px;
+  font-weight: 650;
+}
+.needs-you-updated {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+.row-menu-button {
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+}
+.row-menu-button:hover { color: var(--ink); border-color: var(--control-border); }
+
+.followups-workspace {
+  display: grid;
+  gap: 18px;
+}
+
+@media (max-width: 760px) {
+  .preview-banner {
+    align-items: flex-start;
+    padding: 10px 12px;
+  }
+  .nav-secondary { display: none; }
+  .first-run-panel { padding: 18px; }
+  .first-run-panel .panel-heading h2 { font-size: 19px; }
+  .first-run-actions { display: grid; grid-template-columns: 1fr; }
+  .first-run-actions .button { width: 100%; }
+  .money, .needs-you { padding: 17px; }
+  .money-heading {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .money-heading .button { width: 100%; }
+  .money-overdue-grid { grid-template-columns: 1fr; }
+  .needs-you-head { align-items: flex-start; }
+  .needs-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+  }
+  .needs-row-actions { justify-content: flex-start; }
+  .needs-row-actions .needs-primary { flex: 1; }
+  .needs-you-count { font-size: 11px; }
+}
